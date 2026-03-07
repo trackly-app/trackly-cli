@@ -1,11 +1,11 @@
-# @trackly/cli
+# trackly-cli
 
 Trackly job tracker CLI + MCP server for AI agents.
 
 ## Install
 
 ```bash
-npm install -g @trackly/cli
+npm install -g trackly-cli
 ```
 
 ## Login
