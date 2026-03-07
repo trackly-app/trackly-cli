@@ -7,7 +7,7 @@ const { apiRequest, getToken } = require('../lib/client');
 
 const server = new McpServer({
   name: 'trackly',
-  version: '0.1.0',
+  version: '0.1.1',
 });
 
 // Tool: Search/filter jobs
@@ -15,14 +15,14 @@ server.tool(
   'trackly_search_jobs',
   'Search and filter job postings. Returns matching jobs with title, company, location, modality.',
   {
-    function: z.string().optional().describe('Job function filter: product_management, engineering, design, data_science, marketing, sales, finance, operations, legal, hr, other'),
+    function: z.enum(['product_management','engineering','design','data_science','marketing','sales','finance','operations','legal','hr','other']).optional().describe('Job function filter: product_management, engineering, design, data_science, marketing, sales, finance, operations, legal, hr, other'),
     location: z.string().optional().describe('Location filter (city or state)'),
-    modality: z.string().optional().describe('Work modality: remote, hybrid, onsite'),
-    status: z.string().optional().describe('Application status: new, saved, applied, dismissed'),
-    sort: z.string().optional().describe('Sort order: newest, oldest, company'),
-    limit: z.number().optional().describe('Max results (default 20, max 50)'),
-    offset: z.number().optional().describe('Pagination offset'),
-    keywords: z.string().optional().describe('Keyword search in title/description'),
+    modality: z.enum(['remote','hybrid','onsite']).optional().describe('Work modality: remote, hybrid, onsite'),
+    status: z.enum(['new','saved','applied','dismissed']).optional().describe('Application status: new, saved, applied, dismissed'),
+    sort: z.enum(['newest','oldest','company']).optional().describe('Sort order: newest, oldest, company'),
+    limit: z.number().max(50).optional().describe('Max results (default 20, max 50)'),
+    offset: z.number().min(0).optional().describe('Pagination offset'),
+    keywords: z.string().max(500).optional().describe('Keyword search in title/description'),
   },
   async (params) => {
     const qs = new URLSearchParams();
@@ -60,8 +60,8 @@ server.tool(
   'trackly_search_companies',
   'Semantic search for companies by name, domain, or keywords.',
   {
-    query: z.string().describe('Search query'),
-    limit: z.number().optional().describe('Max results (default 10)'),
+    query: z.string().max(500).describe('Search query'),
+    limit: z.number().max(50).optional().describe('Max results (default 10)'),
   },
   async ({ query, limit }) => {
     const qs = new URLSearchParams({ q: query });
@@ -80,8 +80,8 @@ server.tool(
   'trackly_list_companies',
   'List all tracked companies with their active job counts.',
   {
-    limit: z.number().optional().describe('Max results'),
-    offset: z.number().optional().describe('Pagination offset'),
+    limit: z.number().max(50).optional().describe('Max results'),
+    offset: z.number().min(0).optional().describe('Pagination offset'),
   },
   async ({ limit, offset }) => {
     const qs = new URLSearchParams();
@@ -134,7 +134,7 @@ server.tool(
   'trackly_ask',
   'Natural language job search. Describe what you are looking for and the AI parses it into structured filters. Limited to 20 queries per day.',
   {
-    query: z.string().describe('Natural language search query, e.g. "PM jobs at fintech companies in SF"'),
+    query: z.string().max(500).describe('Natural language search query, e.g. "PM jobs at fintech companies in SF"'),
   },
   async ({ query }) => {
     try {
