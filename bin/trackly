@@ -4,6 +4,7 @@
 const { loadConfig, saveConfig, clearConfig, apiRequest, getToken, CONFIG_DIR } = require('../lib/client');
 const { color, isJSON, outputJobs, outputCompanies, outputStats, outputError } = require('../lib/formatters');
 const http = require('http');
+const crypto = require('crypto');
 const { execSync } = require('child_process');
 const path = require('path');
 
@@ -32,6 +33,7 @@ function parseArgs(args) {
 async function cmdLogin() {
   const port = 19847 + Math.floor(Math.random() * 1000);
   const baseUrl = loadConfig().baseUrl || 'https://closeai.mba';
+  const state = crypto.randomBytes(16).toString('hex');
 
   console.log(color('cyan', 'Opening browser for Google login...'));
   console.log(color('dim', `Callback server on port ${port}`));
@@ -40,6 +42,14 @@ async function cmdLogin() {
     const server = http.createServer((req, res) => {
       const url = new URL(req.url, `http://localhost:${port}`);
       if (url.pathname === '/callback') {
+        const returnedState = url.searchParams.get('state');
+        if (returnedState !== state) {
+          res.writeHead(403, { 'Content-Type': 'text/html' });
+          res.end('<html><body><h2>Login failed. Invalid state parameter (possible CSRF).</h2></body></html>');
+          server.close();
+          reject(new Error('CSRF state mismatch'));
+          return;
+        }
         const token = url.searchParams.get('token');
         const refreshToken = url.searchParams.get('refreshToken');
         if (token) {
@@ -61,8 +71,8 @@ async function cmdLogin() {
       }
     });
 
-    server.listen(port, () => {
-      const loginUrl = `${baseUrl}/auth/google/cli?port=${port}`;
+    server.listen(port, '127.0.0.1', () => {
+      const loginUrl = `${baseUrl}/auth/google/cli?port=${port}&state=${state}`;
       try {
         if (process.platform === 'darwin') execSync(`open "${loginUrl}"`);
         else if (process.platform === 'linux') execSync(`xdg-open "${loginUrl}"`);
@@ -201,7 +211,7 @@ async function cmdAsk(args) {
     for (const [k, v] of Object.entries(result.parsedFilters || {})) {
       console.log(`  ${k}: ${color('cyan', String(v))}`);
     }
-    if (result.jobsUrl) {
+    if (result.jobsUrl && result.jobsUrl.startsWith('/api/')) {
       console.log();
       console.log(color('dim', `Fetching: ${result.jobsUrl}`));
       // Auto-fetch jobs with parsed filters

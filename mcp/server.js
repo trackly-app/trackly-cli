@@ -140,7 +140,7 @@ server.tool(
     try {
       const askResult = await apiRequest('GET', `/api/jobscout/ask?q=${encodeURIComponent(query)}`);
       // Auto-fetch jobs with parsed filters
-      if (askResult.jobsUrl) {
+      if (askResult.jobsUrl && askResult.jobsUrl.startsWith('/api/')) {
         const jobsResult = await apiRequest('GET', askResult.jobsUrl);
         return { content: [{ type: 'text', text: JSON.stringify({ ...askResult, jobs: jobsResult.jobs || jobsResult.data || [] }, null, 2) }] };
       }
