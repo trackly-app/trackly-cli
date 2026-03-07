@@ -7,7 +7,7 @@ const { apiRequest, getToken } = require('../lib/client');
 
 const server = new McpServer({
   name: 'trackly',
-  version: '0.1.1',
+  version: '0.1.2',
 });
 
 // Tool: Search/filter jobs
