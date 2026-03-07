@@ -1,0 +1,324 @@
+#!/usr/bin/env node
+'use strict';
+
+const { loadConfig, saveConfig, clearConfig, apiRequest, getToken, CONFIG_DIR } = require('../lib/client');
+const { color, isJSON, outputJobs, outputCompanies, outputStats, outputError } = require('../lib/formatters');
+const http = require('http');
+const { execSync } = require('child_process');
+const path = require('path');
+
+function parseArgs(args) {
+  const result = { _: [], command: null };
+  let i = 0;
+  while (i < args.length && !args[i].startsWith('-')) {
+    if (!result.command) result.command = args[i];
+    else result._.push(args[i]);
+    i++;
+  }
+  while (i < args.length) {
+    const arg = args[i];
+    if (arg.startsWith('--')) {
+      const key = arg.slice(2);
+      if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
+        result[key] = args[i + 1]; i += 2;
+      } else { result[key] = true; i++; }
+    } else { result._.push(arg); i++; }
+  }
+  return result;
+}
+
+// -- Commands --
+
+async function cmdLogin() {
+  const port = 19847 + Math.floor(Math.random() * 1000);
+  const baseUrl = loadConfig().baseUrl || 'https://closeai.mba';
+
+  console.log(color('cyan', 'Opening browser for Google login...'));
+  console.log(color('dim', `Callback server on port ${port}`));
+
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url, `http://localhost:${port}`);
+      if (url.pathname === '/callback') {
+        const token = url.searchParams.get('token');
+        const refreshToken = url.searchParams.get('refreshToken');
+        if (token) {
+          saveConfig({ ...loadConfig(), token, refreshToken, baseUrl });
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end('<html><body><h2>Logged in! You can close this tab.</h2><script>window.close()</script></body></html>');
+          console.log(color('green', 'Login successful!'));
+          server.close();
+          resolve();
+        } else {
+          res.writeHead(400, { 'Content-Type': 'text/html' });
+          res.end('<html><body><h2>Login failed. No token received.</h2></body></html>');
+          server.close();
+          reject(new Error('No token received'));
+        }
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+
+    server.listen(port, () => {
+      const loginUrl = `${baseUrl}/auth/google/cli?port=${port}`;
+      try {
+        if (process.platform === 'darwin') execSync(`open "${loginUrl}"`);
+        else if (process.platform === 'linux') execSync(`xdg-open "${loginUrl}"`);
+        else console.log(`Open this URL in your browser:\n${loginUrl}`);
+      } catch {
+        console.log(`Open this URL in your browser:\n${loginUrl}`);
+      }
+    });
+
+    // Timeout after 2 minutes
+    setTimeout(() => { server.close(); reject(new Error('Login timed out')); }, 120000);
+  });
+}
+
+async function cmdLogout() {
+  clearConfig();
+  console.log(color('green', 'Logged out. Credentials cleared.'));
+}
+
+async function cmdWhoami() {
+  if (!getToken()) { outputError('Not logged in. Run: trackly login'); process.exit(1); }
+  try {
+    const result = await apiRequest('GET', '/api/auth/user');
+    if (result.success && result.user) {
+      if (isJSON()) return console.log(JSON.stringify(result.user, null, 2));
+      console.log(`${color('bold', result.user.name || 'Unknown')}`);
+      console.log(`  Email: ${color('cyan', result.user.email)}`);
+      console.log(`  ID: ${color('dim', result.user.id)}`);
+    } else {
+      outputError('Not authenticated. Run: trackly login');
+    }
+  } catch (e) {
+    outputError(e.error || e.message || 'Failed to get user info');
+  }
+}
+
+async function cmdJobs(args) {
+  if (!getToken()) { outputError('Not logged in. Run: trackly login'); process.exit(1); }
+  const params = new URLSearchParams();
+  if (args.function) params.set('function', args.function);
+  if (args.location) params.set('location', args.location);
+  if (args.modality) params.set('modality', args.modality);
+  if (args.status) params.set('status', args.status);
+  if (args.sort) params.set('sort', args.sort);
+  if (args.limit) params.set('limit', args.limit);
+  if (args.offset) params.set('offset', args.offset);
+  if (args.keywords) params.set('keywords', args.keywords);
+
+  const qs = params.toString();
+  try {
+    const result = await apiRequest('GET', `/api/jobscout/jobs${qs ? '?' + qs : ''}`);
+    outputJobs(result.jobs || result.data || []);
+    if (!isJSON() && result.total) console.log(color('dim', `Showing ${(result.jobs || result.data || []).length} of ${result.total} jobs`));
+  } catch (e) {
+    outputError(e.error || e.message || 'Failed to fetch jobs');
+  }
+}
+
+async function cmdJob(args) {
+  const id = args._[0];
+  if (!id) { outputError('Job ID required. Usage: trackly job <id>'); process.exit(1); }
+  if (!getToken()) { outputError('Not logged in. Run: trackly login'); process.exit(1); }
+  try {
+    const result = await apiRequest('GET', `/api/jobscout/jobs/${id}`);
+    if (isJSON()) return console.log(JSON.stringify(result, null, 2));
+    const job = result.job || result;
+    console.log(color('bold', job.title));
+    console.log(`Company: ${color('blue', job.company_name)}`);
+    if (job.location) console.log(`Location: ${job.location}`);
+    if (job.modality) console.log(`Modality: ${color('cyan', job.modality)}`);
+    if (job.url) console.log(`URL: ${color('dim', job.url)}`);
+    if (job.posted_at) console.log(`Posted: ${job.posted_at}`);
+    if (job.description_text) {
+      console.log();
+      console.log(color('bold', 'Description:'));
+      console.log(job.description_text.slice(0, 1000));
+      if (job.description_text.length > 1000) console.log(color('dim', '... (truncated)'));
+    }
+  } catch (e) {
+    outputError(e.error || e.message || 'Failed to fetch job');
+  }
+}
+
+async function cmdCompanies(args) {
+  if (!getToken()) { outputError('Not logged in. Run: trackly login'); process.exit(1); }
+  try {
+    const result = await apiRequest('GET', '/api/jobscout/companies');
+    outputCompanies(result.companies || result.data || []);
+  } catch (e) {
+    outputError(e.error || e.message || 'Failed to fetch companies');
+  }
+}
+
+async function cmdSearch(args) {
+  const query = args._[0];
+  if (!query) { outputError('Search query required. Usage: trackly search "fintech"'); process.exit(1); }
+  if (!getToken()) { outputError('Not logged in. Run: trackly login'); process.exit(1); }
+  try {
+    const result = await apiRequest('GET', `/api/jobscout/companies/search?q=${encodeURIComponent(query)}`);
+    outputCompanies(result.companies || result.results || []);
+  } catch (e) {
+    outputError(e.error || e.message || 'Failed to search');
+  }
+}
+
+async function cmdStats() {
+  if (!getToken()) { outputError('Not logged in. Run: trackly login'); process.exit(1); }
+  try {
+    const result = await apiRequest('GET', '/api/jobscout/me');
+    outputStats(result);
+  } catch (e) {
+    outputError(e.error || e.message || 'Failed to fetch stats');
+  }
+}
+
+async function cmdUpdateStatus(id, action) {
+  if (!id) { outputError(`Job ID required. Usage: trackly ${action} <id>`); process.exit(1); }
+  if (!getToken()) { outputError('Not logged in. Run: trackly login'); process.exit(1); }
+  try {
+    const result = await apiRequest('POST', '/api/jobscout-tracker/status', { jobId: parseInt(id), action });
+    if (isJSON()) return console.log(JSON.stringify(result, null, 2));
+    console.log(color('green', `Job ${id} marked as ${action}d`));
+  } catch (e) {
+    outputError(e.error || e.message || `Failed to ${action} job`);
+  }
+}
+
+async function cmdAsk(args) {
+  const query = args._.join(' ');
+  if (!query) { outputError('Query required. Usage: trackly ask "PM jobs at fintech"'); process.exit(1); }
+  if (!getToken()) { outputError('Not logged in. Run: trackly login'); process.exit(1); }
+  try {
+    const result = await apiRequest('GET', `/api/jobscout/ask?q=${encodeURIComponent(query)}`);
+    if (isJSON()) return console.log(JSON.stringify(result, null, 2));
+    console.log(color('bold', 'Parsed filters:'));
+    for (const [k, v] of Object.entries(result.parsedFilters || {})) {
+      console.log(`  ${k}: ${color('cyan', String(v))}`);
+    }
+    if (result.jobsUrl) {
+      console.log();
+      console.log(color('dim', `Fetching: ${result.jobsUrl}`));
+      // Auto-fetch jobs with parsed filters
+      const jobsResult = await apiRequest('GET', result.jobsUrl);
+      console.log();
+      outputJobs(jobsResult.jobs || jobsResult.data || []);
+    }
+  } catch (e) {
+    if (e.status === 429) outputError('Daily limit reached (20 natural language queries per day)');
+    else outputError(e.error || e.message || 'Failed to process query');
+  }
+}
+
+async function cmdApiKey(args) {
+  const subcommand = args._[0] || 'create';
+  if (!getToken()) { outputError('Not logged in. Run: trackly login'); process.exit(1); }
+  if (subcommand === 'create') {
+    const name = args.name || 'default';
+    try {
+      const result = await apiRequest('POST', '/api/auth/api-key', { name });
+      if (isJSON()) return console.log(JSON.stringify(result, null, 2));
+      console.log(color('green', 'API key created!'));
+      console.log();
+      console.log(`Key: ${color('bold', result.key)}`);
+      console.log(color('yellow', 'Save this key — it cannot be shown again.'));
+    } catch (e) {
+      outputError(e.error || e.message || 'Failed to create API key');
+    }
+  } else if (subcommand === 'list') {
+    try {
+      const result = await apiRequest('GET', '/api/auth/api-keys');
+      if (isJSON()) return console.log(JSON.stringify(result.keys, null, 2));
+      for (const key of (result.keys || [])) {
+        console.log(`${color('bold', key.key_prefix + '...')} — ${key.name} (created ${key.created_at})`);
+      }
+    } catch (e) {
+      outputError(e.error || e.message || 'Failed to list keys');
+    }
+  }
+}
+
+async function cmdMcp() {
+  // Delegate to MCP server
+  require('../mcp/server');
+}
+
+function showHelp() {
+  console.log(`
+${color('bold', 'trackly')} — Trackly job tracker CLI + MCP server
+
+${color('bold', 'Usage:')}
+  trackly <command> [options]
+
+${color('bold', 'Commands:')}
+  ${color('cyan', 'login')}              Authenticate via Google OAuth
+  ${color('cyan', 'logout')}             Clear credentials
+  ${color('cyan', 'whoami')}             Show current user
+  ${color('cyan', 'jobs')}               List jobs (--function, --location, --modality, --status, --sort, --limit, --offset)
+  ${color('cyan', 'job <id>')}           Get full job detail
+  ${color('cyan', 'companies')}          List companies
+  ${color('cyan', 'search <query>')}     Semantic company search
+  ${color('cyan', 'stats')}              Show metrics dashboard
+  ${color('cyan', 'apply <id>')}         Mark job as applied
+  ${color('cyan', 'save <id>')}          Save a job
+  ${color('cyan', 'dismiss <id>')}       Dismiss a job
+  ${color('cyan', 'ask "query"')}        Natural language job search (20/day)
+  ${color('cyan', 'api-key create')}     Generate an API key
+  ${color('cyan', 'api-key list')}       List your API keys
+  ${color('cyan', 'mcp')}               Start MCP server (for Claude Code)
+
+${color('bold', 'Flags:')}
+  --json              Force JSON output
+  --help              Show this help
+
+${color('bold', 'MCP Setup (Claude Code):')}
+  Add to ~/.claude/settings.json:
+  {
+    "mcpServers": {
+      "trackly": {
+        "command": "trackly",
+        "args": ["mcp"]
+      }
+    }
+  }
+`);
+}
+
+// -- Main --
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+
+  if (!args.command || args.help || args.h) { showHelp(); process.exit(0); }
+
+  switch (args.command) {
+    case 'login': await cmdLogin(); break;
+    case 'logout': await cmdLogout(); break;
+    case 'whoami': await cmdWhoami(); break;
+    case 'jobs': await cmdJobs(args); break;
+    case 'job': await cmdJob(args); break;
+    case 'companies': await cmdCompanies(args); break;
+    case 'search': await cmdSearch(args); break;
+    case 'stats': await cmdStats(); break;
+    case 'apply': await cmdUpdateStatus(args._[0], 'applied'); break;
+    case 'save': await cmdUpdateStatus(args._[0], 'saved'); break;
+    case 'dismiss': await cmdUpdateStatus(args._[0], 'dismissed'); break;
+    case 'ask': await cmdAsk(args); break;
+    case 'api-key': await cmdApiKey(args); break;
+    case 'mcp': await cmdMcp(); break;
+    default:
+      outputError(`Unknown command: ${args.command}`);
+      showHelp();
+      process.exit(1);
+  }
+}
+
+main().catch(e => {
+  outputError(e.message || String(e));
+  process.exit(1);
+});

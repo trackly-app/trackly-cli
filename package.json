@@ -1,0 +1,36 @@
+{
+  "name": "@trackly/cli",
+  "version": "0.1.0",
+  "description": "Trackly job tracker CLI + MCP server for AI agents",
+  "bin": {
+    "trackly": "./bin/trackly"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "mcp/",
+    "docs/",
+    "README.md"
+  ],
+  "keywords": [
+    "trackly",
+    "jobs",
+    "job-tracker",
+    "mcp",
+    "cli",
+    "claude-code",
+    "ai-agent"
+  ],
+  "author": "Kevin Astuhuaman <kevin.astuhuaman.flores@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kevinastuhuaman/trackly-cli"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
