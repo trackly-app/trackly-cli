@@ -1,5 +1,5 @@
 {
-  "name": "@trackly/cli",
+  "name": "trackly-cli",
   "version": "0.1.0",
   "description": "Trackly job tracker CLI + MCP server for AI agents",
   "bin": {
