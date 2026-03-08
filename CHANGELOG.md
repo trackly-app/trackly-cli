@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-03-08
+
+### Added
+
+- Implemented API key usage in the CLI via `--api-key`, `TRACKLY_API_KEY`, and `trackly config --api-key`
+- Added `trackly config`, `trackly version`, `trackly status`, and `trackly companies search <query>` command support
+- Added request timeout handling, manifest regression tests, CLI parser tests, and MCP startup smoke tests
+
+### Changed
+
+- MCP registry manifest now launches the package with the `mcp` subcommand and includes website metadata
+- CLI and public docs now match the actual command surface and auth flows
+- Authenticated requests now require HTTPS unless the target is localhost
+- Browser login flow now opens URLs without shell interpolation
+
 ## [0.1.3] - 2026-03-07
 
 ### Changed

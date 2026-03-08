@@ -37,8 +37,17 @@ trackly-cli stores authentication tokens in a local file at
 only). This follows the same approach used by established CLI tools such as
 `gh` (GitHub CLI), `aws-cli`, and `gcloud`.
 
-Tokens are never logged, transmitted to third parties, or stored in
+If you configure an API key with `trackly config --api-key`, it is stored in
+the same config file with the same file permissions. API keys can also be
+passed via `TRACKLY_API_KEY` for one-off sessions.
+
+Credentials are never logged, transmitted to third parties, or stored in
 environment variables by default.
+
+## Transport Security
+
+trackly-cli refuses to send authentication credentials over insecure transport
+unless the destination is localhost for local development.
 
 ## Scope
 

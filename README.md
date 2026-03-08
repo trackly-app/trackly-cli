@@ -19,7 +19,7 @@ trackly jobs --function product_management
 
 ## At a Glance
 
-775+ companies | 99K+ jobs | 22 ATS types | 14 CLI commands | 7 MCP tools
+775+ companies | 99K+ jobs | 22 ATS types | CLI + MCP | 7 MCP tools
 
 ## CLI Commands
 
@@ -28,20 +28,26 @@ trackly jobs                          # List jobs
 trackly jobs --modality remote        # Filter remote jobs
 trackly jobs --function engineering   # Filter by function
 trackly job 1234                      # Get job details
+trackly jobs 1234                     # Alias for job details
 trackly companies                     # List companies
-trackly search "fintech"              # Semantic company search
+trackly companies search "fintech"    # Semantic company search
+trackly search "fintech"              # Alias for semantic company search
 trackly stats                         # Show metrics
+trackly status                        # Alias for stats
 trackly apply 1234                    # Mark as applied
 trackly save 1234                     # Save a job
 trackly dismiss 1234                  # Dismiss a job
 trackly ask "PM jobs in SF"           # Natural language search (20/day)
 trackly api-key create                # Generate API key
 trackly api-key list                  # List API keys
+trackly config                        # Show current CLI config
+trackly config --api-key trk_xxx      # Save an API key for future commands
+trackly version                       # Show installed version
 trackly whoami                        # Show current user
 trackly logout                        # Clear credentials
 ```
 
-Add `--json` to any command for JSON output.
+Add `--json` to any command for JSON output. Use `--api-key <key>` or `--base-url <url>` as one-off global flags when needed.
 
 ## MCP Server Setup
 
@@ -51,7 +57,7 @@ Add `--json` to any command for JSON output.
 claude mcp add-json trackly '{"command":"trackly","args":["mcp"]}'
 ```
 
-### Manual config
+### Claude Code manual config
 
 Add to `~/.claude/settings.json`:
 
@@ -66,7 +72,22 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-Then use natural language in Claude Code:
+### Cursor
+
+Add to `.cursor/mcp.json` or `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "trackly": {
+      "command": "trackly",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Then use natural language in Claude Code or Cursor:
 
 - "Find me PM jobs at fintech companies"
 - "What remote engineering roles are available?"
@@ -92,7 +113,30 @@ For programmatic access without OAuth:
 trackly api-key create --name "my-script"
 ```
 
-Use the generated key with the `--api-key` flag or set the `TRACKLY_API_KEY` environment variable.
+Use the generated key with any of these flows:
+
+```bash
+# Save it locally for future commands
+trackly config --api-key trk_xxxxxxxxxxxxxxxxxxxx
+
+# Use it for one command
+trackly --api-key trk_xxxxxxxxxxxxxxxxxxxx jobs --json
+
+# Or use an environment variable
+TRACKLY_API_KEY=trk_xxxxxxxxxxxxxxxxxxxx trackly jobs --json
+```
+
+To clear a stored key:
+
+```bash
+trackly config --clear-api-key
+```
+
+To point the CLI at a different backend:
+
+```bash
+trackly config --base-url http://127.0.0.1:3000
+```
 
 ## Comparison
 
@@ -111,7 +155,7 @@ Web: [usetrackly.app](https://usetrackly.app) | API docs: [usetrackly.app/develo
 
 **How do I track job applications from the terminal?**
 
-Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly login`, then use `trackly jobs` to browse openings and `trackly apply <id>` to mark applications. All data syncs with the Trackly web app at usetrackly.app.
+Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly login` or configure an API key, then use `trackly jobs` to browse openings and `trackly apply <id>` to mark applications. All data syncs with the Trackly web app at usetrackly.app.
 
 **What MCP servers exist for job searching?**
 
@@ -128,7 +172,10 @@ trackly-cli is the first dedicated job tracking CLI. It provides direct terminal
 ## Security
 
 - OAuth tokens stored in `~/.trackly/config.json` with 0600 permissions
+- API keys can be stored in the same config file or passed per-command
 - OAuth callback bound to 127.0.0.1 only
+- Authenticated requests require HTTPS unless you are pointing at localhost
+- HTTP requests time out instead of hanging indefinitely
 - CSRF protection on login flow
 - See [SECURITY.md](SECURITY.md) for vulnerability reporting
 

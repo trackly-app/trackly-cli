@@ -1,6 +1,12 @@
 ## Trackly Job Tracker (MCP)
 
-Trackly MCP server provides job search and tracking tools. Add to your Claude Code settings:
+Trackly MCP server provides job search and tracking tools. Start it with:
+
+```bash
+trackly mcp
+```
+
+### Claude Code
 
 ```json
 {
@@ -12,6 +18,37 @@ Trackly MCP server provides job search and tracking tools. Add to your Claude Co
   }
 }
 ```
+
+### Cursor
+
+Add to `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "trackly": {
+      "command": "trackly",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Authentication
+
+Use either interactive OAuth:
+
+```bash
+trackly login
+```
+
+Or an API key:
+
+```bash
+trackly config --api-key trk_xxxxxxxxxxxxxxxxxxxx
+```
+
+You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 
 ### Available Tools
 
