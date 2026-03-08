@@ -5,9 +5,11 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 const { z } = require('zod');
 const { apiRequest, getToken } = require('../lib/client');
 
+const MCP_USER_AGENT = 'trackly-mcp/0.1.3';
+
 const server = new McpServer({
   name: 'trackly',
-  version: '0.1.2',
+  version: '0.1.3',
 });
 
 // Tool: Search/filter jobs
@@ -30,7 +32,7 @@ server.tool(
       if (v !== undefined && v !== null) qs.set(k, String(v));
     }
     try {
-      const result = await apiRequest('GET', `/api/jobscout/jobs?${qs.toString()}`);
+      const result = await apiRequest('GET', `/api/jobscout/jobs?${qs.toString()}`, null, false, false, MCP_USER_AGENT);
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     } catch (e) {
       return { content: [{ type: 'text', text: JSON.stringify({ error: e.error || e.message }) }], isError: true };
@@ -47,7 +49,7 @@ server.tool(
   },
   async ({ id }) => {
     try {
-      const result = await apiRequest('GET', `/api/jobscout/jobs/${id}`);
+      const result = await apiRequest('GET', `/api/jobscout/jobs/${id}`, null, false, false, MCP_USER_AGENT);
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     } catch (e) {
       return { content: [{ type: 'text', text: JSON.stringify({ error: e.error || e.message }) }], isError: true };
@@ -67,7 +69,7 @@ server.tool(
     const qs = new URLSearchParams({ q: query });
     if (limit) qs.set('limit', String(limit));
     try {
-      const result = await apiRequest('GET', `/api/jobscout/companies/search?${qs.toString()}`);
+      const result = await apiRequest('GET', `/api/jobscout/companies/search?${qs.toString()}`, null, false, false, MCP_USER_AGENT);
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     } catch (e) {
       return { content: [{ type: 'text', text: JSON.stringify({ error: e.error || e.message }) }], isError: true };
@@ -88,7 +90,7 @@ server.tool(
     if (limit) qs.set('limit', String(limit));
     if (offset) qs.set('offset', String(offset));
     try {
-      const result = await apiRequest('GET', `/api/jobscout/companies?${qs.toString()}`);
+      const result = await apiRequest('GET', `/api/jobscout/companies?${qs.toString()}`, null, false, false, MCP_USER_AGENT);
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     } catch (e) {
       return { content: [{ type: 'text', text: JSON.stringify({ error: e.error || e.message }) }], isError: true };
@@ -103,7 +105,7 @@ server.tool(
   {},
   async () => {
     try {
-      const result = await apiRequest('GET', '/api/jobscout/me');
+      const result = await apiRequest('GET', '/api/jobscout/me', null, false, false, MCP_USER_AGENT);
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     } catch (e) {
       return { content: [{ type: 'text', text: JSON.stringify({ error: e.error || e.message }) }], isError: true };
@@ -121,7 +123,7 @@ server.tool(
   },
   async ({ id, action }) => {
     try {
-      const result = await apiRequest('POST', '/api/jobscout-tracker/status', { jobId: id, action });
+      const result = await apiRequest('POST', '/api/jobscout-tracker/status', { jobId: id, action }, false, false, MCP_USER_AGENT);
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     } catch (e) {
       return { content: [{ type: 'text', text: JSON.stringify({ error: e.error || e.message }) }], isError: true };
@@ -138,10 +140,10 @@ server.tool(
   },
   async ({ query }) => {
     try {
-      const askResult = await apiRequest('GET', `/api/jobscout/ask?q=${encodeURIComponent(query)}`);
+      const askResult = await apiRequest('GET', `/api/jobscout/ask?q=${encodeURIComponent(query)}`, null, false, false, MCP_USER_AGENT);
       // Auto-fetch jobs with parsed filters
       if (askResult.jobsUrl && askResult.jobsUrl.startsWith('/api/')) {
-        const jobsResult = await apiRequest('GET', askResult.jobsUrl);
+        const jobsResult = await apiRequest('GET', askResult.jobsUrl, null, false, false, MCP_USER_AGENT);
         return { content: [{ type: 'text', text: JSON.stringify({ ...askResult, jobs: jobsResult.jobs || jobsResult.data || [] }, null, 2) }] };
       }
       return { content: [{ type: 'text', text: JSON.stringify(askResult, null, 2) }] };
