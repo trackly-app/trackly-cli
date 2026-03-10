@@ -24,6 +24,8 @@ jobs:
 
       - run: npm test
 
+      - run: npm audit --audit-level=high
+
       - run: npm pack --dry-run
 
       - run: npm publish --provenance --access public

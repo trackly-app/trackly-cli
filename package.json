@@ -1,6 +1,6 @@
 {
   "name": "trackly-cli",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "mcpName": "io.github.kevinastuhuaman/trackly",
   "description": "CLI + MCP server for job tracking — search, apply, and manage applications from terminal or AI agents",
   "bin": {
@@ -46,7 +46,7 @@
     "url": "https://github.com/kevinastuhuaman/trackly-cli/issues"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "zod": "^3.23.0"
   },
   "engines": {
