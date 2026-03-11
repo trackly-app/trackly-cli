@@ -13,13 +13,13 @@ const {
   loadConfig,
   saveConfig,
 } = require('../lib/client');
-const { color, isJSON, outputJobs, outputCompanies, outputStats, outputContacts, outputReferralCampaign, outputNetworkBrief, outputError } = require('../lib/formatters');
+const { color, isJSON, outputJobs, outputCompanies, outputStats, outputContacts, outputReferralCampaign, outputNetworkBrief, outputCompanyBrief, outputCompanyWorkspace, outputError } = require('../lib/formatters');
 const http = require('http');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { version: VERSION } = require('../package.json');
 
-const BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'version', 'v', 'clear-api-key', 'clear-base-url']);
+const BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'version', 'v', 'clear-api-key', 'clear-base-url', 'refresh']);
 const VALUE_FLAGS = new Set([
   'api-key',
   'base-url',
@@ -511,6 +511,46 @@ async function cmdBrief(args) {
   }
 }
 
+async function cmdCompanyBrief(args) {
+  const id = parseJobId(args._[0]);
+  if (id === null) failNow('Company ID must be a positive integer. Usage: trackly company-brief <companyId> [--refresh]');
+  if (!hasAuth()) failNow(AUTH_HELP_TEXT);
+
+  try {
+    if (args.refresh) {
+      const result = await apiRequest('POST', `/api/network/companies/${id}/brief/refresh`);
+      if (isJSON()) return printJson(result);
+      console.log(color('green', 'Company brief refresh triggered.'));
+      outputCompanyBrief(result.brief || result);
+    } else {
+      const result = await apiRequest('GET', `/api/network/companies/${id}/brief`);
+      if (isJSON()) return printJson(result);
+      const brief = result.brief || result;
+      if (!brief || (typeof brief === 'object' && Object.keys(brief).length === 0)) {
+        console.log(color('dim', 'No brief available. Use --refresh to generate.'));
+      } else {
+        outputCompanyBrief(brief);
+      }
+    }
+  } catch (e) {
+    setErrorExit(e.error || e.message || 'Failed to fetch company brief');
+  }
+}
+
+async function cmdCompanyWorkspace(args) {
+  const id = parseJobId(args._[0]);
+  if (id === null) failNow('Company ID must be a positive integer. Usage: trackly company-workspace <companyId>');
+  if (!hasAuth()) failNow(AUTH_HELP_TEXT);
+
+  try {
+    const result = await apiRequest('GET', `/api/network/companies/${id}/workspace`);
+    if (isJSON()) return printJson(result);
+    outputCompanyWorkspace(result.workspace || result);
+  } catch (e) {
+    setErrorExit(e.error || e.message || 'Failed to fetch company workspace');
+  }
+}
+
 async function cmdConfig(args) {
   if (args['api-key'] === null) failNow('API key value required. Usage: trackly config --api-key <key>');
   if (args['base-url'] === null) failNow('Base URL value required. Usage: trackly config --base-url <url>');
@@ -597,6 +637,8 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'referral start <id>')} Start a referral campaign for a job
   ${color('cyan', 'referral status <id>')} Check referral campaign progress
   ${color('cyan', 'brief <id>')}           Get network brief for a job
+  ${color('cyan', 'company-brief <id>')}   Get company brief (--refresh to generate)
+  ${color('cyan', 'company-workspace <id>')} Show company workspace (jobs, contacts, campaigns)
   ${color('cyan', 'api-key create')}       Generate an API key
   ${color('cyan', 'api-key list')}         List your API keys
   ${color('cyan', 'config')}               Show or update CLI config (--api-key, --base-url)
@@ -711,6 +753,12 @@ async function main() {
       break;
     case 'brief':
       await cmdBrief(args);
+      break;
+    case 'company-brief':
+      await cmdCompanyBrief(args);
+      break;
+    case 'company-workspace':
+      await cmdCompanyWorkspace(args);
       break;
     case 'api-key':
       await cmdApiKey(args);

@@ -191,6 +191,17 @@ function createServer() {
     }, 'Failed to search contacts at company')
   );
 
+  server.tool(
+    'trackly_get_company_workspace',
+    'Get the full workspace view for a company: active jobs, contacts, hiring managers, coverage gap, and campaign status.',
+    {
+      companyId: z.number().describe('Company ID'),
+    },
+    wrapTool(async ({ companyId }) => {
+      return apiRequest('GET', `/api/network/companies/${companyId}/workspace`, null, false, false, MCP_USER_AGENT);
+    }, 'Failed to fetch company workspace')
+  );
+
   return server;
 }
 

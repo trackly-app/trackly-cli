@@ -36,7 +36,7 @@ There is no test suite, no linter, and no build step. The package ships raw JS.
 
 1. User runs `trackly mcp` (or AI agent spawns it via stdio)
 2. `bin/trackly` delegates to `mcp/server.js`
-3. `mcp/server.js` creates an `McpServer` with 9 tools, connects via `StdioServerTransport`
+3. `mcp/server.js` creates an `McpServer` with 10 tools, connects via `StdioServerTransport`
 4. Each tool calls `apiRequest()` from `lib/client.js` with a `trackly-mcp/<version>` User-Agent derived from `package.json`
 5. CLI commands use `trackly-cli/<version>` User-Agent derived from `package.json` (separate channel attribution)
 
@@ -45,7 +45,7 @@ MCP setup for Claude Code:
 claude mcp add-json trackly '{"command":"trackly","args":["mcp"]}'
 ```
 
-The 9 MCP tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`, `trackly_get_job_brief`, `trackly_contacts_at_company`
+The 10 MCP tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`, `trackly_get_job_brief`, `trackly_contacts_at_company`, `trackly_get_company_workspace`
 
 ## Publishing
 
@@ -77,6 +77,9 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `POST /api/network/jobs/:id/referral-campaign` -- Start referral campaign
 - `GET /api/network/jobs/:id/referral-campaign` -- Get referral campaign status
 - `GET /api/jobscout/jobs/:id/network-brief` -- Get network brief for a job
+- `GET /api/network/companies/:id/brief` -- Get company brief
+- `POST /api/network/companies/:id/brief/refresh` -- Refresh/generate company brief
+- `GET /api/network/companies/:id/workspace` -- Get company workspace (jobs, contacts, campaigns)
 - `GET /auth/google/cli` -- OAuth login redirect
 
 ## Gotchas

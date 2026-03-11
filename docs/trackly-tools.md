@@ -59,6 +59,9 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 - **trackly_get_stats** — Job tracker metrics dashboard
 - **trackly_update_status** — Mark a job as applied, saved, or dismissed
 - **trackly_ask** — Natural language job search (20/day limit)
+- **trackly_get_job_brief** — Get network brief for a job (company signal, top contact, actions)
+- **trackly_contacts_at_company** — Search contacts at a specific company
+- **trackly_get_company_workspace** — Get full company workspace (jobs, contacts, hiring managers, campaigns)
 
 ### Example Prompts
 
