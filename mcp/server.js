@@ -166,6 +166,31 @@ function createServer() {
     }, 'Failed to process natural language query')
   );
 
+  server.tool(
+    'trackly_get_job_brief',
+    'Get a network brief for a specific job. Returns company signal, recommended motion, top contact, and suggested actions.',
+    {
+      jobId: z.number().describe('Job posting ID'),
+    },
+    wrapTool(async ({ jobId }) => {
+      return apiRequest('GET', `/api/jobscout/jobs/${jobId}/network-brief`, null, false, false, MCP_USER_AGENT);
+    }, 'Failed to fetch network brief')
+  );
+
+  server.tool(
+    'trackly_contacts_at_company',
+    'Search contacts at a specific company. Returns matching contacts with name, title, email, and status.',
+    {
+      company: z.string().max(200).describe('Company name to search contacts for'),
+      limit: z.number().max(50).optional().describe('Max results (default 20)'),
+    },
+    wrapTool(async ({ company, limit }) => {
+      const qs = new URLSearchParams({ search: company });
+      if (limit) qs.set('limit', String(limit));
+      return apiRequest('GET', `/api/network/people?${qs.toString()}`, null, false, false, MCP_USER_AGENT);
+    }, 'Failed to search contacts at company')
+  );
+
   return server;
 }
 

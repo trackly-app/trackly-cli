@@ -13,10 +13,10 @@ CLI + MCP server for the Trackly job tracker. Lets users search 99K+ jobs across
 ## Directory Structure
 
 ```
-bin/trackly          # CLI entrypoint (shebang script). All 14 commands + arg parser + main()
+bin/trackly          # CLI entrypoint (shebang script). All 19 commands + arg parser + main()
 lib/client.js        # HTTP client: config loading, token refresh, apiRequest()
-lib/formatters.js    # Terminal output: color(), outputJobs(), outputCompanies(), outputStats()
-mcp/server.js        # MCP server: 7 tools, launched via `trackly mcp`
+lib/formatters.js    # Terminal output: color(), outputJobs(), outputCompanies(), outputStats(), outputContacts(), outputReferralCampaign(), outputNetworkBrief()
+mcp/server.js        # MCP server: 9 tools, launched via `trackly mcp`
 docs/trackly-tools.md  # MCP tool reference (for embedding in AI contexts)
 server.json          # MCP Registry manifest (io.github.kevinastuhuaman/trackly)
 ```
@@ -36,7 +36,7 @@ There is no test suite, no linter, and no build step. The package ships raw JS.
 
 1. User runs `trackly mcp` (or AI agent spawns it via stdio)
 2. `bin/trackly` delegates to `mcp/server.js`
-3. `mcp/server.js` creates an `McpServer` with 7 tools, connects via `StdioServerTransport`
+3. `mcp/server.js` creates an `McpServer` with 9 tools, connects via `StdioServerTransport`
 4. Each tool calls `apiRequest()` from `lib/client.js` with a `trackly-mcp/<version>` User-Agent derived from `package.json`
 5. CLI commands use `trackly-cli/<version>` User-Agent derived from `package.json` (separate channel attribution)
 
@@ -45,7 +45,7 @@ MCP setup for Claude Code:
 claude mcp add-json trackly '{"command":"trackly","args":["mcp"]}'
 ```
 
-The 7 MCP tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`
+The 9 MCP tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`, `trackly_get_job_brief`, `trackly_contacts_at_company`
 
 ## Publishing
 
@@ -73,6 +73,10 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `GET /api/auth/api-keys` -- List API keys
 - `GET /api/auth/user` -- Current user info
 - `POST /api/auth/refresh` -- Token refresh
+- `GET /api/network/people` -- List/search contacts
+- `POST /api/network/jobs/:id/referral-campaign` -- Start referral campaign
+- `GET /api/network/jobs/:id/referral-campaign` -- Get referral campaign status
+- `GET /api/jobscout/jobs/:id/network-brief` -- Get network brief for a job
 - `GET /auth/google/cli` -- OAuth login redirect
 
 ## Gotchas

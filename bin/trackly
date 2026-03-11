@@ -13,7 +13,7 @@ const {
   loadConfig,
   saveConfig,
 } = require('../lib/client');
-const { color, isJSON, outputJobs, outputCompanies, outputStats, outputError } = require('../lib/formatters');
+const { color, isJSON, outputJobs, outputCompanies, outputStats, outputContacts, outputReferralCampaign, outputNetworkBrief, outputError } = require('../lib/formatters');
 const http = require('http');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
@@ -30,6 +30,7 @@ const VALUE_FLAGS = new Set([
   'modality',
   'name',
   'offset',
+  'search',
   'sort',
   'status',
 ]);
@@ -447,6 +448,69 @@ async function cmdApiKey(args) {
   }
 }
 
+async function cmdContacts(args) {
+  if (!hasAuth()) failNow(AUTH_HELP_TEXT);
+
+  const params = new URLSearchParams();
+  const searchQuery = args.search || args._.join(' ').trim();
+  if (searchQuery) params.set('search', searchQuery);
+  if (args.limit) params.set('limit', args.limit);
+  if (args.offset) params.set('offset', args.offset);
+
+  const qs = params.toString();
+  try {
+    const result = await apiRequest('GET', `/api/network/people${qs ? '?' + qs : ''}`);
+    outputContacts(result.contacts || result.people || result.data || []);
+    if (!isJSON() && result.total) {
+      console.log(color('dim', `Showing ${(result.contacts || result.people || result.data || []).length} of ${result.total} contacts`));
+    }
+  } catch (e) {
+    setErrorExit(e.error || e.message || 'Failed to fetch contacts');
+  }
+}
+
+async function cmdReferralStart(args) {
+  const id = parseJobId(args._[0]);
+  if (id === null) failNow('Job ID must be a positive integer. Usage: trackly referral start <id>');
+  if (!hasAuth()) failNow(AUTH_HELP_TEXT);
+
+  try {
+    const result = await apiRequest('POST', `/api/network/jobs/${id}/referral-campaign`);
+    if (isJSON()) return printJson(result);
+    outputReferralCampaign(result.campaign || result);
+  } catch (e) {
+    setErrorExit(e.error || e.message || 'Failed to start referral campaign');
+  }
+}
+
+async function cmdReferralStatus(args) {
+  const id = parseJobId(args._[0]);
+  if (id === null) failNow('Job ID must be a positive integer. Usage: trackly referral status <id>');
+  if (!hasAuth()) failNow(AUTH_HELP_TEXT);
+
+  try {
+    const result = await apiRequest('GET', `/api/network/jobs/${id}/referral-campaign`);
+    if (isJSON()) return printJson(result);
+    outputReferralCampaign(result.campaign || result);
+  } catch (e) {
+    setErrorExit(e.error || e.message || 'Failed to fetch referral campaign status');
+  }
+}
+
+async function cmdBrief(args) {
+  const id = parseJobId(args._[0]);
+  if (id === null) failNow('Job ID must be a positive integer. Usage: trackly brief <id>');
+  if (!hasAuth()) failNow(AUTH_HELP_TEXT);
+
+  try {
+    const result = await apiRequest('GET', `/api/jobscout/jobs/${id}/network-brief`);
+    if (isJSON()) return printJson(result);
+    outputNetworkBrief(result.brief || result);
+  } catch (e) {
+    setErrorExit(e.error || e.message || 'Failed to fetch network brief');
+  }
+}
+
 async function cmdConfig(args) {
   if (args['api-key'] === null) failNow('API key value required. Usage: trackly config --api-key <key>');
   if (args['base-url'] === null) failNow('Base URL value required. Usage: trackly config --base-url <url>');
@@ -528,6 +592,11 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'save <id>')}            Save a job
   ${color('cyan', 'dismiss <id>')}         Dismiss a job
   ${color('cyan', 'ask "query"')}          Natural language job search (20/day)
+  ${color('cyan', 'contacts')}             List your contacts (--search, --limit, --offset)
+  ${color('cyan', 'contacts search <q>')} Search contacts by name, company, or title
+  ${color('cyan', 'referral start <id>')} Start a referral campaign for a job
+  ${color('cyan', 'referral status <id>')} Check referral campaign progress
+  ${color('cyan', 'brief <id>')}           Get network brief for a job
   ${color('cyan', 'api-key create')}       Generate an API key
   ${color('cyan', 'api-key list')}         List your API keys
   ${color('cyan', 'config')}               Show or update CLI config (--api-key, --base-url)
@@ -623,6 +692,25 @@ async function main() {
       break;
     case 'ask':
       await cmdAsk(args);
+      break;
+    case 'contacts':
+      if (args._[0] === 'search') {
+        await cmdContacts({ ...args, _: [], search: args._.slice(1).join(' ') });
+      } else {
+        await cmdContacts(args);
+      }
+      break;
+    case 'referral':
+      if (args._[0] === 'start') {
+        await cmdReferralStart({ ...args, _: args._.slice(1) });
+      } else if (args._[0] === 'status') {
+        await cmdReferralStatus({ ...args, _: args._.slice(1) });
+      } else {
+        failNow('Unknown referral subcommand. Use: trackly referral start <id> | trackly referral status <id>');
+      }
+      break;
+    case 'brief':
+      await cmdBrief(args);
       break;
     case 'api-key':
       await cmdApiKey(args);
