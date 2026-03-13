@@ -39,6 +39,12 @@ trackly apply 1234                    # Mark as applied
 trackly save 1234                     # Save a job
 trackly dismiss 1234                  # Dismiss a job
 trackly ask "PM jobs in SF"           # Natural language search (20/day)
+trackly contacts "Stripe"             # Search contacts at a company
+trackly brief 1234                    # Get network brief for a job
+trackly referral start 1234           # Start a referral campaign
+trackly referral status 1234          # Check referral campaign status
+trackly company-brief 243             # Get company brief (--refresh to regenerate)
+trackly company-workspace 243         # Full company workspace view
 trackly api-key create                # Generate API key
 trackly api-key list                  # List API keys
 trackly config                        # Show current CLI config
