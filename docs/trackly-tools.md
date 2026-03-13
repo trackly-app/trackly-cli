@@ -52,7 +52,7 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 
 ### Available Tools
 
-- **trackly_search_jobs** — Search/filter jobs by function, location, modality, keywords
+- **trackly_search_jobs** — Search/filter jobs by function, company, location, modality, keywords. Function values: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `finance`, `operations`, `legal`, `people`, `strategy`, `support`, `other`
 - **trackly_get_job** — Get full job details by ID
 - **trackly_search_companies** — Semantic company search
 - **trackly_list_companies** — List all tracked companies with job counts

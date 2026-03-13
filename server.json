@@ -15,12 +15,12 @@
       "sizes": ["512x512"]
     }
   ],
-  "version": "0.1.8",
+  "version": "0.1.9",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "trackly-cli",
-      "version": "0.1.8",
+      "version": "0.1.9",
       "runtimeHint": "npx",
       "runtimeArguments": [
         {

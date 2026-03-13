@@ -14,19 +14,20 @@ Search 99,000+ jobs across 775+ companies and 22 ATS types. Track applications, 
 ```bash
 npm install -g trackly-cli
 trackly login
-trackly jobs --function product_management
+trackly jobs --function product
 ```
 
 ## At a Glance
 
-775+ companies | 99K+ jobs | 22 ATS types | CLI + MCP | 7 MCP tools
+775+ companies | 99K+ jobs | 22 ATS types | CLI + MCP | 10 MCP tools
 
 ## CLI Commands
 
 ```bash
 trackly jobs                          # List jobs
 trackly jobs --modality remote        # Filter remote jobs
-trackly jobs --function engineering   # Filter by function
+trackly jobs --function product        # Filter by function
+trackly jobs --company 243            # Filter by company ID
 trackly job 1234                      # Get job details
 trackly jobs 1234                     # Alias for job details
 trackly companies                     # List companies
@@ -97,13 +98,16 @@ Then use natural language in Claude Code or Cursor:
 
 | Tool | Description |
 |------|-------------|
-| trackly_search_jobs | Search and filter jobs by function, location, modality, status |
+| trackly_search_jobs | Search and filter jobs by function, company, location, modality, status |
 | trackly_get_job | Get full details for a specific job |
 | trackly_search_companies | Semantic company search |
 | trackly_list_companies | List all tracked companies |
 | trackly_get_stats | Job tracker metrics and status counts |
 | trackly_update_status | Mark jobs as applied, saved, or dismissed |
 | trackly_ask | Natural language job search (20/day) |
+| trackly_get_job_brief | Get network brief for a job (company signal, top contact, actions) |
+| trackly_contacts_at_company | Search contacts at a specific company |
+| trackly_get_company_workspace | Full company workspace (jobs, contacts, hiring managers, campaigns) |
 
 ## Authentication
 
@@ -163,7 +167,7 @@ trackly config --base-url http://127.0.0.1:3000  # Point at a different backend
 | Job search + filters | Yes | Yes | Yes |
 | Apply/save/dismiss | Yes | Yes | Yes |
 | AI-powered search | Yes (trackly ask) | Yes | Yes |
-| MCP integration | Yes (7 tools) | -- | -- |
+| MCP integration | Yes (10 tools) | -- | -- |
 | Browser required | No | Yes | No |
 | Best for | Terminal + AI agents | Visual browsing | Custom integrations |
 
@@ -177,7 +181,7 @@ Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly l
 
 **What MCP servers exist for job searching?**
 
-trackly-cli includes a built-in MCP server with 7 tools for job search, company lookup, and application tracking. Run `trackly mcp` or add it to Claude Code with `claude mcp add-json trackly '{"command":"trackly","args":["mcp"]}'`. It connects to a live database of 99,000+ jobs across 775+ companies.
+trackly-cli includes a built-in MCP server with 10 tools for job search, company lookup, and application tracking. Run `trackly mcp` or add it to Claude Code with `claude mcp add-json trackly '{"command":"trackly","args":["mcp"]}'`. It connects to a live database of 99,000+ jobs across 775+ companies.
 
 **How do I use Claude Code for job hunting?**
 

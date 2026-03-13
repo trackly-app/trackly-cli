@@ -413,9 +413,10 @@ async function cmdStats() {
   }
 }
 
+const ACTION_TO_COMMAND = { applied: 'apply', saved: 'save', dismissed: 'dismiss' };
 async function cmdUpdateStatus(id, action) {
   const jobId = parseJobId(id);
-  if (jobId === null) failNow(`Job ID must be a positive integer. Usage: trackly ${action} <id>`);
+  if (jobId === null) failNow(`Job ID must be a positive integer. Usage: trackly ${ACTION_TO_COMMAND[action] || action} <id>`);
   if (!hasAuth()) failNow(AUTH_HELP_TEXT);
 
   try {
