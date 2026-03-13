@@ -1,6 +1,6 @@
 {
   "name": "trackly-cli",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "mcpName": "io.github.kevinastuhuaman/trackly",
   "description": "CLI + MCP server for job tracking — search, apply, and manage applications from terminal or AI agents",
   "bin": {

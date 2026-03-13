@@ -324,14 +324,15 @@ async function cmdJobs(args) {
   if (!hasAuth()) failNow(AUTH_HELP_TEXT);
 
   const params = new URLSearchParams();
-  if (args.function) params.set('function', args.function);
+  if (args.function) params.set('jobFunction', args.function);
+  if (args.company) params.set('companyId', args.company);
   if (args.location) params.set('location', args.location);
   if (args.modality) params.set('modality', args.modality);
   if (args.status) params.set('status', args.status);
   if (args.sort) params.set('sort', args.sort);
   if (args.limit) params.set('limit', args.limit);
   if (args.offset) params.set('offset', args.offset);
-  if (args.keywords) params.set('keywords', args.keywords);
+  if (args.keywords) params.set('search', args.keywords);
 
   const qs = params.toString();
   try {
@@ -667,7 +668,7 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'login')}                Authenticate via Google OAuth
   ${color('cyan', 'logout')}               Clear credentials
   ${color('cyan', 'whoami')}               Show current user
-  ${color('cyan', 'jobs')}                 List jobs (--function, --location, --modality, --status, --sort, --limit, --offset)
+  ${color('cyan', 'jobs')}                 List jobs (--function, --company <id>, --location, --modality, --status, --sort, --limit, --offset, --keywords)
   ${color('cyan', 'job <id>')}             Get full job detail
   ${color('cyan', 'jobs <id>')}            Alias for job <id>
   ${color('cyan', 'companies')}            List companies

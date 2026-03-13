@@ -68,7 +68,7 @@ function createServer() {
     'trackly_search_jobs',
     'Search and filter job postings. Returns matching jobs with title, company, location, modality. Use companyId to filter jobs at a specific company (get companyId from trackly_search_companies first).',
     {
-      function: z.enum(['product_management', 'engineering', 'design', 'data_science', 'marketing', 'sales', 'finance', 'operations', 'legal', 'hr', 'other']).optional().describe('Job function filter: product_management, engineering, design, data_science, marketing, sales, finance, operations, legal, hr, other'),
+      function: z.enum(['product', 'engineering', 'design', 'data', 'marketing', 'sales', 'finance', 'operations', 'legal', 'people', 'strategy', 'support', 'other']).optional().describe('Job function filter (matches DB column). Common: product, engineering, design, data, marketing, sales, operations, other'),
       companyId: z.number().optional().describe('Filter jobs by company ID (get from trackly_search_companies)'),
       location: z.string().optional().describe('Location filter (city or state)'),
       modality: z.enum(['remote', 'hybrid', 'onsite']).optional().describe('Work modality: remote, hybrid, onsite'),
