@@ -47,6 +47,10 @@ claude mcp add-json trackly '{"command":"trackly","args":["mcp"]}'
 
 The 10 MCP tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`, `trackly_get_job_brief`, `trackly_contacts_at_company`, `trackly_get_company_workspace`
 
+Job function values (matches DB column): `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `finance`, `operations`, `legal`, `people`, `strategy`, `support`, `other`
+
+NOTE: The `/ask` endpoint uses `product_management`/`data_science` enum but the `/jobs` endpoint expects the DB values (`product`, `data`, etc). This is a known inconsistency.
+
 ## Publishing
 
 ```bash
@@ -92,3 +96,4 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 6. **The `ask` command has a 20/day rate limit** enforced server-side (429 response).
 7. **No dependencies beyond `@modelcontextprotocol/sdk` and `zod`.** Keep it minimal. The HTTP client uses raw `node:https`/`node:http`.
 8. **Token refresh is automatic.** On 401, `apiRequest()` tries one refresh via `/api/auth/refresh` before failing. The `_isRetry` flag prevents infinite loops.
+9. **Function enum mismatch.** The `/ask` LLM prompt uses `product_management`, `data_science` etc. but the `/jobs` endpoint's `jobFunction` param matches against the DB `job_function` column which stores `product`, `data`, etc. The MCP tool and CLI use the DB values directly. If a new function value is added to the DB, update the Zod enum in `mcp/server.js`.

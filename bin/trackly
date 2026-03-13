@@ -611,8 +611,12 @@ async function cmdConfig(args) {
 
   if (args['api-key'] !== undefined) {
     const keyValue = String(args['api-key']).trim();
-    if (!keyValue.startsWith('trk_') || keyValue.length < 10) {
-      console.log(color('yellow', 'Warning: API key does not look like a Trackly key (expected trk_... prefix). Saving anyway.'));
+    if (keyValue.startsWith('trk_') && keyValue.length < 14) {
+      failNow('Invalid API key: trk_ keys must be at least 14 characters (trk_ + 10). Run "trackly api-key create" to generate a valid key.');
+    } else if (!keyValue.startsWith('trk_') && keyValue.length < 20) {
+      failNow('Invalid API key: key does not start with trk_ and is too short (must be 20+ characters). Run "trackly api-key create" to generate a valid key.');
+    } else if (!keyValue.startsWith('trk_')) {
+      console.log(color('yellow', 'Warning: API key does not start with trk_ prefix. Saving as legacy/JWT key.'));
     }
     const hadToken = Boolean(config.token);
     config.apiKey = keyValue;

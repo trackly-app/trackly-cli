@@ -19,9 +19,28 @@ jobs:
 
       - run: npm ci
 
-      - run: npm audit --audit-level=moderate
+      - run: npm audit --audit-level=high
 
       - run: npm test
 
       - name: Package smoke test
         run: npm pack --dry-run
+
+      - name: Notify Slack on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_TRACKLY_CRITICAL }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          SAFE_MSG=$(echo "$COMMIT_MSG" | head -1)
+          BODY=":red_circle: *CI Failed* — \`${{ github.repository }}\`\n*Branch:* \`${{ github.ref_name }}\`\n*Commit:* \`${SHORT_SHA}\` — ${SAFE_MSG}\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View failed run>"
+          PAYLOAD=$(jq -n --arg text "$BODY" '{
+            text: $text,
+            blocks: [{ type: "section", text: { type: "mrkdwn", text: $text } }]
+          }')
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            curl -sfS -X POST "$SLACK_WEBHOOK_URL" \
+              -H 'Content-Type: application/json' \
+              -d "$PAYLOAD" || true
+          fi
