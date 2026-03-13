@@ -66,9 +66,10 @@ function createServer() {
 
   server.tool(
     'trackly_search_jobs',
-    'Search and filter job postings. Returns matching jobs with title, company, location, modality.',
+    'Search and filter job postings. Returns matching jobs with title, company, location, modality. Use companyId to filter jobs at a specific company (get companyId from trackly_search_companies first).',
     {
       function: z.enum(['product_management', 'engineering', 'design', 'data_science', 'marketing', 'sales', 'finance', 'operations', 'legal', 'hr', 'other']).optional().describe('Job function filter: product_management, engineering, design, data_science, marketing, sales, finance, operations, legal, hr, other'),
+      companyId: z.number().optional().describe('Filter jobs by company ID (get from trackly_search_companies)'),
       location: z.string().optional().describe('Location filter (city or state)'),
       modality: z.enum(['remote', 'hybrid', 'onsite']).optional().describe('Work modality: remote, hybrid, onsite'),
       status: z.enum(['new', 'saved', 'applied', 'dismissed']).optional().describe('Application status: new, saved, applied, dismissed'),
@@ -78,9 +79,17 @@ function createServer() {
       keywords: z.string().max(500).optional().describe('Keyword search in title/description'),
     },
     wrapTool(async (params) => {
+      // Map MCP param names to backend query param names
+      const paramMap = {
+        function: 'jobFunction',
+        keywords: 'search',
+      };
       const qs = new URLSearchParams();
       for (const [key, value] of Object.entries(params)) {
-        if (value !== undefined && value !== null) qs.set(key, String(value));
+        if (value !== undefined && value !== null) {
+          const backendKey = paramMap[key] || key;
+          qs.set(backendKey, String(value));
+        }
       }
       return apiRequest('GET', `/api/jobscout/jobs?${qs.toString()}`, null, false, false, MCP_USER_AGENT);
     }, 'Failed to search jobs')
