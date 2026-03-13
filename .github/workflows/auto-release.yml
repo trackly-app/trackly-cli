@@ -1,0 +1,71 @@
+name: Auto Release
+
+# Creates a GitHub Release whenever package.json version changes on main.
+# This ensures GitHub Releases stay in sync with npm — no more forgotten releases.
+# The existing publish.yml workflow then triggers on the release to publish to npm + MCP Registry.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect version change
+        id: version
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          PREVIOUS=$(git show HEAD~1:package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).version" 2>/dev/null || echo "")
+
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "previous=$PREVIOUS" >> "$GITHUB_OUTPUT"
+
+          if [ "$CURRENT" != "$PREVIOUS" ] && [ -n "$PREVIOUS" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Version changed: $PREVIOUS → $CURRENT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No version change ($CURRENT)"
+          fi
+
+      - name: Extract changelog for this version
+        if: steps.version.outputs.changed == 'true'
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.current }}"
+          # Extract the section for this version from CHANGELOG.md
+          NOTES=$(awk "/^## \\[$VERSION\\]/{found=1; next} /^## \\[/{if(found) exit} found{print}" CHANGELOG.md)
+
+          if [ -z "$NOTES" ]; then
+            NOTES="Release v$VERSION"
+          fi
+
+          # Write to file to avoid escaping issues
+          echo "$NOTES" > /tmp/release-notes.md
+
+      - name: Create GitHub Release
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.current }}"
+          TAG="v$VERSION"
+
+          # Create tag if it doesn't exist
+          git tag "$TAG" 2>/dev/null || true
+          git push origin "$TAG" 2>/dev/null || true
+
+          # Create release
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file /tmp/release-notes.md \
+            --latest
