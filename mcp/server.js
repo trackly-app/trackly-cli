@@ -7,7 +7,7 @@ const { apiRequest, hasAuth } = require('../lib/client');
 const { version: PACKAGE_VERSION } = require('../package.json');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
-const AUTH_HINT = 'Run `trackly login` or configure an API key with `trackly config --api-key <key>`.';
+const AUTH_HINT = 'Run `trackly login` or set TRACKLY_API_KEY. Get a key at https://usetrackly.app (sign in → Settings → API Keys).';
 
 function createErrorResult(error, fallbackMessage, extra = {}) {
   const payload = {

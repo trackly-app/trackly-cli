@@ -34,8 +34,10 @@ const VALUE_FLAGS = new Set([
   'sort',
   'status',
 ]);
-const AUTH_HELP_TEXT =
-  'Not authenticated. Run: trackly login or configure an API key with `trackly config --api-key <key>`';
+const AUTH_HELP_TEXT = `Not authenticated.
+  Option 1: trackly login                        (Google OAuth)
+  Option 2: trackly config --api-key trk_xxx     (get key at usetrackly.app)
+  Option 3: TRACKLY_API_KEY=trk_xxx trackly ...  (environment variable)`;
 const STATUS_LABELS = {
   applied: 'applied',
   saved: 'saved',
@@ -184,76 +186,111 @@ function getPublicConfig() {
 // -- Commands --
 
 async function cmdLogin() {
-  const port = 19847 + Math.floor(Math.random() * 1000);
   const baseUrl = getBaseUrl();
   const state = crypto.randomBytes(16).toString('hex');
 
   console.log(color('cyan', 'Opening browser for Google login...'));
-  console.log(color('dim', `Callback server on port ${port}`));
 
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    let timeoutId = null;
+  function tryLogin(port) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let timeoutId = null;
 
-    const server = http.createServer((req, res) => {
-      const url = new URL(req.url, `http://localhost:${port}`);
-      if (url.pathname === '/callback') {
-        const returnedState = url.searchParams.get('state');
-        if (returnedState !== state) {
-          res.writeHead(403, { 'Content-Type': 'text/html' });
-          res.end('<html><body><h2>Login failed. Invalid state parameter (possible CSRF).</h2></body></html>');
-          settle(new Error('CSRF state mismatch'));
-          return;
-        }
+      const server = http.createServer((req, res) => {
+        const url = new URL(req.url, `http://localhost:${port}`);
+        if (url.pathname === '/callback') {
+          const returnedState = url.searchParams.get('state');
+          if (returnedState !== state) {
+            res.writeHead(403, { 'Content-Type': 'text/html' });
+            res.end('<html><body><h2>Login failed. Invalid state parameter (possible CSRF).</h2></body></html>');
+            settle(new Error('CSRF state mismatch'));
+            return;
+          }
 
-        const token = url.searchParams.get('token');
-        const refreshToken = url.searchParams.get('refreshToken');
-        if (token) {
-          saveConfig({ ...loadConfig(), token, refreshToken, baseUrl });
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end('<html><body><h2>Logged in! You can close this tab.</h2><script>window.close()</script></body></html>');
-          console.log(color('green', 'Login successful!'));
-          settle();
+          const token = url.searchParams.get('token');
+          const refreshToken = url.searchParams.get('refreshToken');
+          if (token) {
+            const config = loadConfig();
+            const hadApiKey = Boolean(config.apiKey);
+            delete config.apiKey;
+            saveConfig({ ...config, token, refreshToken, baseUrl });
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end('<html><body><h2>Logged in! You can close this tab.</h2><script>window.close()</script></body></html>');
+            console.log(color('green', 'Login successful!'));
+            if (hadApiKey) {
+              console.log('Switched to OAuth. Stored API key cleared.');
+            }
+            settle();
+          } else {
+            res.writeHead(400, { 'Content-Type': 'text/html' });
+            res.end('<html><body><h2>Login failed. No token received.</h2></body></html>');
+            settle(new Error('No token received'));
+          }
         } else {
-          res.writeHead(400, { 'Content-Type': 'text/html' });
-          res.end('<html><body><h2>Login failed. No token received.</h2></body></html>');
-          settle(new Error('No token received'));
+          res.writeHead(404);
+          res.end();
         }
-      } else {
-        res.writeHead(404);
-        res.end();
-      }
-    });
+      });
 
-    const settle = (error = null) => {
-      if (settled) return;
-      settled = true;
-      if (timeoutId) clearTimeout(timeoutId);
+      const settle = (error = null) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId) clearTimeout(timeoutId);
 
-      const finish = () => {
-        if (error) reject(error);
-        else resolve();
+        const finish = () => {
+          if (error) {
+            console.log('\nLogin failed. Try API key auth instead:');
+            console.log('  1. Sign in at https://usetrackly.app');
+            console.log('  2. Go to Settings → API Keys → Create');
+            console.log('  3. Run: trackly config --api-key <your-key>');
+            reject(error);
+          } else {
+            resolve();
+          }
+        };
+
+        if (server.listening) {
+          server.close(finish);
+        } else {
+          finish();
+        }
       };
 
-      if (server.listening) {
-        server.close(finish);
-      } else {
-        finish();
-      }
-    };
+      server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+          reject(err);
+        } else {
+          settle(err);
+        }
+      });
 
-    server.on('error', settle);
-    server.listen(port, '127.0.0.1', () => {
-      const loginUrl = `${baseUrl}/auth/google/cli?port=${port}&state=${state}`;
-      if (!openExternalUrl(loginUrl)) {
-        console.log(`Open this URL in your browser:\n${loginUrl}`);
-      }
+      server.listen(port, '127.0.0.1', () => {
+        console.log(color('dim', `Callback server on port ${port}`));
+        const loginUrl = `${baseUrl}/auth/google/cli?port=${port}&state=${state}`;
+        if (!openExternalUrl(loginUrl)) {
+          console.log(`Open this URL in your browser:\n${loginUrl}`);
+        }
+      });
+
+      timeoutId = setTimeout(() => {
+        settle(new Error('Login timed out'));
+      }, 300000);
     });
+  }
 
-    timeoutId = setTimeout(() => {
-      settle(new Error('Login timed out'));
-    }, 120000);
-  });
+  const MAX_PORT_RETRIES = 3;
+  for (let attempt = 0; attempt < MAX_PORT_RETRIES; attempt++) {
+    const port = 19847 + Math.floor(Math.random() * 1000);
+    try {
+      return await tryLogin(port);
+    } catch (err) {
+      if (err.code === 'EADDRINUSE' && attempt < MAX_PORT_RETRIES - 1) {
+        console.log(color('dim', `Port ${port} in use, trying another...`));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 async function cmdLogout() {
@@ -571,9 +608,19 @@ async function cmdConfig(args) {
   }
 
   if (args['api-key'] !== undefined) {
-    config.apiKey = String(args['api-key']).trim();
+    const keyValue = String(args['api-key']).trim();
+    if (!keyValue.startsWith('trk_') || keyValue.length < 10) {
+      console.log(color('yellow', 'Warning: API key does not look like a Trackly key (expected trk_... prefix). Saving anyway.'));
+    }
+    const hadToken = Boolean(config.token);
+    config.apiKey = keyValue;
+    delete config.token;
+    delete config.refreshToken;
     updated = true;
-    console.log(color('green', 'API key saved. It will take precedence over OAuth tokens.'));
+    console.log(color('green', 'API key saved.'));
+    if (hadToken) {
+      console.log('Switched to API key auth. OAuth token cleared.');
+    }
   }
 
   if (args['base-url'] !== undefined) {

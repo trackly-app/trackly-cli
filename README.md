@@ -105,37 +105,55 @@ Then use natural language in Claude Code or Cursor:
 | trackly_update_status | Mark jobs as applied, saved, or dismissed |
 | trackly_ask | Natural language job search (20/day) |
 
-## API Key
+## Authentication
 
-For programmatic access without OAuth:
+### Option 1: Google OAuth (recommended)
+
+```bash
+trackly login
+```
+
+Opens your browser for Google sign-in. Tokens are stored locally at `~/.trackly/config.json`.
+
+### Option 2: API Key
+
+If OAuth doesn't work (firewalls, headless servers, CI), use an API key instead:
+
+1. Sign in at [usetrackly.app](https://usetrackly.app)
+2. Go to **Settings → API Keys → Create**
+3. Save the key:
+
+```bash
+trackly config --api-key trk_xxxxxxxxxxxxxxxxxxxx
+```
+
+Or pass it per-command:
+
+```bash
+trackly --api-key trk_xxxxxxxxxxxxxxxxxxxx jobs --json
+```
+
+Or set it as an environment variable:
+
+```bash
+export TRACKLY_API_KEY=trk_xxxxxxxxxxxxxxxxxxxx
+trackly jobs
+```
+
+### Generate a key from the CLI
+
+If you're already logged in via OAuth, you can create a key without visiting the web app:
 
 ```bash
 trackly api-key create --name "my-script"
+trackly api-key list
 ```
 
-Use the generated key with any of these flows:
+### Other config
 
 ```bash
-# Save it locally for future commands
-trackly config --api-key trk_xxxxxxxxxxxxxxxxxxxx
-
-# Use it for one command
-trackly --api-key trk_xxxxxxxxxxxxxxxxxxxx jobs --json
-
-# Or use an environment variable
-TRACKLY_API_KEY=trk_xxxxxxxxxxxxxxxxxxxx trackly jobs --json
-```
-
-To clear a stored key:
-
-```bash
-trackly config --clear-api-key
-```
-
-To point the CLI at a different backend:
-
-```bash
-trackly config --base-url http://127.0.0.1:3000
+trackly config --clear-api-key           # Clear stored API key
+trackly config --base-url http://127.0.0.1:3000  # Point at a different backend
 ```
 
 ## Comparison
