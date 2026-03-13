@@ -1,0 +1,105 @@
+name: Docs Drift Check
+
+# Validates that README, docs, and server.json stay in sync with actual
+# CLI commands (bin/trackly) and MCP tools (mcp/server.js).
+# Catches documentation drift before it reaches main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check MCP tool count matches docs
+        run: |
+          # Count actual tools registered in mcp/server.js
+          ACTUAL_TOOLS=$(grep -c "server\.tool(" mcp/server.js)
+          echo "Actual MCP tools: $ACTUAL_TOOLS"
+
+          # Check README mentions correct count
+          README_COUNT=$(grep -oP '\d+ MCP tools' README.md | grep -oP '\d+')
+          echo "README claims: $README_COUNT MCP tools"
+
+          if [ "$ACTUAL_TOOLS" != "$README_COUNT" ]; then
+            echo "::error::README says $README_COUNT MCP tools but server.js has $ACTUAL_TOOLS"
+            exit 1
+          fi
+
+      - name: Check all MCP tools are documented
+        run: |
+          # Extract tool names from server.js
+          TOOLS=$(grep "server\.tool(" mcp/server.js | grep -oP "'[^']+'" | tr -d "'")
+          MISSING=0
+
+          for tool in $TOOLS; do
+            # Check README tool table
+            if ! grep -q "$tool" README.md; then
+              echo "::error::Tool '$tool' exists in mcp/server.js but missing from README.md"
+              MISSING=1
+            fi
+
+            # Check docs/trackly-tools.md
+            if ! grep -q "$tool" docs/trackly-tools.md; then
+              echo "::error::Tool '$tool' exists in mcp/server.js but missing from docs/trackly-tools.md"
+              MISSING=1
+            fi
+          done
+
+          if [ "$MISSING" = "1" ]; then
+            exit 1
+          fi
+          echo "All MCP tools documented"
+
+      - name: Check all CLI commands are documented
+        run: |
+          # Extract command names from bin/trackly case statements
+          COMMANDS=$(grep "case '" bin/trackly | grep -oP "(?<=case ')[^']+")
+          MISSING=0
+
+          for cmd in $COMMANDS; do
+            # 'mcp' is internal, skip it
+            if [ "$cmd" = "mcp" ]; then continue; fi
+
+            if ! grep -q "trackly $cmd" README.md && ! grep -q "trackly ${cmd}" README.md; then
+              echo "::warning::CLI command '$cmd' exists in bin/trackly but not documented in README.md"
+              MISSING=1
+            fi
+          done
+
+          if [ "$MISSING" = "1" ]; then
+            echo "::error::Undocumented CLI commands found. Update README.md."
+            exit 1
+          fi
+          echo "All CLI commands documented"
+
+      - name: Check server.json version matches package.json
+        run: |
+          PKG_VER=$(node -p "require('./package.json').version")
+          SRV_VER=$(node -p "require('./server.json').version")
+          SRV_PKG_VER=$(node -p "require('./server.json').packages[0].version")
+
+          echo "package.json: $PKG_VER"
+          echo "server.json version: $SRV_VER"
+          echo "server.json packages[0].version: $SRV_PKG_VER"
+
+          FAIL=0
+          if [ "$PKG_VER" != "$SRV_VER" ]; then
+            echo "::error::package.json ($PKG_VER) != server.json version ($SRV_VER)"
+            FAIL=1
+          fi
+          if [ "$PKG_VER" != "$SRV_PKG_VER" ]; then
+            echo "::error::package.json ($PKG_VER) != server.json packages[0].version ($SRV_PKG_VER)"
+            FAIL=1
+          fi
+
+          if [ "$FAIL" = "1" ]; then
+            exit 1
+          fi
+          echo "All versions in sync"

@@ -28,9 +28,17 @@ jobs:
 
       - run: npm pack --dry-run
 
-      - run: npm publish --provenance --access public
+      - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm publish --provenance --access public 2>&1 || {
+            if npm view trackly-cli version 2>/dev/null | grep -qF "$(node -p 'require("./package.json").version')"; then
+              echo "Version already published to npm — skipping (likely manual publish before auto-release existed)"
+            else
+              exit 1
+            fi
+          }
 
       - name: Install mcp-publisher
         run: |
