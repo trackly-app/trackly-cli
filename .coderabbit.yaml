@@ -1,0 +1,35 @@
+# .coderabbit.yaml
+reviews:
+  path_instructions:
+    - path: "**/*.{js,ts}"
+      instructions: |
+        Public npm package (trackly v0.1.x). Semver rules:
+        - Breaking changes (removed commands, changed output format) = MAJOR version bump
+        - New features (new commands, new flags) = MINOR version bump
+        - Bug fixes = PATCH version bump
+        Node 18+ required. Dependencies must be minimal (MCP SDK + Zod only).
+        Config stored at ~/.trackly/config.json (700 permissions — user-only access).
+        HTTPS enforced for all API calls. Localhost HTTP allowed for development only.
+        HTTP timeout: 30s default. Token refresh via /api/auth/refresh endpoint.
+
+    - path: "mcp/**"
+      instructions: |
+        MCP (Model Context Protocol) server for AI tool integration.
+        Tools expose job search, detail, and action endpoints.
+        Rate limit: 20 natural language queries per day (429 response).
+        User-Agent header: trackly-mcp/{version}.
+        Error handling: 401 auth errors, 429 rate limits wrapped in JSON text responses.
+        Tool parameter mapping: function→jobFunction, keywords→search.
+
+    - path: "server.json"
+      instructions: |
+        MCP server manifest. Lists all available tools and their schemas.
+        Changes here affect how AI assistants discover and call Trackly tools.
+        Verify tool names and parameter schemas match mcp/server.js implementation.
+
+    - path: "package.json"
+      instructions: |
+        Public npm package. Version bumps must follow semver strictly.
+        Bin entry: ./bin/trackly (must be executable).
+        Files array controls what's published — verify new files are included.
+        Never add dependencies that phone home or have unclear licenses.
