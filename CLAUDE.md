@@ -27,7 +27,6 @@ server.json          # MCP Registry manifest (io.github.kevinastuhuaman/trackly)
 # No build step -- pure JS
 node bin/trackly --help        # Run locally without installing
 npm link                       # Symlink for local dev
-npm publish                    # Publish to npm (needs npm login)
 ```
 
 There is no test suite, no linter, and no build step. The package ships raw JS.
@@ -53,14 +52,12 @@ NOTE: The `/ask` endpoint uses `product_management`/`data_science` enum but the 
 
 ## Publishing
 
-```bash
-# Bump version in TWO places before publishing:
-# 1. package.json         → runtime version for CLI + MCP User-Agent strings
-# 2. server.json          → manifest "version" + packages[0].version
-npm publish
-```
+Publishing is fully automated via GitHub Actions:
+1. Bump version in `package.json` + `server.json` and push to `main`
+2. `auto-release.yml` creates a GitHub Release from the version bump
+3. `publish.yml` publishes to npm with provenance using a CI-only `NPM_TOKEN` secret
 
-CI/CD: GitHub Actions handles automated testing and npm publishing with provenance.
+**Do not run `npm publish` locally.** No local npm auth token is needed. If a manual publish is ever required as a break-glass measure, create a short-lived granular token just-in-time and revoke it immediately after.
 
 ## API Endpoints Used
 
