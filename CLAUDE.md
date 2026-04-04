@@ -59,6 +59,12 @@ Publishing is fully automated via GitHub Actions:
 
 **Do not run `npm publish` locally.** No local npm auth token is needed. If a manual publish is ever required as a break-glass measure, create a short-lived granular token just-in-time and revoke it immediately after.
 
+## Merge Strategy
+
+- Always use `gh pr merge --merge` (merge commits). NEVER `--squash`, NEVER `--rebase`.
+- NEVER use `--delete-branch` — fails in Conductor worktrees and blocks the post-merge sync hook.
+- GitHub auto-deletes remote branches via repo settings.
+
 ## API Endpoints Used
 
 All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json`):
