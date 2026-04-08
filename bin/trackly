@@ -706,7 +706,7 @@ ${color('bold', 'Flags:')}
   --help                Show this help
 
 ${color('bold', 'MCP Setup:')}
-  Claude Code: claude mcp add-json trackly '{"command":"trackly","args":["mcp"]}'
+  Claude Code: claude mcp add --scope user trackly -- trackly mcp
   Cursor: add {"command":"trackly","args":["mcp"]} to .cursor/mcp.json
 `);
 }
