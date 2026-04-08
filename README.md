@@ -12,10 +12,12 @@ Search 99,000+ jobs across 775+ companies and 22 ATS types. Track applications, 
 ## Quick Start
 
 ```bash
-npm install -g trackly-cli
+npm install -g trackly-cli    # may need: sudo npm install -g trackly-cli
 trackly login
 trackly jobs --function product
 ```
+
+> **Prerequisites:** [Node.js 18+](https://nodejs.org/) (LTS recommended). On macOS with the official `.pkg` installer, global npm installs may require `sudo`.
 
 ## At a Glance
 
@@ -61,7 +63,13 @@ Add `--json` to any command for JSON output. Use `--api-key <key>` or `--base-ur
 ### One-liner (recommended)
 
 ```bash
-claude mcp add-json trackly '{"command":"trackly","args":["mcp"]}'
+claude mcp add --scope user trackly -- trackly mcp
+```
+
+Or equivalently:
+
+```bash
+claude mcp add-json --scope user trackly '{"command":"trackly","args":["mcp"]}'
 ```
 
 ### Claude Code manual config
@@ -187,7 +195,7 @@ Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly l
 
 **What MCP servers exist for job searching?**
 
-trackly-cli includes a built-in MCP server with 10 tools for job search, company lookup, and application tracking. Run `trackly mcp` or add it to Claude Code with `claude mcp add-json trackly '{"command":"trackly","args":["mcp"]}'`. It connects to a live database of 99,000+ jobs across 775+ companies.
+trackly-cli includes a built-in MCP server with 10 tools for job search, company lookup, and application tracking. Run `trackly mcp` or add it to Claude Code with `claude mcp add --scope user trackly -- trackly mcp`. It connects to a live database of 99,000+ jobs across 775+ companies.
 
 **How do I use Claude Code for job hunting?**
 

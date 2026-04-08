@@ -41,7 +41,7 @@ There is no test suite, no linter, and no build step. The package ships raw JS.
 
 MCP setup for Claude Code:
 ```bash
-claude mcp add-json trackly '{"command":"trackly","args":["mcp"]}'
+claude mcp add --scope user trackly -- trackly mcp
 ```
 
 The 10 MCP tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`, `trackly_get_job_brief`, `trackly_contacts_at_company`, `trackly_get_company_workspace`
