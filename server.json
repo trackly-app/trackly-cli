@@ -38,5 +38,19 @@
         "type": "stdio"
       }
     }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.usetrackly.app/api/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer API key (trk_*). Create one at https://usetrackly.app/settings",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
   ]
 }
