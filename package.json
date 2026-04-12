@@ -2,7 +2,7 @@
   "name": "trackly-cli",
   "version": "0.1.13",
   "mcpName": "io.github.kevinastuhuaman/trackly",
-  "description": "CLI + MCP server for job tracking — search, apply, and manage applications from terminal or AI agents",
+  "description": "AI job search CLI + MCP server. Search 128K+ jobs across 1,900+ companies and 40+ ATS types. Filter by role, location, visa sponsorship. Natural language queries. Works with Claude Code, Cursor, Windsurf, OpenClaw, Codex, and any MCP client.",
   "bin": {
     "trackly": "./bin/trackly"
   },
