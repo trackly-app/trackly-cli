@@ -1,6 +1,6 @@
 {
   "name": "trackly-cli",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "mcpName": "io.github.kevinastuhuaman/trackly",
   "description": "CLI + MCP server for job tracking — search, apply, and manage applications from terminal or AI agents",
   "bin": {
@@ -35,7 +35,7 @@
     "career",
     "terminal"
   ],
-  "author": "Kevin Astuhuaman <kevin.astuhuaman.flores@gmail.com>",
+  "author": "Kevin Astuhuaman <hello@usetrackly.app>",
   "license": "MIT",
   "repository": {
     "type": "git",

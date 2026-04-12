@@ -12,7 +12,7 @@
 If you discover a security vulnerability in trackly-cli, please report it
 responsibly by emailing:
 
-**kevin.astuhuaman.flores@gmail.com**
+**hello@usetrackly.app**
 
 Please include:
 
