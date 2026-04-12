@@ -1,6 +1,6 @@
 # trackly-cli
 
-CLI + MCP server for the Trackly job tracker. Lets users search 99K+ jobs across 775+ companies from the terminal or through AI agents (Claude Code, Cursor) via MCP.
+CLI + MCP server for the Trackly job tracker. Lets users search 128K+ jobs across 1,900+ companies from the terminal or through AI agents (Claude Code, Cursor) via MCP.
 
 ## Tech Stack
 

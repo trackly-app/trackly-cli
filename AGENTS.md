@@ -4,7 +4,7 @@ Universal context for AI coding agents (Codex, Cursor, Copilot, Claude Code, Dev
 
 ## Project Overview
 
-- **Product:** Trackly CLI + MCP Server — terminal access to 99K+ jobs across 775+ companies
+- **Product:** Trackly CLI + MCP Server — terminal access to 128K+ jobs across 1,900+ companies
 - **Stack:** Node.js 18+ / plain CommonJS JavaScript (no TypeScript, no build step)
 - **Package:** `npm install -g trackly-cli` (public npm package)
 - **Backend API:** https://closeai.mba (same as Close AI — do NOT modify the backend from this repo)
