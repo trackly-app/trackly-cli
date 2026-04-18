@@ -46,7 +46,7 @@
       "headers": [
         {
           "name": "Authorization",
-          "description": "Bearer trk_* API key (for stdio-style clients). Clients that support OAuth 2.1 Dynamic Client Registration can leave this blank — the server will guide them through an interactive OAuth flow. Create an API key at https://usetrackly.app/settings",
+          "description": "Optional Bearer trk_* API key for remote clients that don't support OAuth 2.1 Dynamic Client Registration. Clients that do support DCR can leave this blank — the server will guide them through an interactive OAuth flow. Create an API key at https://usetrackly.app/settings",
           "isRequired": false,
           "isSecret": true
         }

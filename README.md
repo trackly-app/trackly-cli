@@ -21,7 +21,7 @@ Use Trackly directly inside your AI — zero config:
 
 **[Full setup guide with screenshots →](https://usetrackly.app/connect)**
 
-Works in: Claude co-work (web), Claude Desktop, ChatGPT Connectors, and any MCP-compatible AI client.
+Works in: Claude co-work (web), Claude Desktop, ChatGPT Connectors, and any MCP client that supports remote/streamable-http connectors.
 
 ### 💻 Option 2: CLI install (for Cursor, Windsurf, or terminal use)
 
@@ -78,7 +78,7 @@ Add `--json` to any command for JSON output. Use `--api-key <key>` or `--base-ur
 
 No install. In your AI tool, open **Settings → Connectors → Add custom connector** and enter:
 
-```
+```text
 https://mcp.usetrackly.app/api/mcp
 ```
 
