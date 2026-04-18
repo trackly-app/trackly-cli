@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.kevinastuhuaman/trackly",
   "title": "Trackly CLI",
-  "description": "AI recruiting agent for Claude Code, Cursor, Windsurf. 128K+ jobs across 1,900+ companies.",
+  "description": "AI job search for Claude, ChatGPT, Cursor. 128K+ jobs, 1,900+ companies. OAuth or stdio.",
   "repository": {
     "url": "https://github.com/kevinastuhuaman/trackly-cli",
     "source": "github"
@@ -15,12 +15,12 @@
       "sizes": ["512x512"]
     }
   ],
-  "version": "0.1.13",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "trackly-cli",
-      "version": "0.1.13",
+      "version": "0.2.0",
       "runtimeHint": "npx",
       "runtimeArguments": [
         {
@@ -46,8 +46,8 @@
       "headers": [
         {
           "name": "Authorization",
-          "description": "Bearer API key (trk_*). Create one at https://usetrackly.app/settings",
-          "isRequired": true,
+          "description": "Bearer trk_* API key (for stdio-style clients). Clients that support OAuth 2.1 Dynamic Client Registration can leave this blank — the server will guide them through an interactive OAuth flow. Create an API key at https://usetrackly.app/settings",
+          "isRequired": false,
           "isSecret": true
         }
       ]

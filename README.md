@@ -7,9 +7,23 @@
 
 The only job tracking CLI built for AI agents.
 
-Search 128,000+ jobs across 1,900+ companies and 40+ ATS types. Track applications, get AI-powered recommendations, and manage your job search -- from the terminal or through Claude Code, Cursor, and other MCP-compatible AI agents.
+Search 128,000+ jobs across 1,900+ companies and 40+ ATS types. Track applications, get AI-powered recommendations, and manage your job search -- from the terminal or through Claude, ChatGPT, Cursor, and other MCP-compatible AI agents.
 
-## Quick Start
+## Two ways to connect
+
+### 🚀 Option 1: One-click in Claude co-work, Claude Desktop, ChatGPT (no install)
+
+Use Trackly directly inside your AI — zero config:
+
+1. Open Settings → Connectors → **Add custom connector**
+2. URL: `https://mcp.usetrackly.app/api/mcp`
+3. Click **Add** → sign in with Google → done
+
+**[Full setup guide with screenshots →](https://usetrackly.app/connect)**
+
+Works in: Claude co-work (web), Claude Desktop, ChatGPT Connectors, and any MCP-compatible AI client.
+
+### 💻 Option 2: CLI install (for Cursor, Windsurf, or terminal use)
 
 ```bash
 npm install -g trackly-cli    # may need: sudo npm install -g trackly-cli
@@ -60,7 +74,19 @@ Add `--json` to any command for JSON output. Use `--api-key <key>` or `--base-ur
 
 ## MCP Server Setup
 
-### One-liner (recommended)
+### Hosted (Claude co-work, Claude Desktop, ChatGPT)
+
+No install. In your AI tool, open **Settings → Connectors → Add custom connector** and enter:
+
+```
+https://mcp.usetrackly.app/api/mcp
+```
+
+Sign in with Google when prompted. [Full visual guide →](https://usetrackly.app/connect)
+
+### Local (CLI via stdio, for Cursor / Windsurf / Claude Code)
+
+#### Claude Code one-liner
 
 ```bash
 claude mcp add --scope user trackly -- trackly mcp
@@ -72,7 +98,7 @@ Or equivalently:
 claude mcp add-json --scope user trackly '{"command":"trackly","args":["mcp"]}'
 ```
 
-### Claude Code manual config
+#### Claude Code manual config
 
 Add to `~/.claude/settings.json`:
 
@@ -87,9 +113,9 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-### Cursor
+#### Cursor / Windsurf
 
-Add to `.cursor/mcp.json` or `~/.cursor/mcp.json`:
+Add to `.cursor/mcp.json` or `~/.cursor/mcp.json` (same schema works for Windsurf):
 
 ```json
 {
@@ -102,7 +128,7 @@ Add to `.cursor/mcp.json` or `~/.cursor/mcp.json`:
 }
 ```
 
-Then use natural language in Claude Code or Cursor:
+Then use natural language in any of these clients:
 
 - "Find me PM jobs at fintech companies"
 - "What remote engineering roles are available?"
