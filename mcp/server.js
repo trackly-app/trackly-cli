@@ -9,6 +9,33 @@ const { version: PACKAGE_VERSION } = require('../package.json');
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
 const AUTH_HINT = 'Run `trackly login` or set TRACKLY_API_KEY. Get a key at https://usetrackly.app (sign in → Settings → API Keys).';
 
+// Mirrors `granola-followup-app/src/services/region-classifier.ts:8` REGION_TAGS.
+// Keep in sync when the backend enum changes.
+const REGION_TAGS = [
+  'us', 'europe', 'latam', 'middle_east', 'asia', 'africa', 'canada', 'oceania', 'remote', 'unknown',
+];
+
+// REGION_TAGS values that are safe to combine in a comma-list with other tags.
+// `us` is excluded because combining it with other tags (e.g. ['us', 'europe']) is a trap:
+// the backend parser at granola-followup-app/src/routes/jobscout-filter-utils.ts:73-90
+// supports `us` ONLY as a single-value scalar; in a comma-list it behaves identically to
+// the scalar branch and any non-us members are ignored. Callers who want 'us + europe' should
+// use the scalar `all` or two separate calls. Callers who want 'not us' should use `non_us`.
+const REGION_TAGS_ARRAY_SAFE = REGION_TAGS.filter((t) => t !== 'us');
+
+// `jobFunction` enum matches `granola-followup-app/src/routes/jobscout-filter-utils.ts:17-21`
+// (ALL_JOB_FUNCTIONS). 14 canonical values.
+const JOB_FUNCTIONS = [
+  'product', 'engineering', 'design', 'data', 'marketing', 'sales', 'partnerships',
+  'finance', 'strategy', 'operations', 'people', 'legal', 'support', 'other',
+];
+
+// `status` enum matches the backend allowlist at `jobscout.ts:2949`.
+const STATUS_VALUES = ['new', 'applying', 'applied_confirmed', 'check_later', 'not_interested', 'all'];
+
+// `jobModality` enum matches `jobscout.ts:2870-2875`. Employment type, NOT work-location.
+const JOB_MODALITIES = ['full_time', 'internship', 'all'];
+
 function createErrorResult(error, fallbackMessage, extra = {}) {
   const payload = {
     error: error?.error || error?.message || fallbackMessage,
@@ -66,31 +93,46 @@ function createServer() {
 
   server.tool(
     'trackly_search_jobs',
-    'Search and filter job postings. Returns matching jobs with title, company, location, modality. Use companyId to filter jobs at a specific company (get companyId from trackly_search_companies first).',
+    'Search and filter job postings. Returns matching jobs with title, company, location, and structured fields. Use companyId to filter jobs at a specific company (get companyId from trackly_search_companies first). Pass `remote: true` for remote-only jobs.',
     {
-      function: z.enum(['product', 'engineering', 'design', 'data', 'marketing', 'sales', 'finance', 'operations', 'legal', 'people', 'strategy', 'support', 'other']).optional().describe('Job function filter (matches DB column). Common: product, engineering, design, data, marketing, sales, operations, other'),
+      function: z.enum(JOB_FUNCTIONS).optional().describe('Job function filter. One of: ' + JOB_FUNCTIONS.join(', ')),
       companyId: z.number().optional().describe('Filter jobs by company ID (get from trackly_search_companies)'),
-      location: z.string().optional().describe('Location filter (city or state)'),
-      modality: z.enum(['remote', 'hybrid', 'onsite']).optional().describe('Work modality: remote, hybrid, onsite'),
-      status: z.enum(['new', 'saved', 'applied', 'dismissed']).optional().describe('Application status: new, saved, applied, dismissed'),
+      locationFilter: z.union([
+        z.enum(['us', 'non_us', 'all']),
+        z.enum(REGION_TAGS),
+        z.array(z.enum(REGION_TAGS_ARRAY_SAFE)).min(1),
+      ]).optional().describe(
+        "Region tag filter. Pass ONE of: (a) a single scalar from 'us', 'non_us', 'all', or a REGION_TAGS value ('europe', 'latam', 'middle_east', 'asia', 'africa', 'canada', 'oceania', 'remote', 'unknown'); or (b) an array of region tags for multi-region (e.g. ['europe', 'canada']). The array form excludes 'us' — combining 'us' with other tags causes the backend to silently drop the others. For 'not US' use the scalar 'non_us' alone."
+      ),
+      jobModality: z.enum(JOB_MODALITIES).optional().describe(
+        "Employment type (NOT work-location style). full_time = full-time roles, internship = internships, all = both. For remote filtering, use the `remote` boolean or locationFilter='remote'. Hybrid and onsite are not exposed as filters."
+      ),
+      remote: z.boolean().optional().describe('Filter to remote jobs only (maps to usStates=REMOTE).'),
+      status: z.enum(STATUS_VALUES).optional().describe(
+        'Filter by YOUR application pipeline state. Not a generic job-posting status. Values: ' + STATUS_VALUES.join(', ')
+      ),
       sort: z.enum(['newest', 'oldest', 'company']).optional().describe('Sort order: newest, oldest, company'),
       limit: z.number().max(50).optional().describe('Max results (default 20, max 50)'),
       offset: z.number().min(0).optional().describe('Pagination offset'),
-      keywords: z.string().max(500).optional().describe('Keyword search in title/description'),
+      keywords: z.string().max(500).optional().describe('Keyword search in title, company, or description'),
     },
     wrapTool(async (params) => {
-      // Map MCP param names to backend query param names
-      const paramMap = {
-        function: 'jobFunction',
-        keywords: 'search',
-      };
       const qs = new URLSearchParams();
-      for (const [key, value] of Object.entries(params)) {
-        if (value !== undefined && value !== null) {
-          const backendKey = paramMap[key] || key;
-          qs.set(backendKey, String(value));
-        }
+      if (params.function !== undefined) qs.set('jobFunction', params.function);
+      if (params.companyId !== undefined) qs.set('companyId', String(params.companyId));
+      if (params.locationFilter !== undefined) {
+        const value = Array.isArray(params.locationFilter)
+          ? params.locationFilter.join(',')
+          : params.locationFilter;
+        qs.set('locationFilter', value);
       }
+      if (params.jobModality !== undefined) qs.set('jobModality', params.jobModality);
+      if (params.remote === true) qs.set('usStates', 'REMOTE');
+      if (params.status !== undefined) qs.set('status', params.status);
+      if (params.sort !== undefined) qs.set('sort', params.sort);
+      if (params.limit !== undefined) qs.set('limit', String(params.limit));
+      if (params.offset !== undefined) qs.set('offset', String(params.offset));
+      if (params.keywords !== undefined) qs.set('search', params.keywords);
       return apiRequest('GET', `/api/jobscout/jobs?${qs.toString()}`, null, false, false, MCP_USER_AGENT);
     }, 'Failed to search jobs')
   );
