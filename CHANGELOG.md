@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-04-19
+
+### Fixed
+
+- **CLI query param mapping** — `cmdJobs` now correctly maps `--region` to `locationFilter`, `--job-type` to `jobModality` instead of the old `location`/`modality` that the backend ignored. Deprecated `--location` / `--modality` flags are explicitly rejected with migration hints (previously they silently passed through and were ignored).
+- **CLI response fields** — `outputJobs` and `cmdJob` now read the real camelCase fields (`companyName`, `jobUrl`, `postedAt`, `firstSeenAt`, `description`, `totalJobCount`) instead of the snake_case names that never existed in production. `trackly job <id>` and `trackly jobs` now render all columns correctly instead of rendering blanks.
+- **MCP `trackly_search_jobs` schema** — added missing `partnerships` to the function enum (14 canonical values now). `locationFilter` uses a 3-branch union matching the real backend parser (scalar specials, scalar region tag, array of region tags). `jobModality` values are `full_time | internship | all` (backend reality) instead of the old `remote | hybrid | onsite` (which the backend silently ignored). New explicit `remote` boolean param for the common remote-filter case. `status` values now match the real backend allowlist.
+- **MCP schema `['us', 'europe']` leak** — the array branch of `locationFilter` no longer accepts `'us'` (which would cause the backend to silently drop the other entries). Zod rejects the invalid mix up front.
+- **Docs** — `docs/trackly-tools.md` and `README.md` reflect the new flag surface; old examples claiming `--modality remote` are gone.
+
+### Added
+
+- New CLI flags: `--region <tag>`, `--job-type <full_time|internship|all>`, `--remote` boolean shorthand for `usStates=REMOTE`.
+- `trackly jobs <id> --location us` now routes through cmdJobs so the deprecated-flag migration error fires (previously silently routed to cmdJob and dropped the filter).
+
 ## [0.1.10] - 2026-03-13
 
 ### Changed
