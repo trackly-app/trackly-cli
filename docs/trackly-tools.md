@@ -67,7 +67,14 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 
 ### Available Tools
 
-- **trackly_search_jobs** — Search/filter jobs by function, company, location, modality, keywords. Function values: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `finance`, `operations`, `legal`, `people`, `strategy`, `support`, `other`
+- **trackly_search_jobs** — Search/filter jobs.
+  - `function` (14 values): `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`
+  - `locationFilter`: single value (`us`, `non_us`, `all`, or a region tag like `europe`/`remote`) OR array of region tags (e.g. `["europe", "canada"]`). Region tags: `us`, `europe`, `latam`, `middle_east`, `asia`, `africa`, `canada`, `oceania`, `remote`, `unknown`. `us`/`non_us`/`all` cannot be mixed into an array — the backend silently drops them.
+  - `jobModality`: `full_time`, `internship`, `all` — employment type, NOT work-location style.
+  - `remote` (boolean): filter to remote jobs only. Maps to `usStates=REMOTE`.
+  - `status`: your application pipeline state. Values: `new`, `applying`, `applied_confirmed`, `check_later`, `not_interested`, `all`.
+  - `sort`: `newest`, `oldest`, `company`.
+  - `keywords`, `companyId`, `limit`, `offset`.
 - **trackly_get_job** — Get full job details by ID
 - **trackly_search_companies** — Semantic company search
 - **trackly_list_companies** — List all tracked companies with job counts
