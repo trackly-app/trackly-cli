@@ -19,17 +19,17 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { version: VERSION } = require('../package.json');
 
-const BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'version', 'v', 'clear-api-key', 'clear-base-url', 'refresh']);
+const BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'version', 'v', 'clear-api-key', 'clear-base-url', 'refresh', 'remote']);
 const VALUE_FLAGS = new Set([
   'api-key',
   'base-url',
   'function',
+  'job-type',
   'keywords',
   'limit',
-  'location',
-  'modality',
   'name',
   'offset',
+  'region',
   'search',
   'sort',
   'status',
@@ -129,7 +129,7 @@ function parseJobId(value) {
 }
 
 function hasJobListFilters(args) {
-  return ['function', 'keywords', 'limit', 'location', 'modality', 'offset', 'sort', 'status']
+  return ['function', 'keywords', 'limit', 'region', 'job-type', 'remote', 'offset', 'sort', 'status']
     .some((key) => args[key] !== undefined);
 }
 
@@ -353,8 +353,9 @@ async function cmdJobs(args) {
   const params = new URLSearchParams();
   if (args.function) params.set('jobFunction', args.function);
   if (args.company) params.set('companyId', args.company);
-  if (args.location) params.set('location', args.location);
-  if (args.modality) params.set('modality', args.modality);
+  if (args.region) params.set('locationFilter', args.region);
+  if (args['job-type']) params.set('jobModality', args['job-type']);
+  if (args.remote) params.set('usStates', 'REMOTE');
   if (args.status) params.set('status', args.status);
   if (args.sort) params.set('sort', args.sort);
   if (args.limit) params.set('limit', args.limit);
@@ -384,16 +385,15 @@ async function cmdJob(args) {
 
     const job = result.job || result;
     console.log(color('bold', job.title));
-    console.log(`Company: ${color('blue', job.company_name)}`);
+    console.log(`Company: ${color('blue', job.companyName || (job.company && job.company.name) || '')}`);
     if (job.location) console.log(`Location: ${job.location}`);
-    if (job.modality) console.log(`Modality: ${color('cyan', job.modality)}`);
-    if (job.url) console.log(`URL: ${color('dim', job.url)}`);
-    if (job.posted_at) console.log(`Posted: ${job.posted_at}`);
-    if (job.description_text) {
+    if (job.jobUrl) console.log(`URL: ${color('dim', job.jobUrl)}`);
+    if (job.postedAt) console.log(`Posted: ${job.postedAt}`);
+    if (job.description) {
       console.log();
       console.log(color('bold', 'Description:'));
-      console.log(job.description_text.slice(0, 1000));
-      if (job.description_text.length > 1000) console.log(color('dim', '... (truncated)'));
+      console.log(job.description.slice(0, 1000));
+      if (job.description.length > 1000) console.log(color('dim', '... (truncated)'));
     }
   } catch (e) {
     setErrorExit(e.error || e.message || 'Failed to fetch job');
@@ -700,7 +700,7 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'login')}                Authenticate via Google OAuth
   ${color('cyan', 'logout')}               Clear credentials
   ${color('cyan', 'whoami')}               Show current user
-  ${color('cyan', 'jobs')}                 List jobs (--function, --company <id>, --location, --modality, --status, --sort, --limit, --offset, --keywords)
+  ${color('cyan', 'jobs')}                 List jobs (--function, --company <id>, --region <tag>, --job-type <type>, --remote, --status, --sort, --limit, --offset, --keywords)
   ${color('cyan', 'job <id>')}             Get full job detail
   ${color('cyan', 'jobs <id>')}            Alias for job <id>
   ${color('cyan', 'companies')}            List companies
@@ -731,6 +731,18 @@ ${color('bold', 'Flags:')}
   --json                Force JSON output
   --version             Show version
   --help                Show this help
+
+${color('bold', 'Filter values:')}
+  --function       product, engineering, design, data, marketing, sales, partnerships,
+                   finance, strategy, operations, people, legal, support, other (comma-separated)
+  --region         us, non_us, all, or a region tag (europe, canada, remote, ...)
+                   Use a comma-separated list of region tags for multiple regions;
+                   us/non_us/all cannot be combined.
+  --job-type       full_time, internship, all  (employment type, not work-location)
+  --remote         Flag (no value). Filters for remote jobs (equivalent to usStates=REMOTE).
+  --status         new, applying, applied_confirmed, check_later, not_interested, all
+                   (filters by YOUR application pipeline state)
+  --sort           newest, oldest, company
 
 ${color('bold', 'MCP Setup:')}
   Claude Code: claude mcp add --scope user trackly -- trackly mcp

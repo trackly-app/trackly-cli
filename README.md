@@ -41,8 +41,10 @@ trackly jobs --function product
 
 ```bash
 trackly jobs                          # List jobs
-trackly jobs --modality remote        # Filter remote jobs
-trackly jobs --function product        # Filter by function
+trackly jobs --remote                 # Filter remote jobs (sets usStates=REMOTE)
+trackly jobs --region us              # Filter by region tag (us, non_us, all, or a REGION_TAGS value)
+trackly jobs --job-type internship    # Filter by employment type (full_time, internship, all)
+trackly jobs --function product       # Filter by function
 trackly jobs --company 243            # Filter by company ID
 trackly job 1234                      # Get job details
 trackly jobs 1234                     # Alias for job details
