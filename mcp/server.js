@@ -15,6 +15,14 @@ const REGION_TAGS = [
   'us', 'europe', 'latam', 'middle_east', 'asia', 'africa', 'canada', 'oceania', 'remote', 'unknown',
 ];
 
+// REGION_TAGS values that are safe to combine in a comma-list with other tags.
+// `us` is excluded because combining it with other tags (e.g. ['us', 'europe']) is a trap:
+// the backend parser at granola-followup-app/src/routes/jobscout-filter-utils.ts:73-90
+// supports `us` ONLY as a single-value scalar; in a comma-list it behaves identically to
+// the scalar branch and any non-us members are ignored. Callers who want 'us + europe' should
+// use the scalar `all` or two separate calls. Callers who want 'not us' should use `non_us`.
+const REGION_TAGS_ARRAY_SAFE = REGION_TAGS.filter((t) => t !== 'us');
+
 // `jobFunction` enum matches `granola-followup-app/src/routes/jobscout-filter-utils.ts:17-21`
 // (ALL_JOB_FUNCTIONS). 14 canonical values.
 const JOB_FUNCTIONS = [
@@ -85,19 +93,19 @@ function createServer() {
 
   server.tool(
     'trackly_search_jobs',
-    'Search and filter job postings. Returns matching jobs with title, company, location, and structured fields. Use companyId to filter jobs at a specific company (get companyId from trackly_search_companies first). Use --remote=true for remote jobs.',
+    'Search and filter job postings. Returns matching jobs with title, company, location, and structured fields. Use companyId to filter jobs at a specific company (get companyId from trackly_search_companies first). Pass `remote: true` for remote-only jobs.',
     {
       function: z.enum(JOB_FUNCTIONS).optional().describe('Job function filter. One of: ' + JOB_FUNCTIONS.join(', ')),
       companyId: z.number().optional().describe('Filter jobs by company ID (get from trackly_search_companies)'),
       locationFilter: z.union([
         z.enum(['us', 'non_us', 'all']),
         z.enum(REGION_TAGS),
-        z.array(z.enum(REGION_TAGS)).min(1),
+        z.array(z.enum(REGION_TAGS_ARRAY_SAFE)).min(1),
       ]).optional().describe(
-        "Region tag filter. Use a single value (us, non_us, all, or a REGION_TAGS value like 'europe', 'remote') OR an array of REGION_TAGS values for multi-region (e.g. ['europe', 'canada']). us/non_us/all CANNOT be combined in an array — the backend silently drops them. For 'not us' use non_us alone."
+        "Region tag filter. Pass ONE of: (a) a single scalar from 'us', 'non_us', 'all', or a REGION_TAGS value ('europe', 'latam', 'middle_east', 'asia', 'africa', 'canada', 'oceania', 'remote', 'unknown'); or (b) an array of region tags for multi-region (e.g. ['europe', 'canada']). The array form excludes 'us' — combining 'us' with other tags causes the backend to silently drop the others. For 'not US' use the scalar 'non_us' alone."
       ),
       jobModality: z.enum(JOB_MODALITIES).optional().describe(
-        'Employment type (NOT work-location style). full_time = full-time roles, internship = internships, all = both. For remote/hybrid/onsite filtering, use the `remote` boolean or locationFilter="remote".'
+        "Employment type (NOT work-location style). full_time = full-time roles, internship = internships, all = both. For remote filtering, use the `remote` boolean or locationFilter='remote'. Hybrid and onsite are not exposed as filters."
       ),
       remote: z.boolean().optional().describe('Filter to remote jobs only (maps to usStates=REMOTE).'),
       status: z.enum(STATUS_VALUES).optional().describe(
