@@ -1,12 +1,27 @@
 ## Trackly Job Tracker (MCP)
 
-Trackly MCP server provides job search and tracking tools. Start it with:
+Trackly MCP server provides job search and tracking tools. Two ways to connect:
+
+### Claude co-work, Claude Desktop, ChatGPT (hosted, no install)
+
+In your AI tool, open **Settings → Connectors → Add custom connector**:
+
+- URL: `https://mcp.usetrackly.app/api/mcp`
+- Leave any optional OAuth fields empty — **Client ID**, **Client Secret**, **Authorization URL**, **Token URL** — Trackly uses OAuth 2.1 Dynamic Client Registration and will register the client automatically
+- If the client UI uses different labels or requires you to continue past an OAuth section, keep those fields blank and proceed to sign in. Do not invent client credentials or endpoint URLs.
+
+Sign in with Google when prompted. [Visual guide →](https://usetrackly.app/connect)
+
+### Cursor, Windsurf, Claude Code (CLI via stdio)
+
+Install and start the stdio server:
 
 ```bash
+npm install -g trackly-cli
 trackly mcp
 ```
 
-### Claude Code
+#### Claude Code
 
 ```json
 {
@@ -19,9 +34,9 @@ trackly mcp
 }
 ```
 
-### Cursor
+#### Cursor / Windsurf
 
-Add to `.cursor/mcp.json`:
+Add to `.cursor/mcp.json` (same schema for Windsurf):
 
 ```json
 {
