@@ -137,8 +137,12 @@ const DEPRECATED_JOB_FLAGS = Object.freeze({
 });
 
 function hasJobListFilters(args) {
-  return ['function', 'company', 'keywords', 'limit', 'region', 'job-type', 'remote', 'offset', 'sort', 'status']
-    .some((key) => args[key] !== undefined);
+  // Include deprecated flags so `trackly jobs 42 --location us` routes to cmdJobs
+  // (which then raises the migration error) instead of cmdJob(42) silently ignoring
+  // the filter. See PR #13 Cursor Bugbot finding.
+  const deprecated = Object.keys(DEPRECATED_JOB_FLAGS);
+  const active = ['function', 'company', 'keywords', 'limit', 'region', 'job-type', 'remote', 'offset', 'sort', 'status'];
+  return [...active, ...deprecated].some((key) => args[key] !== undefined);
 }
 
 function openExternalUrl(url) {
