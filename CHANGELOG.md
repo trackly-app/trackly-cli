@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-04-20
+
+### Fixed
+
+- **CRITICAL: `trackly apply` / `save` / `dismiss` status updates returned HTTP 404.** Backend retired the old `/api/jobscout-tracker/status` endpoint in favor of `/api/jobscout/tracker/jobs/:id/stage` with stage mapping (`applied → applied`, `saved → backlog`, `dismissed → discarded`). CLI and local MCP now POST to the new endpoint with the correct stage value. On versions up to and including `0.2.1`, these commands hit the removed path and the backend returned a 404 HTML error — the tracker state was never updated server-side, even though the CLI exit code and (non-JSON) output did not make the failure obvious.
+- **MCP sort enum drift** — `0.2.1` was published with the pre-PR-#17 code (Auto-Release only fires on version bumps; the sort fix merged but no bump triggered). This release actually ships `SORT_VALUES=['newest','match']` in the published tarball.
+
+### Added
+
+- `test/mcp-schema.test.js` regression test for the status-endpoint drift: asserts neither `bin/trackly` nor `mcp/server.js` contain a live `apiRequest('POST', ...)` to `/api/jobscout-tracker/status`, and both define the stage mapping.
+
 ## [0.2.1] - 2026-04-19
 
 ### Fixed

@@ -40,6 +40,12 @@ const JOB_MODALITIES = ['full_time', 'internship', 'all'];
 // `newest|oldest|company` (backend rejects oldest/company with HTTP 400).
 const SORT_VALUES = ['newest', 'match'];
 
+// Maps the user-facing trackly_update_status action to the backend's tracker
+// stage column. Backend `/api/jobscout/tracker/jobs/:id/stage` expects the
+// stage value, NOT the legacy action name. Hoisted to module scope so it's not
+// rebuilt on every tool invocation.
+const ACTION_TO_STAGE = { applied: 'applied', saved: 'backlog', dismissed: 'discarded' };
+
 function createErrorResult(error, fallbackMessage, extra = {}) {
   const payload = {
     error: error?.error || error?.message || fallbackMessage,
@@ -198,7 +204,16 @@ function createServer() {
       action: z.enum(['applied', 'saved', 'dismissed']).describe('Status action'),
     },
     wrapTool(async ({ id, action }) => {
-      return apiRequest('POST', '/api/jobscout-tracker/status', { jobId: id, action }, false, false, MCP_USER_AGENT);
+      // Backend expects the stage name, not the human-friendly action name.
+      // ACTION_TO_STAGE is defined at module scope (mirrors the same map in bin/trackly).
+      const stage = ACTION_TO_STAGE[action];
+      if (!stage) {
+        // Defensive: the z.enum above already rejects values outside applied|saved|dismissed,
+        // but if the enum is ever widened the mapping must be updated in lockstep — fail loud
+        // rather than silently sending an unintended stage.
+        throw new Error(`trackly_update_status: unknown action "${action}" — expected applied|saved|dismissed`);
+      }
+      return apiRequest('POST', `/api/jobscout/tracker/jobs/${id}/stage`, { stage }, false, false, MCP_USER_AGENT);
     }, 'Failed to update job status')
   );
 
