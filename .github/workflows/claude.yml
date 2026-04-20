@@ -12,29 +12,22 @@ on:
 
 jobs:
   claude:
-    # Gate: (a) comment/issue/review must mention `@claude`, AND (b) the triggering
-    # actor must be Kevin or have OWNER/MEMBER/COLLABORATOR association on this repo.
-    # Without (b), any GitHub user could comment `@claude` and burn AWS Bedrock credits +
-    # execute an agent with repo write scope. `author_association` works on issue_comment,
-    # pull_request_review_comment, pull_request_review, and issues events. Actor check
-    # covers the case where Kevin himself comments from other accounts (CI bots, etc.).
+    # Gate: (a) the body must mention `@claude`, AND (b) the TRIGGERING PRINCIPAL (not the
+    # surrounding issue/PR opener) must be Kevin or have OWNER/MEMBER/COLLABORATOR
+    # association. Each event type's author_association is scoped to its own principal:
+    #   - issue_comment               → comment.author_association (commenter)
+    #   - pull_request_review_comment → comment.author_association (commenter)
+    #   - pull_request_review         → review.author_association (reviewer)
+    #   - issues                      → issue.author_association (opener == triggering actor)
+    # Codex P1 on PR #21: previously OR'd ALL association fields together, which let any
+    # external commenter pass via issue.author_association (the opener's field) on an
+    # OWNER-authored issue. Explicit per-event binding closes that bypass.
     if: |
       (
-        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
-      ) && (
-        github.actor == 'kevinastuhuaman' ||
-        github.event.comment.author_association == 'OWNER' ||
-        github.event.comment.author_association == 'MEMBER' ||
-        github.event.comment.author_association == 'COLLABORATOR' ||
-        github.event.review.author_association == 'OWNER' ||
-        github.event.review.author_association == 'MEMBER' ||
-        github.event.review.author_association == 'COLLABORATOR' ||
-        github.event.issue.author_association == 'OWNER' ||
-        github.event.issue.author_association == 'MEMBER' ||
-        github.event.issue.author_association == 'COLLABORATOR'
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') && (github.actor == 'kevinastuhuaman' || github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude') && (github.actor == 'kevinastuhuaman' || github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude') && (github.actor == 'kevinastuhuaman' || github.event.review.author_association == 'OWNER' || github.event.review.author_association == 'MEMBER' || github.event.review.author_association == 'COLLABORATOR')) ||
+        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) && (github.actor == 'kevinastuhuaman' || github.event.issue.author_association == 'OWNER' || github.event.issue.author_association == 'MEMBER' || github.event.issue.author_association == 'COLLABORATOR'))
       )
     runs-on: ubuntu-latest
     permissions:
