@@ -35,20 +35,28 @@ jobs:
       # ahead of reality. Users who verify attestations with `npm install --attestations` would
       # have seen the failure.
       - name: Publish to npm (with provenance)
+        id: npm_publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          npm publish --access public --provenance 2>&1 || {
+          if npm publish --access public --provenance 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
             if npm view trackly-cli version 2>/dev/null | grep -qF "$(node -p 'require("./package.json").version')"; then
               echo "Version already published to npm — skipping (likely manual publish before auto-release existed)"
+              echo "published=false" >> "$GITHUB_OUTPUT"
             else
               exit 1
             fi
-          }
+          fi
 
       # Post-publish: verify attestations actually landed. If npm's provenance pipeline
       # is degraded for our tarball, fail the workflow so the gap is visible instead of silent.
+      # Skipped on the "already-published" path — historical versions (0.2.2 and earlier) were
+      # released without --provenance, so re-running this workflow against them would
+      # false-fail here. `published=true` only fires after a real --provenance publish.
       - name: Verify npm attestations
+        if: steps.npm_publish.outputs.published == 'true'
         run: |
           VERSION="$(node -p 'require("./package.json").version')"
           # npm view returns empty on degraded provenance; grep -q fails, exits non-zero.
