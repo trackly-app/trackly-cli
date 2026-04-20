@@ -39,28 +39,39 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          set -euo pipefail
+          # IMPORTANT: no `set -e` here. We need to handle `npm publish`'s non-zero
+          # exit codes explicitly so a version-already-published error (EPUBLISHCONFLICT /
+          # "cannot publish over the previously published versions") can branch to the
+          # skip path instead of aborting the workflow. `set -u` is safe; `pipefail` is
+          # avoided so a transient `npm view` blip in the post-verify step can't kill us
+          # mid-publish either.
+          set -u
           VERSION="$(node -p 'require("./package.json").version')"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          # Query npm for the exact version string using --json so we match against the
-          # versions array literally (no substring collisions like 0.2.3 inside 10.2.3).
-          EXISTS_BEFORE="$(npm view trackly-cli versions --json 2>/dev/null \
-            | node -e 'const v=process.argv[1]; const arr=JSON.parse(require("fs").readFileSync(0,"utf8")||"[]"); process.stdout.write(Array.isArray(arr)&&arr.includes(v)?"true":"false")' "$VERSION")"
-          echo "Exists on npm before publish: ${EXISTS_BEFORE}"
 
-          if npm publish --access public --provenance 2>&1; then
+          # Capture publish output so we can classify the failure mode from the error
+          # message itself, rather than relying on a pre-flight `npm view` (which can
+          # fail transiently and used to kill the workflow under pipefail — Cursor
+          # Bugbot finding on c1aa545).
+          PUBLISH_LOG="$(mktemp)"
+          if npm publish --access public --provenance >"${PUBLISH_LOG}" 2>&1; then
+            cat "${PUBLISH_LOG}"
             echo "published=true" >> "$GITHUB_OUTPUT"
             echo "already_published=false" >> "$GITHUB_OUTPUT"
           else
-            # Publish failed. Confirm it failed because the exact version already existed
-            # (not some other error like invalid token, invalid tarball, etc.).
-            if [ "${EXISTS_BEFORE}" = "true" ]; then
+            PUBLISH_EXIT=$?
+            cat "${PUBLISH_LOG}"
+            # npm's canonical "version already published" signals — any of these means
+            # the current version is already on npm and the failure is benign.
+            # (EPUBLISHCONFLICT is the modern code; the human-readable string covers
+            # older npm versions and various provenance-error phrasings.)
+            if grep -qE 'EPUBLISHCONFLICT|cannot publish over|You cannot publish over the previously published versions' "${PUBLISH_LOG}"; then
               echo "Version ${VERSION} already published to npm — skipping publish step"
               echo "published=false" >> "$GITHUB_OUTPUT"
               echo "already_published=true" >> "$GITHUB_OUTPUT"
             else
-              echo "::error::npm publish failed and version ${VERSION} is NOT on npm — real failure"
-              exit 1
+              echo "::error::npm publish failed with exit ${PUBLISH_EXIT} (non-conflict error)"
+              exit "${PUBLISH_EXIT}"
             fi
           fi
 
@@ -73,11 +84,17 @@ jobs:
       # weaken the gate for new releases.
       - name: Verify npm attestations (post-publish)
         run: |
-          set -euo pipefail
+          # No `set -e` / `pipefail`: a transient `npm view` failure inside the retry loop
+          # must fall through to the next iteration, not kill the workflow. The final exit
+          # status is controlled explicitly below.
+          set -u
           VERSION="${{ steps.npm_publish.outputs.version }}"
           # Give the registry up to ~30s (3 × 10s) for the attestation to propagate after publish.
           for i in 1 2 3; do
-            if npm view "trackly-cli@${VERSION}" dist.attestations --json 2>/dev/null | grep -q '"url"'; then
+            # `|| true` prevents pipefail-like aborts if npm view transient-fails; grep -q
+            # then returns non-zero and we fall through to the retry.
+            ATTESTATIONS="$(npm view "trackly-cli@${VERSION}" dist.attestations --json 2>/dev/null || true)"
+            if echo "${ATTESTATIONS}" | grep -q '"url"'; then
               echo "✓ Provenance attestations found for trackly-cli@${VERSION}"
               exit 0
             fi
