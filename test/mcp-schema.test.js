@@ -182,18 +182,29 @@ test('CLI + MCP guard /ask jobsUrl with a path allowlist (PR v0.2.4)', () => {
   // The /ask endpoint returns a jobsUrl string that the CLI + MCP then fetch with the
   // user's Authorization header. normalizeEndpoint blocks cross-origin, but a compromised
   // backend could emit a same-origin `/api/admin/...` path. Both surfaces MUST gate the
-  // follow-up fetch on an allowlist matching /api/(v1|jobscout)/jobs.
+  // follow-up fetch on an allowlist matching /api/(v1|jobscout)/jobs AND the apiRequest
+  // for jobsUrl must only fire inside the allowlist's true branch.
   const binSrc = fs.readFileSync(path.join(__dirname, '..', 'bin', 'trackly'), 'utf8');
   const mcpSrc = fs.readFileSync(path.join(__dirname, '..', 'mcp', 'server.js'), 'utf8');
-  // Match the regex literal with whitespace tolerance. The core invariant is that BOTH
-  // `v1` and `jobscout` appear as alternation branches and the scheme anchors on ^/api/.
-  const allowlistRegex = /\/\^\\\/api\\\/\(v1\|jobscout\)\\\/jobs/;
+  // Define:  /^\/api\/(v1|jobscout)\/jobs(\?|$)/
+  const allowlistRegex = /\/\^\\\/api\\\/\(v1\|jobscout\)\\\/jobs\(\\\?\|\$\)\//;
   assert.ok(
     allowlistRegex.test(binSrc),
-    'bin/trackly must define JOBS_URL_ALLOWLIST = /^\\/api\\/(v1|jobscout)\\/jobs.../ before following result.jobsUrl'
+    'bin/trackly must define JOBS_URL_ALLOWLIST = /^\\/api\\/(v1|jobscout)\\/jobs(\\?|$)/ before following result.jobsUrl'
   );
   assert.ok(
     allowlistRegex.test(mcpSrc),
     'mcp/server.js must define the same JOBS_URL_ALLOWLIST before following askResult.jobsUrl'
   );
+  // Enforce USAGE, not just DEFINITION: the apiRequest fetch of the jobsUrl must appear
+  // after a .test() guard. This catches a future refactor that imports the constant but
+  // forgets to call .test() before the fetch. We assert that (a) `.test(` appears near
+  // the JOBS_URL_ALLOWLIST definition, and (b) at least one apiRequest call follows that
+  // gate in each source. Grep-based; survives formatting reflows.
+  for (const [label, src] of [['bin/trackly', binSrc], ['mcp/server.js', mcpSrc]]) {
+    assert.ok(
+      /JOBS_URL_ALLOWLIST\.test\(/.test(src),
+      `${label} must CALL JOBS_URL_ALLOWLIST.test(...) — defining the regex without using it would defeat the guard`
+    );
+  }
 });

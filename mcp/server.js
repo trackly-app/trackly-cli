@@ -238,6 +238,16 @@ function createServer() {
             jobs: jobsResult.jobs || jobsResult.data || [],
           };
         }
+        // Untrusted jobsUrl. Strip it from the returned payload so the MCP client
+        // doesn't receive (and potentially act on) a path we just refused to follow
+        // ourselves. Include a telemetry breadcrumb so the agent sees the refusal.
+        // (Copilot finding #2 on PR #21.)
+        const { jobsUrl: _refused, ...safeAskResult } = askResult;
+        return {
+          ...safeAskResult,
+          jobsUrl: null,
+          jobsUrlRefused: true,
+        };
       }
       return askResult;
     }, 'Failed to process natural language query')
