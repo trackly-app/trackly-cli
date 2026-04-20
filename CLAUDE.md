@@ -46,9 +46,9 @@ claude mcp add --scope user trackly -- trackly mcp
 
 The 10 MCP tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`, `trackly_get_job_brief`, `trackly_contacts_at_company`, `trackly_get_company_workspace`
 
-Job function values (matches DB column): `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `finance`, `operations`, `legal`, `people`, `strategy`, `support`, `other`
+Job function values — **14 canonical values** that match `ALL_JOB_FUNCTIONS` at `granola-followup-app/src/routes/jobscout-filter-utils.ts:17-21` and the backend `job_function` DB column: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`. `partnerships` was added in PR #14 (see CHANGELOG 0.1.7–0.1.8); any doc still listing 13 values is stale. The MCP test at `test/mcp-schema.test.js:41` locks this list.
 
-NOTE: The `/ask` endpoint uses `product_management`/`data_science` enum but the `/jobs` endpoint expects the DB values (`product`, `data`, etc). This is a known inconsistency.
+NOTE: `/ask`'s LLM prompt previously emitted `product_management`/`data_science` style values that the `/jobs` handler would have silently dropped; PR #112 (2026-04-20) rewrote the `/ask` system prompt to use the modern public names (`product`, `data`, …) so `/ask` → `/jobs` round-trips no longer drift.
 
 ## Publishing
 
