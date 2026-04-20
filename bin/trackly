@@ -512,11 +512,20 @@ async function cmdAsk(args) {
     }
 
     if (result.jobsUrl) {
-      console.log();
-      console.log(color('dim', `Fetching: ${result.jobsUrl}`));
-      const jobsResult = await apiRequest('GET', result.jobsUrl);
-      console.log();
-      outputJobs(jobsResult.jobs || jobsResult.data || []);
+      // Path allowlist: /ask can return any string for jobsUrl. normalizeEndpoint already
+      // blocks cross-origin fetches (baseUrl mismatch), but a compromised backend could
+      // still emit a same-origin path like `/api/admin/secret-dump`. Restrict to the two
+      // legitimate handlers that /ask is designed to route to.
+      const JOBS_URL_ALLOWLIST = /^\/api\/(v1|jobscout)\/jobs(\?|$)/;
+      if (!JOBS_URL_ALLOWLIST.test(result.jobsUrl)) {
+        console.log(color('dim', `Refusing to follow unexpected jobsUrl: ${result.jobsUrl}`));
+      } else {
+        console.log();
+        console.log(color('dim', `Fetching: ${result.jobsUrl}`));
+        const jobsResult = await apiRequest('GET', result.jobsUrl);
+        console.log();
+        outputJobs(jobsResult.jobs || jobsResult.data || []);
+      }
     }
   } catch (e) {
     if (e.status === 429) setErrorExit('Daily limit reached (20 natural language queries per day)');

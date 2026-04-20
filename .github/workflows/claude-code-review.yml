@@ -6,6 +6,15 @@ on:
 
 jobs:
   claude-review:
+    # Gate: only run on PRs from trusted authors. Fork PRs from unknown contributors
+    # would otherwise run with AWS Bedrock credentials. `OWNER` covers Kevin directly,
+    # `MEMBER`/`COLLABORATOR` covers any future teammates, and the explicit `github.actor`
+    # check catches first-time-contributor-to-this-repo edge cases.
+    if: |
+      github.actor == 'kevinastuhuaman' ||
+      github.event.pull_request.author_association == 'OWNER' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.author_association == 'COLLABORATOR'
     runs-on: ubuntu-latest
     permissions:
       contents: read

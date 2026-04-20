@@ -226,11 +226,18 @@ function createServer() {
     wrapTool(async ({ query }) => {
       const askResult = await apiRequest('GET', `/api/jobscout/ask?q=${encodeURIComponent(query)}`, null, false, false, MCP_USER_AGENT);
       if (askResult.jobsUrl) {
-        const jobsResult = await apiRequest('GET', askResult.jobsUrl, null, false, false, MCP_USER_AGENT);
-        return {
-          ...askResult,
-          jobs: jobsResult.jobs || jobsResult.data || [],
-        };
+        // Path allowlist: /ask returns a jobsUrl string. normalizeEndpoint already blocks
+        // cross-origin fetches, but a compromised backend could emit a same-origin path
+        // like `/api/admin/secret-dump`. Only follow the two handlers /ask is designed to
+        // route to. Mirrors the same guard in bin/trackly:cmdAsk.
+        const JOBS_URL_ALLOWLIST = /^\/api\/(v1|jobscout)\/jobs(\?|$)/;
+        if (JOBS_URL_ALLOWLIST.test(askResult.jobsUrl)) {
+          const jobsResult = await apiRequest('GET', askResult.jobsUrl, null, false, false, MCP_USER_AGENT);
+          return {
+            ...askResult,
+            jobs: jobsResult.jobs || jobsResult.data || [],
+          };
+        }
       }
       return askResult;
     }, 'Failed to process natural language query')

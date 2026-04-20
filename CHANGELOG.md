@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-04-20
+
+### Security
+
+- **CI: all `uses:` actions pinned to commit SHA** across `auto-release.yml`, `ci.yml`, `docs-drift.yml`, `publish.yml`, `publish-mcp-registry.yml`. Previously `@v4` tags could be re-pointed upstream to a malicious commit without our repo seeing the change. `claude.yml` and `claude-code-review.yml` were already SHA-pinned.
+- **CI: added `permissions: contents: read`** as the default for `ci.yml` and `docs-drift.yml`. Publish + auto-release workflows continue to opt into `contents: write` / `id-token: write` at the job level explicitly.
+- **`@claude` workflows: added `github.actor` + `author_association` allowlist.** Previously any GitHub user could comment `@claude` on an issue/PR and trigger an agent run that holds AWS Bedrock credentials. Now gated on `kevinastuhuaman` OR `OWNER`/`MEMBER`/`COLLABORATOR` association. Same gate applied to `claude-code-review.yml` (fork PRs from unknown authors no longer auto-run Claude with production secrets).
+- **HTTP client: 10 MB response-body cap** in `lib/client.js`. A malicious or misconfigured `TRACKLY_BASE_URL` can no longer stream unbounded data and OOM the long-lived MCP process. Destroyed-request errors are reported to the caller.
+- **`/ask` response: `jobsUrl` path allowlist** (`^/api/(v1|jobscout)/jobs(\?|$)/`). `normalizeEndpoint` already blocked cross-origin fetches, but a compromised backend could still emit a same-origin path like `/api/admin/secret-dump` that the CLI/MCP would fetch with the user's Authorization header. Both `bin/trackly:cmdAsk` and `mcp/server.js:trackly_ask` now refuse any `jobsUrl` outside the allowlist.
+
 ## [0.2.3] - 2026-04-20
 
 ### Security

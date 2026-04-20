@@ -177,3 +177,23 @@ test('docs/trackly-tools.md sort description matches backend', () => {
     `sort docs must not list the stale valid-values triplet 'newest, oldest, company': ${sortLine}`
   );
 });
+
+test('CLI + MCP guard /ask jobsUrl with a path allowlist (PR v0.2.4)', () => {
+  // The /ask endpoint returns a jobsUrl string that the CLI + MCP then fetch with the
+  // user's Authorization header. normalizeEndpoint blocks cross-origin, but a compromised
+  // backend could emit a same-origin `/api/admin/...` path. Both surfaces MUST gate the
+  // follow-up fetch on an allowlist matching /api/(v1|jobscout)/jobs.
+  const binSrc = fs.readFileSync(path.join(__dirname, '..', 'bin', 'trackly'), 'utf8');
+  const mcpSrc = fs.readFileSync(path.join(__dirname, '..', 'mcp', 'server.js'), 'utf8');
+  // Match the regex literal with whitespace tolerance. The core invariant is that BOTH
+  // `v1` and `jobscout` appear as alternation branches and the scheme anchors on ^/api/.
+  const allowlistRegex = /\/\^\\\/api\\\/\(v1\|jobscout\)\\\/jobs/;
+  assert.ok(
+    allowlistRegex.test(binSrc),
+    'bin/trackly must define JOBS_URL_ALLOWLIST = /^\\/api\\/(v1|jobscout)\\/jobs.../ before following result.jobsUrl'
+  );
+  assert.ok(
+    allowlistRegex.test(mcpSrc),
+    'mcp/server.js must define the same JOBS_URL_ALLOWLIST before following askResult.jobsUrl'
+  );
+});
