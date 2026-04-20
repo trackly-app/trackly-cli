@@ -36,6 +36,10 @@ const STATUS_VALUES = ['new', 'applying', 'applied_confirmed', 'check_later', 'n
 // `jobModality` enum matches `jobscout.ts:2870-2875`. Employment type, NOT work-location.
 const JOB_MODALITIES = ['full_time', 'internship', 'all'];
 
+// `sort` enum matches backend handler at `jobscout.ts:3053` — NOT the pre-fix
+// `newest|oldest|company` (backend rejects oldest/company with HTTP 400).
+const SORT_VALUES = ['newest', 'match'];
+
 function createErrorResult(error, fallbackMessage, extra = {}) {
   const payload = {
     error: error?.error || error?.message || fallbackMessage,
@@ -111,7 +115,7 @@ function createServer() {
       status: z.enum(STATUS_VALUES).optional().describe(
         'Filter by YOUR application pipeline state. Not a generic job-posting status. Values: ' + STATUS_VALUES.join(', ')
       ),
-      sort: z.enum(['newest', 'match']).optional().describe('Sort order: newest (default) or match (highest match score first; requires resume). Backend rejects legacy oldest/company with HTTP 400.'),
+      sort: z.enum(SORT_VALUES).optional().describe('Sort order: newest (default) or match (highest match score first; requires resume). Backend rejects legacy oldest/company with HTTP 400.'),
       limit: z.number().max(50).optional().describe('Max results (default 20, max 50)'),
       offset: z.number().min(0).optional().describe('Pagination offset'),
       keywords: z.string().max(500).optional().describe('Keyword search in title, company, or description'),

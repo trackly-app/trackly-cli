@@ -82,19 +82,20 @@ test('MCP REGION_TAGS has 10 values and REGION_TAGS_ARRAY_SAFE excludes us', () 
   );
 });
 
-test('MCP sort enum is [newest, match] — NOT the deprecated [newest, oldest, company]', () => {
-  // Find the sort Zod schema line
-  const sortMatch = SERVER_SRC.match(/sort:\s*z\.enum\(\[([^\]]+)\]\)/);
-  assert.ok(sortMatch, 'sort z.enum not found in mcp/server.js');
-  const values = sortMatch[1]
-    .split(',')
-    .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
-    .filter(Boolean);
+test('MCP SORT_VALUES is [newest, match] — NOT the deprecated [newest, oldest, company]', () => {
+  // SORT_VALUES is a named constant (centralized per CodeRabbit review on PR #17).
+  const values = extractArrayLiteral(SERVER_SRC, 'SORT_VALUES');
   assert.deepEqual(values, ['newest', 'match'], `expected [newest, match], got [${values.join(', ')}]`);
   // Guard: the backend REJECTS these values with HTTP 400.
   for (const bad of ['oldest', 'company']) {
     assert.ok(!values.includes(bad), `sort must NOT include ${bad} — backend jobscout.ts:3053 rejects it`);
   }
+  // Also verify the schema actually uses the centralized constant, not an inline literal
+  // (guards against future "just add one value inline" drift).
+  assert.ok(
+    SERVER_SRC.includes('z.enum(SORT_VALUES)'),
+    'sort param must use z.enum(SORT_VALUES), not an inline array literal',
+  );
 });
 
 test('CLI --sort help text is [newest, match] in bin/trackly', () => {
