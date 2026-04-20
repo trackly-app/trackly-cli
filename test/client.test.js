@@ -94,6 +94,60 @@ function setupRefreshTestHarness(t, handler) {
   });
 }
 
+test('apiRequest rejection: HTTP statusCode wins over body `status` key (Cursor Bugbot #5)', async (t) => {
+  // Regression: apiRequest used to reject with `{ status: res.statusCode, ...json }` — spread
+  // came AFTER, so a backend body like `{"status":"error"}` would clobber the numeric HTTP
+  // status with a string. Downstream code checking `typeof e.status === 'number'` then
+  // skipped the 400/401/403 token-clear branch, and dead refresh tokens stayed on disk.
+  const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
+    res.statusCode = 401;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ status: 'error', error: 'invalid_grant', message: 'token dead' }));
+  });
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: undefined,
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '1000',
+  }, async () => {
+    let caught;
+    try {
+      await client.apiRequest('POST', '/api/auth/refresh', { refreshToken: 'rt' }, true);
+    } catch (e) {
+      caught = e;
+    }
+    assert.ok(caught, 'apiRequest must reject on 401');
+    assert.equal(typeof caught.status, 'number', 'status must stay numeric even when body has status:string');
+    assert.equal(caught.status, 401, 'HTTP statusCode must win over body.status');
+    assert.equal(caught.error, 'invalid_grant', 'body fields still accessible');
+  });
+});
+
+test('refreshAccessToken clears tokens on 401 even when body has status:string (Bugbot #5 integration)', async (t) => {
+  // End-to-end guard for the spread-order bug: the full refresh path must clear tokens on
+  // 401 even when the backend returns `{"status":"error"}` in the body. Before the spread
+  // fix, this test would have failed because typeof e.status === 'number' was false.
+  const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
+    res.statusCode = 401;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ status: 'error', error: 'invalid_grant' }));
+  });
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: undefined,
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '1000',
+  }, async () => {
+    client.saveConfig({ token: 'jwt', refreshToken: 'rt_dead', baseUrl: 'https://k.com' });
+    const out = await client.refreshAccessToken();
+    assert.equal(out, null);
+    assert.equal(client.getRefreshToken(), null, 'tokens must clear even when body.status overrides');
+    assert.equal(client.loadConfig().baseUrl, 'https://k.com');
+  });
+});
+
 test('refreshAccessToken clears tokens on 401 but preserves baseUrl', async (t) => {
   const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
     res.statusCode = 401;

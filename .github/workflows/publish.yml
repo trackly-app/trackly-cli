@@ -39,37 +39,54 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          set -euo pipefail
+          VERSION="$(node -p 'require("./package.json").version')"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          # Query npm for the exact version string using --json so we match against the
+          # versions array literally (no substring collisions like 0.2.3 inside 10.2.3).
+          EXISTS_BEFORE="$(npm view trackly-cli versions --json 2>/dev/null \
+            | node -e 'const v=process.argv[1]; const arr=JSON.parse(require("fs").readFileSync(0,"utf8")||"[]"); process.stdout.write(Array.isArray(arr)&&arr.includes(v)?"true":"false")' "$VERSION")"
+          echo "Exists on npm before publish: ${EXISTS_BEFORE}"
+
           if npm publish --access public --provenance 2>&1; then
             echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
           else
-            if npm view trackly-cli version 2>/dev/null | grep -qF "$(node -p 'require("./package.json").version')"; then
-              echo "Version already published to npm — skipping (likely manual publish before auto-release existed)"
+            # Publish failed. Confirm it failed because the exact version already existed
+            # (not some other error like invalid token, invalid tarball, etc.).
+            if [ "${EXISTS_BEFORE}" = "true" ]; then
+              echo "Version ${VERSION} already published to npm — skipping publish step"
               echo "published=false" >> "$GITHUB_OUTPUT"
+              echo "already_published=true" >> "$GITHUB_OUTPUT"
             else
+              echo "::error::npm publish failed and version ${VERSION} is NOT on npm — real failure"
               exit 1
             fi
           fi
 
-      # Post-publish: verify attestations actually landed. If npm's provenance pipeline
-      # is degraded for our tarball, fail the workflow so the gap is visible instead of silent.
-      # Skipped on the "already-published" path — historical versions (0.2.2 and earlier) were
-      # released without --provenance, so re-running this workflow against them would
-      # false-fail here. `published=true` only fires after a real --provenance publish.
-      - name: Verify npm attestations
-        if: steps.npm_publish.outputs.published == 'true'
+      # Post-publish attestation gate. Runs on BOTH paths for the CURRENT version so a
+      # partial upload (publish succeeded, attestation didn't land) can't silently ship an
+      # unattested tarball on retry.
+      #
+      # This intentionally fails the workflow for every version ≥ 0.2.3 that lacks attestations.
+      # If a pre-0.2.3 version ever needs re-republishing, temporarily skip this step — do NOT
+      # weaken the gate for new releases.
+      - name: Verify npm attestations (post-publish)
         run: |
-          VERSION="$(node -p 'require("./package.json").version')"
-          # npm view returns empty on degraded provenance; grep -q fails, exits non-zero.
-          # Give the registry up to 30s for the attestation to propagate.
+          set -euo pipefail
+          VERSION="${{ steps.npm_publish.outputs.version }}"
+          # Give the registry up to ~30s (3 × 10s) for the attestation to propagate after publish.
           for i in 1 2 3; do
             if npm view "trackly-cli@${VERSION}" dist.attestations --json 2>/dev/null | grep -q '"url"'; then
               echo "✓ Provenance attestations found for trackly-cli@${VERSION}"
               exit 0
             fi
-            echo "Attestations not yet visible; waiting 10s (attempt $i/3)..."
+            echo "Attestations not yet visible; waiting 10s (attempt ${i}/3)..."
             sleep 10
           done
           echo "::error::No provenance attestations visible for trackly-cli@${VERSION}"
+          echo "::error::If the publish step reported success, the provenance upload failed silently."
+          echo "::error::If the version was already on npm without provenance (historical pre-0.2.3 re-runs), update this workflow to temporarily bypass."
           exit 1
 
       # Pinned to a specific mcp-publisher release + verified SHA256.
