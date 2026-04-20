@@ -16,7 +16,7 @@ CLI + MCP server for the Trackly job tracker. Lets users search 128K+ jobs acros
 bin/trackly          # CLI entrypoint (shebang script). All 19 commands + arg parser + main()
 lib/client.js        # HTTP client: config loading, token refresh, apiRequest()
 lib/formatters.js    # Terminal output: color(), outputJobs(), outputCompanies(), outputStats(), outputContacts(), outputReferralCampaign(), outputNetworkBrief()
-mcp/server.js        # MCP server: 9 tools, launched via `trackly mcp`
+mcp/server.js        # MCP server: 10 tools, launched via `trackly mcp`
 docs/trackly-tools.md  # MCP tool reference (for embedding in AI contexts)
 server.json          # MCP Registry manifest (io.github.kevinastuhuaman/trackly)
 ```
@@ -29,7 +29,7 @@ node bin/trackly --help        # Run locally without installing
 npm link                       # Symlink for local dev
 ```
 
-There is no test suite, no linter, and no build step. The package ships raw JS.
+There is a small Node test suite (`npm test`), but no linter and no build step. The package ships raw JS.
 
 ## How the MCP Server Works
 
@@ -46,9 +46,9 @@ claude mcp add --scope user trackly -- trackly mcp
 
 The 10 MCP tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`, `trackly_get_job_brief`, `trackly_contacts_at_company`, `trackly_get_company_workspace`
 
-Job function values — **14 canonical values** that match `ALL_JOB_FUNCTIONS` at `granola-followup-app/src/routes/jobscout-filter-utils.ts:17-21` and the backend `job_function` DB column: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`. `partnerships` was added in PR #14 (see CHANGELOG 0.1.7–0.1.8); any doc still listing 13 values is stale. The MCP test at `test/mcp-schema.test.js:41` locks this list.
+Job function values — **14 canonical values** that match backend `ALL_JOB_FUNCTIONS` at `granola-followup-app/src/routes/jobscout-filter-utils.ts:17-21`, the backend `job_function` DB column, and the local mirror `JOB_FUNCTIONS` in `mcp/server.js`: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`. `partnerships` is documented in CHANGELOG `0.2.1`; any doc still listing 13 values is stale. The MCP test at `test/mcp-schema.test.js` locks this local/backend mapping.
 
-NOTE: `/ask`'s LLM prompt previously emitted `product_management`/`data_science` style values that the `/jobs` handler would have silently dropped; PR #112 (2026-04-20) rewrote the `/ask` system prompt to use the modern public names (`product`, `data`, …) so `/ask` → `/jobs` round-trips no longer drift.
+NOTE: `/ask` lives in the backend (`kevinastuhuaman/close-ai`) and historically emitted `product_management`/`data_science` style values that the `/jobs` handler could drop. Backend PR #112 (`https://github.com/kevinastuhuaman/close-ai/pull/112`) is the proposed fix to emit modern public names (`product`, `data`, etc.). Do not document that drift as fixed/live until that PR is merged and deployed.
 
 ## Publishing
 
@@ -75,7 +75,7 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `GET /api/jobscout/companies/search` -- Semantic company search
 - `GET /api/jobscout/me` -- User stats
 - `GET /api/jobscout/ask` -- Natural language search (20/day limit)
-- `POST /api/jobscout-tracker/status` -- Update job status (applied/saved/dismissed)
+- `POST /api/jobscout/tracker/jobs/:id/stage` -- Update job tracker stage (`applied`/`backlog`/`discarded`; CLI maps apply/save/dismiss)
 - `POST /api/auth/api-key` -- Create API key
 - `GET /api/auth/api-keys` -- List API keys
 - `GET /api/auth/user` -- Current user info
@@ -99,4 +99,4 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 6. **The `ask` command has a 20/day rate limit** enforced server-side (429 response).
 7. **No dependencies beyond `@modelcontextprotocol/sdk` and `zod`.** Keep it minimal. The HTTP client uses raw `node:https`/`node:http`.
 8. **Token refresh is automatic.** On 401, `apiRequest()` tries one refresh via `/api/auth/refresh` before failing. The `_isRetry` flag prevents infinite loops.
-9. **Function enum mismatch.** The `/ask` LLM prompt uses `product_management`, `data_science` etc. but the `/jobs` endpoint's `jobFunction` param matches against the DB `job_function` column which stores `product`, `data`, etc. The MCP tool and CLI use the DB values directly. If a new function value is added to the DB, update the Zod enum in `mcp/server.js`.
+9. **`/ask` backend drift is tracked outside this repo.** The CLI and MCP use DB-backed job function values directly. Backend PR #112 (`kevinastuhuaman/close-ai`) tracks the `/ask` prompt/URL migration to those same public values; verify production before claiming `/ask` round-trips are fixed.
