@@ -114,40 +114,51 @@ test('CLI + MCP use new /jobscout/tracker/jobs/:id/stage endpoint (not removed /
   const mcpSrc = fs.readFileSync(path.join(__dirname, '..', 'mcp', 'server.js'), 'utf8');
 
   // Backend removed the old endpoint; using it = 404 silent failure on apply/save/dismiss.
-  // Check for actual API calls (apiRequest('POST', ...)), not comments/strings that mention
-  // the removed path for historical context.
-  const binApiPostMatches = binSrc.match(/apiRequest\(\s*['"]POST['"]\s*,\s*['"]([^'"]*?)['"]/g) || [];
-  for (const call of binApiPostMatches) {
-    assert.ok(
-      !call.includes('/api/jobscout-tracker/status'),
-      `CLI has a live apiRequest POST to the removed endpoint: ${call}`,
-    );
+  // Check for actual API calls (apiRequest('POST', ...)) in ANY quoting style — single/double
+  // quotes AND template literals (bin/trackly uses backticks for the stage URL). Comments and
+  // documentation that mention the removed path for historical context are OK.
+  const postCallRegex = /apiRequest\(\s*['"\x60]POST['"\x60]\s*,\s*([`'"])((?:[^\\\x60]|\\.)*?)\1/g;
+  function extractPostUrls(source) {
+    const urls = [];
+    let m;
+    while ((m = postCallRegex.exec(source)) !== null) {
+      urls.push(m[2]);
+    }
+    return urls;
   }
-  const mcpApiPostMatches = mcpSrc.match(/apiRequest\(\s*['"]POST['"]\s*,\s*['"`]([^'"`]*?)['"`]/g) || [];
-  // The MCP call uses a template literal so include those too.
-  const mcpApiPostTemplates = mcpSrc.match(/apiRequest\(\s*['"]POST['"]\s*,\s*`([^`]*?)`/g) || [];
-  for (const call of [...mcpApiPostMatches, ...mcpApiPostTemplates]) {
-    assert.ok(
-      !call.includes('/api/jobscout-tracker/status'),
-      `MCP has a live apiRequest POST to the removed endpoint: ${call}`,
-    );
+  const binUrls = extractPostUrls(binSrc);
+  const mcpUrls = extractPostUrls(mcpSrc);
+  assert.ok(binUrls.length > 0, 'bin/trackly must contain at least one apiRequest POST call for this test to be meaningful');
+  assert.ok(mcpUrls.length > 0, 'mcp/server.js must contain at least one apiRequest POST call');
+  for (const url of binUrls) {
+    assert.ok(!url.includes('/api/jobscout-tracker/status'), `CLI has a live apiRequest POST to the removed endpoint: ${url}`);
   }
+  for (const url of mcpUrls) {
+    assert.ok(!url.includes('/api/jobscout-tracker/status'), `MCP has a live apiRequest POST to the removed endpoint: ${url}`);
+  }
+  // Positive: at least one POST in each source uses the new stage endpoint path.
+  const stagePathPattern = /\/api\/jobscout\/tracker\/jobs\/[^/]+\/stage/;
   assert.ok(
-    binSrc.includes('/api/jobscout/tracker/jobs/') && binSrc.includes('/stage'),
-    'CLI must POST to /api/jobscout/tracker/jobs/:id/stage',
+    binUrls.some((u) => stagePathPattern.test(u)),
+    `CLI must POST to /api/jobscout/tracker/jobs/:id/stage (urls seen: ${binUrls.join(', ')})`,
   );
   assert.ok(
-    mcpSrc.includes('/api/jobscout/tracker/jobs/') && mcpSrc.includes('/stage'),
-    'MCP must POST to /api/jobscout/tracker/jobs/:id/stage',
+    mcpUrls.some((u) => stagePathPattern.test(u)),
+    `MCP must POST to /api/jobscout/tracker/jobs/:id/stage (urls seen: ${mcpUrls.join(', ')})`,
   );
 
-  // Stage mapping — CLI and MCP both need applied→applied, saved→backlog, dismissed→discarded
-  for (const src of [binSrc, mcpSrc]) {
-    const hasMapping =
-      src.includes("applied: 'applied'") &&
-      src.includes("saved: 'backlog'") &&
-      src.includes("dismissed: 'discarded'");
-    assert.ok(hasMapping, 'Stage mapping (applied→applied, saved→backlog, dismissed→discarded) must be present');
+  // Stage mapping — CLI and MCP both need applied→applied, saved→backlog, dismissed→discarded.
+  // Use a formatting-tolerant regex (any quote style, any whitespace) so harmless reformats
+  // don't break this guard.
+  const stageMappingRules = [
+    [/\bapplied\s*:\s*['"\x60]applied['"\x60]/, 'applied → applied'],
+    [/\bsaved\s*:\s*['"\x60]backlog['"\x60]/, 'saved → backlog'],
+    [/\bdismissed\s*:\s*['"\x60]discarded['"\x60]/, 'dismissed → discarded'],
+  ];
+  for (const [label, src] of [['bin/trackly', binSrc], ['mcp/server.js', mcpSrc]]) {
+    for (const [rx, desc] of stageMappingRules) {
+      assert.ok(rx.test(src), `${label} missing stage mapping ${desc} (formatting-tolerant regex)`);
+    }
   }
 });
 
