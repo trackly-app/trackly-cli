@@ -28,11 +28,17 @@ jobs:
 
       - run: npm pack --dry-run
 
-      - name: Publish to npm
+      # `--provenance` requires `id-token: write` (set at the job level above). This writes
+      # a sigstore attestation to the npm registry linking the tarball to this workflow run.
+      # README/CLAUDE.md claimed provenance was active on every publish since 0.1.1, but
+      # `npm view trackly-cli@0.2.2 dist.attestations` was empty before this fix — docs shipped
+      # ahead of reality. Users who verify attestations with `npm install --attestations` would
+      # have seen the failure.
+      - name: Publish to npm (with provenance)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          npm publish --access public 2>&1 || {
+          npm publish --access public --provenance 2>&1 || {
             if npm view trackly-cli version 2>/dev/null | grep -qF "$(node -p 'require("./package.json").version')"; then
               echo "Version already published to npm — skipping (likely manual publish before auto-release existed)"
             else
@@ -40,9 +46,46 @@ jobs:
             fi
           }
 
-      - name: Install mcp-publisher
+      # Post-publish: verify attestations actually landed. If npm's provenance pipeline
+      # is degraded for our tarball, fail the workflow so the gap is visible instead of silent.
+      - name: Verify npm attestations
         run: |
-          curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          VERSION="$(node -p 'require("./package.json").version')"
+          # npm view returns empty on degraded provenance; grep -q fails, exits non-zero.
+          # Give the registry up to 30s for the attestation to propagate.
+          for i in 1 2 3; do
+            if npm view "trackly-cli@${VERSION}" dist.attestations --json 2>/dev/null | grep -q '"url"'; then
+              echo "✓ Provenance attestations found for trackly-cli@${VERSION}"
+              exit 0
+            fi
+            echo "Attestations not yet visible; waiting 10s (attempt $i/3)..."
+            sleep 10
+          done
+          echo "::error::No provenance attestations visible for trackly-cli@${VERSION}"
+          exit 1
+
+      # Pinned to a specific mcp-publisher release + verified SHA256.
+      # Previously pulled `releases/latest` piped straight to `tar xz`, which ran any
+      # upstream-compromised binary inside this workflow (OIDC token + NPM_TOKEN in scope).
+      # To upgrade: update MCP_PUBLISHER_VERSION, fetch the matching line from
+      #   https://github.com/modelcontextprotocol/registry/releases/download/v<version>/registry_<version>_checksums.txt
+      # and update MCP_PUBLISHER_SHA256_LINUX_AMD64.
+      - name: Install mcp-publisher (pinned + SHA256-verified)
+        env:
+          MCP_PUBLISHER_VERSION: v1.6.0
+          MCP_PUBLISHER_SHA256_LINUX_AMD64: 2de4ac3bf5b2aa9b012291a6969f16e4a2e37b70baab7f066e06998823405d42
+        run: |
+          set -euo pipefail
+          # Runner is ubuntu-latest → linux/amd64. Fail loud if that ever changes.
+          if [ "$(uname -s)-$(uname -m)" != "Linux-x86_64" ]; then
+            echo "::error::mcp-publisher pin only covers linux/amd64; runner is $(uname -s)-$(uname -m)"
+            exit 1
+          fi
+          URL="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 -o mcp-publisher.tar.gz "$URL"
+          echo "${MCP_PUBLISHER_SHA256_LINUX_AMD64}  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+          rm mcp-publisher.tar.gz
 
       - name: Authenticate to MCP Registry
         run: ./mcp-publisher login github-oidc

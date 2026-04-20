@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-04-20
+
+### Security
+
+- **Supply chain: pinned `mcp-publisher` download + SHA256 verification in publish workflows.** Previously `.github/workflows/publish.yml` and `publish-mcp-registry.yml` piped `releases/latest` straight through `tar xz`, running any upstream-compromised binary inside a workflow that held OIDC + `NPM_TOKEN`. Now pinned to `v1.6.0` with SHA256 `2de4ac3b…405d42`.
+- **Supply chain: npm publish now runs with `--provenance`.** README/CLAUDE.md claimed provenance attestations were active since 0.1.1, but `npm view trackly-cli@0.2.2 dist.attestations` was empty — docs shipped ahead of reality. The publish workflow now sets `--provenance` AND verifies the attestation landed on the registry (post-publish smoke), so a degraded provenance pipeline fails the release instead of silently shipping an unattested tarball.
+- **Dependency CVEs: regenerated `package-lock.json` to pull `hono@4.12.14` + `@hono/node-server@1.19.14`.** Closes GHSA-92pp-h63x-v22m (middleware bypass via repeated slashes) and GHSA-26pp-8wgv-hjvm (cookie name validation). Both were moderate; neither was reachable at runtime because trackly-cli uses stdio MCP not HTTP, but `npm audit` now reports 0 vulnerabilities.
+- **Token storage: atomic config write.** `saveConfig` now writes to `~/.trackly/config.json.tmp.<pid>` (mode 0600) and `fs.renameSync`s into place. A crash or SIGKILL mid-write no longer leaves a truncated config that silently loses auth.
+- **Token storage: clear dead refresh tokens instead of retrying forever.** `refreshAccessToken` now calls `clearConfig()` on 400/401/403 from `/api/auth/refresh`, so an invalidated session doesn't trigger a doomed refresh attempt on every subsequent 401. Transient network errors (no `status`) still leave the token in place.
+- **Secret hygiene: `--api-key` on command line now warns + scrubs argv.** The flag value is visible in `ps auxww` to local users and lands in shell history. The CLI now prints a one-line stderr warning (silenceable with `TRACKLY_NO_WARN=1`) and replaces the value in `process.argv` with `***` to defeat in-process leaks (e.g. an MCP tool accidentally logging `process.argv`). The `ps` vector itself is lost the moment the process starts — use `TRACKLY_API_KEY` env var or `trackly config --api-key` to avoid it entirely.
+
 ## [0.2.2] - 2026-04-20
 
 ### Fixed
