@@ -75,7 +75,7 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
   - `jobModality`: `full_time`, `internship`, `all` — employment type, NOT work-location style. For remote/hybrid/onsite filtering, use the `remote` boolean or `locationFilter: "remote"`; hybrid and onsite are not exposed as filters.
   - `remote` (boolean): filter to remote jobs only. Maps to `usStates=REMOTE`.
   - `status`: your application pipeline state. Values: `new`, `applying`, `applied_confirmed`, `check_later`, `not_interested`, `all`.
-  - `sort`: `newest`, `oldest`, `company`.
+  - `sort`: `newest` (default) or `match` (highest match score first; requires a resume on file). Backend rejects the deprecated values `oldest` and `company` with HTTP 400.
   - `keywords`, `companyId`, `limit`, `offset`.
 - **trackly_get_job** — Get full job details by ID
 - **trackly_search_companies** — Semantic company search

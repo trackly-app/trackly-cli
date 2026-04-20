@@ -767,7 +767,7 @@ ${color('bold', 'Filter values:')}
   --remote         Flag (no value). Filters for remote jobs (equivalent to usStates=REMOTE).
   --status         new, applying, applied_confirmed, check_later, not_interested, all
                    (filters by YOUR application pipeline state)
-  --sort           newest, oldest, company
+  --sort           newest (default), match (highest match score first, requires resume)
 
 ${color('bold', 'MCP Setup:')}
   Claude Code: claude mcp add --scope user trackly -- trackly mcp
