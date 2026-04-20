@@ -198,7 +198,11 @@ function createServer() {
       action: z.enum(['applied', 'saved', 'dismissed']).describe('Status action'),
     },
     wrapTool(async ({ id, action }) => {
-      return apiRequest('POST', '/api/jobscout-tracker/status', { jobId: id, action }, false, false, MCP_USER_AGENT);
+      // Backend `/api/jobscout/tracker/jobs/:id/stage` expects stage values, not the
+      // human-friendly action names the tool exposes. Mirror hosted MCP's mapping.
+      const ACTION_TO_STAGE = { applied: 'applied', saved: 'backlog', dismissed: 'discarded' };
+      const stage = ACTION_TO_STAGE[action] || action;
+      return apiRequest('POST', `/api/jobscout/tracker/jobs/${id}/stage`, { stage }, false, false, MCP_USER_AGENT);
     }, 'Failed to update job status')
   );
 

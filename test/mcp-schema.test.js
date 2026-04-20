@@ -109,6 +109,48 @@ test('CLI --sort help text is [newest, match] in bin/trackly', () => {
   assert.ok(!sortLine.match(/\bcompany\b/), `--sort help must NOT mention company as a sort value: ${sortLine}`);
 });
 
+test('CLI + MCP use new /jobscout/tracker/jobs/:id/stage endpoint (not removed /jobscout-tracker/status)', () => {
+  const binSrc = fs.readFileSync(path.join(__dirname, '..', 'bin', 'trackly'), 'utf8');
+  const mcpSrc = fs.readFileSync(path.join(__dirname, '..', 'mcp', 'server.js'), 'utf8');
+
+  // Backend removed the old endpoint; using it = 404 silent failure on apply/save/dismiss.
+  // Check for actual API calls (apiRequest('POST', ...)), not comments/strings that mention
+  // the removed path for historical context.
+  const binApiPostMatches = binSrc.match(/apiRequest\(\s*['"]POST['"]\s*,\s*['"]([^'"]*?)['"]/g) || [];
+  for (const call of binApiPostMatches) {
+    assert.ok(
+      !call.includes('/api/jobscout-tracker/status'),
+      `CLI has a live apiRequest POST to the removed endpoint: ${call}`,
+    );
+  }
+  const mcpApiPostMatches = mcpSrc.match(/apiRequest\(\s*['"]POST['"]\s*,\s*['"`]([^'"`]*?)['"`]/g) || [];
+  // The MCP call uses a template literal so include those too.
+  const mcpApiPostTemplates = mcpSrc.match(/apiRequest\(\s*['"]POST['"]\s*,\s*`([^`]*?)`/g) || [];
+  for (const call of [...mcpApiPostMatches, ...mcpApiPostTemplates]) {
+    assert.ok(
+      !call.includes('/api/jobscout-tracker/status'),
+      `MCP has a live apiRequest POST to the removed endpoint: ${call}`,
+    );
+  }
+  assert.ok(
+    binSrc.includes('/api/jobscout/tracker/jobs/') && binSrc.includes('/stage'),
+    'CLI must POST to /api/jobscout/tracker/jobs/:id/stage',
+  );
+  assert.ok(
+    mcpSrc.includes('/api/jobscout/tracker/jobs/') && mcpSrc.includes('/stage'),
+    'MCP must POST to /api/jobscout/tracker/jobs/:id/stage',
+  );
+
+  // Stage mapping — CLI and MCP both need applied→applied, saved→backlog, dismissed→discarded
+  for (const src of [binSrc, mcpSrc]) {
+    const hasMapping =
+      src.includes("applied: 'applied'") &&
+      src.includes("saved: 'backlog'") &&
+      src.includes("dismissed: 'discarded'");
+    assert.ok(hasMapping, 'Stage mapping (applied→applied, saved→backlog, dismissed→discarded) must be present');
+  }
+});
+
 test('docs/trackly-tools.md sort description matches backend', () => {
   const docs = fs.readFileSync(path.join(__dirname, '..', 'docs', 'trackly-tools.md'), 'utf8');
   // Find the sort line

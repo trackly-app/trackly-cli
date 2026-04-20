@@ -466,13 +466,22 @@ async function cmdStats() {
 }
 
 const ACTION_TO_COMMAND = { applied: 'apply', saved: 'save', dismissed: 'dismiss' };
+
+// CLI surface accepts applied|saved|dismissed (legacy human-friendly terms).
+// Backend `/api/jobscout/tracker/jobs/:id/stage` expects stage values:
+//   applied → applied, saved → backlog, dismissed → discarded
+// The old `/api/jobscout-tracker/status` endpoint was removed; the new stage
+// endpoint is what production actually serves (and what hosted MCP uses).
+const ACTION_TO_STAGE = { applied: 'applied', saved: 'backlog', dismissed: 'discarded' };
+
 async function cmdUpdateStatus(id, action) {
   const jobId = parseJobId(id);
   if (jobId === null) failNow(`Job ID must be a positive integer. Usage: trackly ${ACTION_TO_COMMAND[action] || action} <id>`);
   if (!hasAuth()) failNow(AUTH_HELP_TEXT);
 
+  const stage = ACTION_TO_STAGE[action] || action;
   try {
-    const result = await apiRequest('POST', '/api/jobscout-tracker/status', { jobId, action });
+    const result = await apiRequest('POST', `/api/jobscout/tracker/jobs/${jobId}/stage`, { stage });
     if (isJSON()) return printJson(result);
     console.log(color('green', `Job ${jobId} marked as ${STATUS_LABELS[action]}.`));
   } catch (e) {
