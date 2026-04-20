@@ -6,13 +6,20 @@ on:
 
 jobs:
   claude-review:
-    # Gate: only run on PRs from trusted authors. Fork PRs from unknown contributors
-    # would otherwise run with AWS Bedrock credentials. `OWNER` covers Kevin directly,
-    # `MEMBER`/`COLLABORATOR` covers any future teammates, and the explicit
-    # `github.actor == 'kevinastuhuaman'` literal is a universal allow for Kevin across
-    # any association (e.g. if the opener association metric ever changes format).
+    # Gate: only run on PRs AUTHORED by trusted users. This job checks out PR code
+    # AFTER AWS credentials are configured, so we must pin the trust check to the PR
+    # AUTHOR (`pull_request.user.login`), NOT the event actor (`github.actor`).
+    #
+    # The difference matters: if an untrusted user opens a PR and Kevin later pushes to
+    # that branch (rare, but possible with branch-permission grants), `github.actor`
+    # would become `kevinastuhuaman` and satisfy an actor-based gate — while the PR's
+    # code (including workflow-affecting files in older history) was authored by the
+    # untrusted user. Using `pull_request.user.login` ensures the gate fails in that
+    # scenario because the ORIGINAL author remains untrusted.
+    #
+    # (CodeRabbit Critical finding on PR #21.)
     if: |
-      github.actor == 'kevinastuhuaman' ||
+      github.event.pull_request.user.login == 'kevinastuhuaman' ||
       github.event.pull_request.author_association == 'OWNER' ||
       github.event.pull_request.author_association == 'MEMBER' ||
       github.event.pull_request.author_association == 'COLLABORATOR'
