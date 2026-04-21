@@ -16,7 +16,10 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to commit SHA to prevent supply-chain attacks via tag re-pointing.
+      # Version: v4.x.x. To upgrade, find the desired tag's commit at
+      # https://github.com/actions/checkout/tags and update both SHA + `# vX` comment.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 2
 

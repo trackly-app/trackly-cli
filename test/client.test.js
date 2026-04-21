@@ -94,6 +94,39 @@ function setupRefreshTestHarness(t, handler) {
   });
 }
 
+test('apiRequest aborts oversized response body (PR v0.2.4)', async (t) => {
+  // The 10 MB body cap prevents a malicious TRACKLY_BASE_URL from OOM'ing the long-lived
+  // MCP process via unbounded streaming. We simulate by returning chunks that exceed the
+  // cap; the client must reject with a specific error and NOT crash.
+  const configDir = createTempConfigDir();
+  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
+
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    // Send a single 11 MB chunk. Node's body-buffer grows past MAX_BODY_BYTES (10 MB)
+    // on the first chunk event and the client calls req.destroy.
+    const chunk = Buffer.alloc(11 * 1024 * 1024, '{');
+    res.write(chunk);
+    res.end('}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: undefined,
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '5000',
+  }, async () => {
+    await assert.rejects(
+      client.apiRequest('GET', '/oversized'),
+      /Trackly response body exceeded/,
+      'oversized body must reject with a specific, identifiable error (not swallow into OOM)'
+    );
+  });
+});
+
 test('apiRequest rejection: HTTP statusCode wins over body `status` key (Cursor Bugbot #5)', async (t) => {
   // Regression: apiRequest used to reject with `{ status: res.statusCode, ...json }` — spread
   // came AFTER, so a backend body like `{"status":"error"}` would clobber the numeric HTTP

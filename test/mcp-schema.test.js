@@ -177,3 +177,50 @@ test('docs/trackly-tools.md sort description matches backend', () => {
     `sort docs must not list the stale valid-values triplet 'newest, oldest, company': ${sortLine}`
   );
 });
+
+test('CLI + MCP guard /ask jobsUrl with a path allowlist (PR v0.2.4)', () => {
+  // Three invariants, in order of criticality:
+  //   1. Both sources DEFINE JOBS_URL_ALLOWLIST with the correct anchors — including the
+  //      trailing `(\?|$)` so `/api/v1/jobsFOO` can't pass as `/jobs` + suffix.
+  //   2. Both sources CALL JOBS_URL_ALLOWLIST.test(...) against the jobsUrl.
+  //   3. The .test() CALL must appear BEFORE the apiRequest fetch in the source file —
+  //      otherwise the guard runs after the fetch and doesn't gate anything.
+  //
+  // The /ask endpoint returns a jobsUrl string that the CLI + MCP then fetch with the
+  // user's Authorization header. normalizeEndpoint blocks cross-origin, but a compromised
+  // backend could emit a same-origin `/api/admin/...` path. (Originally PR v0.2.4;
+  // tightened per CodeRabbit to prevent future weakened regex from passing silently.)
+  const binSrc = fs.readFileSync(path.join(__dirname, '..', 'bin', 'trackly'), 'utf8');
+  const mcpSrc = fs.readFileSync(path.join(__dirname, '..', 'mcp', 'server.js'), 'utf8');
+  // Full regex literal with boundary anchor: /^\/api\/(v1|jobscout)\/jobs(\?|$)/
+  const allowlistDefRegex = /const\s+JOBS_URL_ALLOWLIST\s*=\s*\/\^\\\/api\\\/\(v1\|jobscout\)\\\/jobs\(\\\?\|\$\)\//;
+
+  for (const [label, src] of [['bin/trackly', binSrc], ['mcp/server.js', mcpSrc]]) {
+    // (1) Definition includes the boundary anchor so a weakened regex that drops (\?|$)
+    //     doesn't pass. Future refactor attempt like `/^\/api\/(v1|jobscout)\/jobs/`
+    //     would fail this test.
+    assert.ok(
+      allowlistDefRegex.test(src),
+      `${label} must define JOBS_URL_ALLOWLIST = /^\\/api\\/(v1|jobscout)\\/jobs(\\?|$)/ with the boundary anchor (drops the /jobsX bypass)`
+    );
+    // (2) The constant must be USED, not just DEFINED.
+    const testCallIdx = src.search(/JOBS_URL_ALLOWLIST\.test\(/);
+    assert.ok(
+      testCallIdx !== -1,
+      `${label} must CALL JOBS_URL_ALLOWLIST.test(...) — defining the regex without using it would defeat the guard`
+    );
+    // (3) apiRequest for the jobsUrl must come AFTER the .test() call in source order.
+    //     We look for `apiRequest(...jobsUrl...)` patterns (two forms across the CLI vs MCP).
+    const fetchCallIdx = Math.min(
+      ...['apiRequest(\'GET\', result.jobsUrl', 'apiRequest(\'GET\', askResult.jobsUrl']
+        .map((needle) => src.indexOf(needle))
+        .filter((i) => i !== -1)
+    );
+    if (Number.isFinite(fetchCallIdx)) {
+      assert.ok(
+        testCallIdx < fetchCallIdx,
+        `${label} must call JOBS_URL_ALLOWLIST.test(...) BEFORE apiRequest fetches the jobsUrl`
+      );
+    }
+  }
+});

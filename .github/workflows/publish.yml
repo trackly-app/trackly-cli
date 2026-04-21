@@ -13,9 +13,10 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to commit SHA to prevent supply-chain attacks via tag re-pointing.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
@@ -39,28 +40,26 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # IMPORTANT: no `set -e` here. We need to handle `npm publish`'s non-zero
-          # exit codes explicitly so a version-already-published error (EPUBLISHCONFLICT /
-          # "cannot publish over the previously published versions") can branch to the
-          # skip path instead of aborting the workflow. `set -u` is safe; `pipefail` is
-          # avoided so a transient `npm view` blip in the post-verify step can't kill us
-          # mid-publish either.
+          # GitHub Actions' default shell is `bash --noprofile --norc -eo pipefail {0}`,
+          # so `set -e` is ACTIVE implicitly — any non-zero command aborts the step unless
+          # its exit is tested. `set -u` below adds nounset but does NOT disable errexit.
+          # We need `npm publish` to be able to fail (EPUBLISHCONFLICT on already-published
+          # re-runs) without aborting the step, so we capture its exit via `|| PUBLISH_EXIT=$?`
+          # — the `||` branch suppresses errexit for exactly that command.
+          # (Finding by opus-1m + Cursor Bugbot on dd04c6c: bare `npm publish` + `PUBLISH_EXIT=$?`
+          # on the next line was unreachable because -e killed the step before the capture.)
           set -u
           VERSION="$(node -p 'require("./package.json").version')"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-          # Capture publish output so we can classify the failure mode from the error
-          # message itself, rather than relying on a pre-flight `npm view` (which can
-          # fail transiently and used to kill the workflow under pipefail — Cursor
-          # Bugbot finding on c1aa545).
           PUBLISH_LOG="$(mktemp)"
-          if npm publish --access public --provenance >"${PUBLISH_LOG}" 2>&1; then
-            cat "${PUBLISH_LOG}"
+          PUBLISH_EXIT=0
+          npm publish --access public --provenance >"${PUBLISH_LOG}" 2>&1 || PUBLISH_EXIT=$?
+          cat "${PUBLISH_LOG}"
+          if [ "${PUBLISH_EXIT}" -eq 0 ]; then
             echo "published=true" >> "$GITHUB_OUTPUT"
             echo "already_published=false" >> "$GITHUB_OUTPUT"
           else
-            PUBLISH_EXIT=$?
-            cat "${PUBLISH_LOG}"
             # npm's canonical "version already published" signals — any of these means
             # the current version is already on npm and the failure is benign.
             # (EPUBLISHCONFLICT is the modern code; the human-readable string covers
