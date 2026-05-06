@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-05-02
+
+### Fixed
+
+- **Setup-guide URL was 404.** Since v0.2.0, README + `docs/trackly-tools.md` linked users to `https://usetrackly.app/connect` for the visual co-work setup guide, but the page on TracklyWeb was published at `/connector` (singular). Anyone clicking the link from npm or GitHub hit a hard 404. Both references corrected to `/connector` (the canonical, live URL — already linked from `usetrackly.app/cli` and `usetrackly.app` footer).
+
 ## [0.2.4] - 2026-04-20
 
 ### Security
