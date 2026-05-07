@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **CI: MCP Registry publish step was failing.** v0.2.5's release auto-published to npm but the MCP Registry sync step (in `publish.yml`) failed at `mcp-publisher login github-oidc` with `failed to validate OIDC token: invalid audience: expected https://registry.modelcontextprotocol.io, got [mcp-registry]`. Upstream `mcp-publisher` v1.7.6 (Apr 30, 2026) bound the OIDC token exchange to a per-deployment audience, fixing this. Bumped pin from v1.6.0 → v1.7.8 in both `publish.yml` and `publish-mcp-registry.yml`, with the matching SHA256 (`48230dbec85bd88a0d42977ef533cddda23235f0db4331b9263ce53b432cb75c`) verified from the upstream `registry_1.7.8_checksums.txt`. Future releases will sync to MCP Registry again.
+
 ## [0.2.5] - 2026-05-06
 
 ### Fixed

@@ -18,8 +18,8 @@ jobs:
       # Keep in lockstep with .github/workflows/publish.yml — same version, same SHA256.
       - name: Install mcp-publisher (pinned + SHA256-verified)
         env:
-          MCP_PUBLISHER_VERSION: v1.6.0
-          MCP_PUBLISHER_SHA256_LINUX_AMD64: 2de4ac3bf5b2aa9b012291a6969f16e4a2e37b70baab7f066e06998823405d42
+          MCP_PUBLISHER_VERSION: v1.7.8
+          MCP_PUBLISHER_SHA256_LINUX_AMD64: 48230dbec85bd88a0d42977ef533cddda23235f0db4331b9263ce53b432cb75c
         run: |
           set -euo pipefail
           if [ "$(uname -s)-$(uname -m)" != "Linux-x86_64" ]; then
