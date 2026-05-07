@@ -10,7 +10,7 @@ In your AI tool, open **Settings → Connectors → Add custom connector**:
 - Leave any optional OAuth fields empty — **Client ID**, **Client Secret**, **Authorization URL**, **Token URL** — Trackly uses OAuth 2.1 Dynamic Client Registration and will register the client automatically
 - If the client UI uses different labels or requires you to continue past an OAuth section, keep those fields blank and proceed to sign in. Do not invent client credentials or endpoint URLs.
 
-Sign in with Google when prompted. [Visual guide →](https://usetrackly.app/connect)
+Sign in with Google when prompted. [Visual guide →](https://usetrackly.app/connector)
 
 ### Cursor, Windsurf, Claude Code (CLI via stdio)
 
