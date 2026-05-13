@@ -1,10 +1,10 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.kevinastuhuaman/trackly",
+  "name": "io.github.trackly-app/trackly",
   "title": "Trackly CLI",
   "description": "AI job search for Claude, ChatGPT, Cursor. 128K+ jobs, 1,900+ companies. OAuth or stdio.",
   "repository": {
-    "url": "https://github.com/kevinastuhuaman/trackly-cli",
+    "url": "https://github.com/trackly-app/trackly-cli",
     "source": "github"
   },
   "websiteUrl": "https://usetrackly.app/cli",
@@ -17,12 +17,12 @@
       ]
     }
   ],
-  "version": "0.2.5",
+  "version": "0.2.6",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "trackly-cli",
-      "version": "0.2.5",
+      "version": "0.2.6",
       "runtimeHint": "npx",
       "runtimeArguments": [
         {
