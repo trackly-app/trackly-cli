@@ -192,3 +192,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Google OAuth login flow
 - API key management
 - Natural language job search
+
