@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-05-13
+
+### Changed
+
+- **MCP Registry namespace migrated from `io.github.kevinastuhuaman/trackly` → `io.github.trackly-app/trackly`.** The `trackly-cli` repo and its 7 sibling Trackly repos (TracklyApp, TracklyMac, TracklyWeb, close-ai, homebrew-trackly, trackly-cli-video, TracklyAndroid) moved from Kevin's personal GitHub account to the `trackly-app` GitHub Organization on 2026-05-13. Co-founder Jasmine Rattan now holds proper Admin role on each repo (impossible on user-owned repos — see `github-user-repo-permission-limits` memory). The MCP Registry derives publish permissions from the repo's GitHub owner via OIDC, so the namespace must reflect the new owner. **Existing installs at the old namespace continue working — the old MCP Registry entry remains active, and the npm package itself is unchanged.** New installs from Claude Code/Cursor/Codex will resolve `io.github.trackly-app/trackly` going forward. The old entry will be flagged as `deprecated` with a status message pointing to the new namespace.
+- **Repository URL updated** in `package.json` + `server.json` from `github.com/kevinastuhuaman/trackly-cli` → `github.com/trackly-app/trackly-cli`. GitHub redirects keep old `git clone` and API calls working indefinitely, but downstream tooling should use the canonical URL.
+
 ### Fixed
 
 - **CI: MCP Registry publish step was failing.** v0.2.5's release auto-published to npm but the MCP Registry sync step (in `publish.yml`) failed at `mcp-publisher login github-oidc` with `failed to validate OIDC token: invalid audience: expected https://registry.modelcontextprotocol.io, got [mcp-registry]`. Upstream `mcp-publisher` v1.7.6 (Apr 30, 2026) bound the OIDC token exchange to a per-deployment audience, fixing this. Bumped pin from v1.6.0 → v1.7.8 in both `publish.yml` and `publish-mcp-registry.yml`, with the matching SHA256 (`48230dbec85bd88a0d42977ef533cddda23235f0db4331b9263ce53b432cb75c`) verified from the upstream `registry_1.7.8_checksums.txt`. Future releases will sync to MCP Registry again.

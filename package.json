@@ -1,7 +1,7 @@
 {
   "name": "trackly-cli",
-  "version": "0.2.5",
-  "mcpName": "io.github.kevinastuhuaman/trackly",
+  "version": "0.2.6",
+  "mcpName": "io.github.trackly-app/trackly",
   "description": "AI job search CLI + hosted MCP server with OAuth. 128K+ jobs, 1,900+ companies, 40+ ATS. Works with Claude, ChatGPT, Cursor, Windsurf, Codex via hosted streamable-http or local stdio.",
   "bin": {
     "trackly": "./bin/trackly"
@@ -47,11 +47,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kevinastuhuaman/trackly-cli"
+    "url": "https://github.com/trackly-app/trackly-cli"
   },
   "homepage": "https://usetrackly.app/cli",
   "bugs": {
-    "url": "https://github.com/kevinastuhuaman/trackly-cli/issues"
+    "url": "https://github.com/trackly-app/trackly-cli/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
