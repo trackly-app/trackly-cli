@@ -18,7 +18,7 @@ lib/client.js        # HTTP client: config loading, token refresh, apiRequest()
 lib/formatters.js    # Terminal output: color(), outputJobs(), outputCompanies(), outputStats(), outputContacts(), outputReferralCampaign(), outputNetworkBrief()
 mcp/server.js        # MCP server: 10 tools, launched via `trackly mcp`
 docs/trackly-tools.md  # MCP tool reference (for embedding in AI contexts)
-server.json          # MCP Registry manifest (io.github.kevinastuhuaman/trackly)
+server.json          # MCP Registry manifest (io.github.trackly-app/trackly)
 ```
 
 ## Key Commands
@@ -48,7 +48,7 @@ The 10 MCP tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_comp
 
 Job function values — **14 canonical values** that match backend `ALL_JOB_FUNCTIONS` at `granola-followup-app/src/routes/jobscout-filter-utils.ts:17-21`, the backend `job_function` DB column, and the local mirror `JOB_FUNCTIONS` in `mcp/server.js`: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`. `partnerships` is documented in CHANGELOG `0.2.1`; any doc still listing 13 values is stale. The MCP test at `test/mcp-schema.test.js` locks this local/backend mapping.
 
-NOTE: `/ask` lives in the backend (`kevinastuhuaman/close-ai`) and historically emitted `product_management`/`data_science` style values that the `/jobs` handler could drop. Backend PR #112 (`https://github.com/kevinastuhuaman/close-ai/pull/112`) is the proposed fix to emit modern public names (`product`, `data`, etc.). Do not document that drift as fixed/live until that PR is merged and deployed.
+NOTE: `/ask` lives in the backend (`trackly-app/close-ai`) and historically emitted `product_management`/`data_science` style values that the `/jobs` handler could drop. Backend PR #112 (`https://github.com/trackly-app/close-ai/pull/112`) is the proposed fix to emit modern public names (`product`, `data`, etc.). Do not document that drift as fixed/live until that PR is merged and deployed.
 
 ## Publishing
 
@@ -99,4 +99,4 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 6. **The `ask` command has a 20/day rate limit** enforced server-side (429 response).
 7. **No dependencies beyond `@modelcontextprotocol/sdk` and `zod`.** Keep it minimal. The HTTP client uses raw `node:https`/`node:http`.
 8. **Token refresh is automatic.** On 401, `apiRequest()` tries one refresh via `/api/auth/refresh` before failing. The `_isRetry` flag prevents infinite loops.
-9. **`/ask` backend drift is tracked outside this repo.** The CLI and MCP use DB-backed job function values directly. Backend PR #112 (`kevinastuhuaman/close-ai`) tracks the `/ask` prompt/URL migration to those same public values; verify production before claiming `/ask` round-trips are fixed.
+9. **`/ask` backend drift is tracked outside this repo.** The CLI and MCP use DB-backed job function values directly. Backend PR #112 (`trackly-app/close-ai`) tracks the `/ask` prompt/URL migration to those same public values; verify production before claiming `/ask` round-trips are fixed.

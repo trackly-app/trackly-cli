@@ -3,6 +3,16 @@ name: Publish
 on:
   release:
     types: [published]
+  # Also fire on version tag push so auto-release.yml's `git push origin <tag>` triggers a publish
+  # even when the Release is created by github-actions[bot]. GITHUB_TOKEN-created Releases do NOT
+  # trigger downstream `release:` events (well-known GitHub Actions restriction to prevent
+  # workflow recursion). v0.2.6 required a manual release recreate to publish to npm because of
+  # this. Tag-push events fire regardless of who pushed.
+  # npm's EPUBLISHCONFLICT branch in this workflow already handles the case where both events
+  # fire — the second one becomes a no-op without aborting the step.
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   publish:

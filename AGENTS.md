@@ -8,7 +8,7 @@ Universal context for AI coding agents (Codex, Cursor, Copilot, Claude Code, Dev
 - **Stack:** Node.js 18+ / plain CommonJS JavaScript (no TypeScript, no build step)
 - **Package:** `npm install -g trackly-cli` (public npm package)
 - **Backend API:** https://closeai.mba (same as Close AI — do NOT modify the backend from this repo)
-- **Repo:** Public GitHub — `kevinastuhuaman/trackly-cli`
+- **Repo:** Public GitHub — `trackly-app/trackly-cli`
 
 ## Architecture
 
@@ -18,7 +18,7 @@ lib/client.js        # HTTP client: config loading, token refresh, apiRequest()
 lib/formatters.js    # Terminal output: color(), outputJobs(), outputCompanies(), etc.
 mcp/server.js        # MCP server: 10 tools, launched via `trackly mcp`
 docs/trackly-tools.md  # MCP tool reference (for embedding in AI agent contexts)
-server.json          # MCP Registry manifest (io.github.kevinastuhuaman/trackly)
+server.json          # MCP Registry manifest (io.github.trackly-app/trackly)
 ```
 
 ## Dev Commands
