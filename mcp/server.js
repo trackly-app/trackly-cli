@@ -128,7 +128,15 @@ function createServer() {
     },
     wrapTool(async (params) => {
       const qs = new URLSearchParams();
-      if (params.function !== undefined) qs.set('jobFunction', params.function);
+      // When `function` isn't specified, request ALL canonical functions so the
+      // backend takes the all-roles short-circuit (granola-followup-app
+      // src/routes/jobscout.ts:3461, isAllJobFunctionsSelection). Otherwise the
+      // backend's legacy fallback (jobscout.ts:3478) defaults to
+      // `is_pm_role = TRUE`, returning 0 for companies with zero PM roles.
+      // Surfaced 2026-05-20 on freshly-activated Cahoot (id=3349) and Iterative
+      // Health (id=3350) — both had non-PM-only job sets and search_jobs
+      // returned total=0 without an explicit function filter.
+      qs.set('jobFunction', params.function !== undefined ? params.function : JOB_FUNCTIONS.join(','));
       if (params.companyId !== undefined) qs.set('companyId', String(params.companyId));
       if (params.locationFilter !== undefined) {
         const value = Array.isArray(params.locationFilter)
