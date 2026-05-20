@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-05-20
+
+### Fixed
+
+- **`trackly_search_jobs(companyId)` returned 0 for any company without PM-classified roles.** The MCP URL builder dropped the `jobFunction` query param entirely when the caller omitted `function`. Backend (`granola-followup-app/src/routes/jobscout.ts:3473-3478`) then fell through to a legacy boolean filter defaulting to `j.is_pm_role = TRUE`. Surfaced 2026-05-20 on two unrelated freshly-activated companies — Cahoot (id=3349, smartrecruiters, 5 jobs none PM) and Iterative Health (id=3350, greenhouse, 46 jobs none PM) — both returning `total: 0` from `search_jobs` despite having jobs in the DB. Fixed in [PR #27](https://github.com/trackly-app/trackly-cli/pull/27): when `params.function` is undefined, send `jobFunction` as the full 14-item canonical function list. This triggers the backend's `isAllJobFunctionsSelection` all-roles short-circuit at `jobscout.ts:3461`. Added regression test in `test/mcp-schema.test.js` that textually asserts both the new defaulting expression AND absence of the old buggy `if (params.function !== undefined) qs.set(...)` pattern (including the braced/multi-line form, per Copilot R1 feedback).
+
 ## [0.2.6] - 2026-05-13
 
 ### Changed
