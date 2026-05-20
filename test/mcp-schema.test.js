@@ -258,10 +258,14 @@ test('trackly_search_jobs defaults jobFunction to ALL functions when caller omit
     searchJobsRegion.length > 0,
     'Could not locate trackly_search_jobs handler region in mcp/server.js',
   );
+  // The negative-regex must catch the buggy pattern in BOTH the no-braces and
+  // braced/multi-line forms (Copilot PR #27 R0). The `\{?` + `\s*` allows for
+  // optional brace + arbitrary whitespace/newlines between the `)` and `qs.set`.
   assert.ok(
-    !/if\s*\(\s*params\.function\s*!==\s*undefined\s*\)\s*qs\.set\(['"]jobFunction['"]/.test(searchJobsRegion),
+    !/if\s*\(\s*params\.function\s*!==\s*undefined\s*\)\s*\{?\s*qs\.set\(['"]jobFunction['"]/.test(searchJobsRegion),
     'Buggy pattern detected: the old `if (params.function !== undefined) qs.set("jobFunction", ...)` ' +
-    'was reintroduced. This drops the param entirely when no function is specified, causing the ' +
-    'backend PM-only fallback. Use the ternary that sends JOB_FUNCTIONS.join(",") on the else branch.',
+    '(or the braced/multi-line equivalent) was reintroduced. This drops the param entirely when no ' +
+    'function is specified, causing the backend PM-only fallback. Use the ternary that sends ' +
+    'JOB_FUNCTIONS.join(",") on the else branch.',
   );
 });
