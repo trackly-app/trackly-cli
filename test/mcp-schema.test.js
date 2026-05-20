@@ -224,3 +224,48 @@ test('CLI + MCP guard /ask jobsUrl with a path allowlist (PR v0.2.4)', () => {
     }
   }
 });
+
+test('trackly_search_jobs defaults jobFunction to ALL functions when caller omits `function`', () => {
+  // Regression guard for the 2026-05-20 Cahoot/Iterative Health bug:
+  // When the MCP caller doesn't specify `function`, the backend's legacy
+  // fallback (granola-followup-app src/routes/jobscout.ts:3478) defaults to
+  // `is_pm_role = TRUE` and returns 0 for companies with no PM roles. The
+  // fix sends the full JOB_FUNCTIONS list so the backend takes the
+  // all-roles short-circuit at isAllJobFunctionsSelection.
+  //
+  // We assert TEXTUALLY because the tool handler is wrapped via
+  // server.tool(...) and not directly exported. If someone reverts the
+  // defaulting (e.g. back to `if (params.function !== undefined) ...`),
+  // this test fails with a clear message pointing at the regression class.
+
+  // 1. The defaulting expression must use JOB_FUNCTIONS.join(',') as the fallback.
+  assert.ok(
+    /qs\.set\(['"]jobFunction['"],\s*params\.function\s*!==\s*undefined\s*\?\s*params\.function\s*:\s*JOB_FUNCTIONS\.join\(['"],['"]\)\)/.test(SERVER_SRC),
+    'trackly_search_jobs URL builder must default `jobFunction` to JOB_FUNCTIONS.join(",") ' +
+    'when params.function is undefined. Without this, backend defaults to PM-only filter ' +
+    'and returns 0 for companies with no PM roles (Cahoot, Iterative Health). ' +
+    'See mcp/server.js around line 131 + comment block.',
+  );
+
+  // 2. The defaulting MUST NOT be gated by an undefined check that drops the param.
+  //    Specifically, the old buggy pattern `if (params.function !== undefined) qs.set(...)`
+  //    must not exist anywhere in the trackly_search_jobs handler region.
+  const searchJobsRegion = SERVER_SRC.slice(
+    SERVER_SRC.indexOf("'trackly_search_jobs'"),
+    SERVER_SRC.indexOf("'trackly_get_job'"),
+  );
+  assert.ok(
+    searchJobsRegion.length > 0,
+    'Could not locate trackly_search_jobs handler region in mcp/server.js',
+  );
+  // The negative-regex must catch the buggy pattern in BOTH the no-braces and
+  // braced/multi-line forms (Copilot PR #27 R0). The `\{?` + `\s*` allows for
+  // optional brace + arbitrary whitespace/newlines between the `)` and `qs.set`.
+  assert.ok(
+    !/if\s*\(\s*params\.function\s*!==\s*undefined\s*\)\s*\{?\s*qs\.set\(['"]jobFunction['"]/.test(searchJobsRegion),
+    'Buggy pattern detected: the old `if (params.function !== undefined) qs.set("jobFunction", ...)` ' +
+    '(or the braced/multi-line equivalent) was reintroduced. This drops the param entirely when no ' +
+    'function is specified, causing the backend PM-only fallback. Use the ternary that sends ' +
+    'JOB_FUNCTIONS.join(",") on the else branch.',
+  );
+});
