@@ -35,7 +35,7 @@ trackly jobs --function product
 
 ## At a Glance
 
-1,900+ companies | 128K+ jobs | 40+ ATS types | CLI + MCP | 10 MCP tools
+1,900+ companies | 128K+ jobs | 40+ ATS types | CLI + MCP | 11 MCP tools
 
 ## CLI Commands
 
@@ -63,6 +63,7 @@ trackly referral start 1234           # Start a referral campaign
 trackly referral status 1234          # Check referral campaign status
 trackly company-brief 243             # Get company brief (--refresh to regenerate)
 trackly company-workspace 243         # Full company workspace view
+trackly request-company "eBay"        # Request a company be added (--url, --notes optional)
 trackly api-key create                # Generate API key
 trackly api-key list                  # List API keys
 trackly config                        # Show current CLI config

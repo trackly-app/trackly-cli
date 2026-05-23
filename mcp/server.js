@@ -297,6 +297,24 @@ function createServer() {
     }, 'Failed to fetch company workspace')
   );
 
+  server.tool(
+    'trackly_request_company',
+    'Request that a company be added to Trackly\'s tracked companies. Use when the user asks about a company that isn\'t in trackly_search_companies / trackly_list_companies results. Rate-limited to 5 pending requests per user.',
+    {
+      companyName: z.string().min(1).max(200).describe('Company name (e.g. "eBay")'),
+      companyUrl: z.string().max(500).optional().describe('Optional careers page or homepage URL (e.g. "https://careers.ebay.com")'),
+      notes: z.string().max(1000).optional().describe('Optional context (e.g. "MBA hiring page", "specific role I want tracked")'),
+    },
+    wrapTool(async ({ companyName, companyUrl, notes }) => {
+      return apiRequest('POST', '/api/jobscout/companies/request', {
+        company_name: companyName,
+        company_url: companyUrl || '',
+        notes: notes || '',
+        source: 'mcp',
+      }, false, false, MCP_USER_AGENT);
+    }, 'Failed to request company')
+  );
+
   return server;
 }
 
