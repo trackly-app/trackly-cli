@@ -35,7 +35,7 @@ trackly jobs --function product
 
 ## At a Glance
 
-1,900+ companies | 128K+ jobs | 40+ ATS types | CLI + MCP | 10 MCP tools
+1,900+ companies | 128K+ jobs | 40+ ATS types | CLI + MCP | 11 MCP tools
 
 ## CLI Commands
 
