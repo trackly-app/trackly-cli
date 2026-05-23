@@ -225,6 +225,74 @@ test('CLI + MCP guard /ask jobsUrl with a path allowlist (PR v0.2.4)', () => {
   }
 });
 
+test('trackly_request_company posts to /api/jobscout/companies/request with source="mcp"', () => {
+  // Mirrors the close-ai PR #456 hosted MCP. The dual-server rule
+  // (~/CLAUDE.md → reference_mcp_dual_server_close_ai_and_trackly_cli.md)
+  // requires the npm-published MCP to call the same endpoint with the same
+  // payload shape. If the body shape drifts (snake_case → camelCase, missing
+  // `source`, wrong source value), backend validation 400s or coerces source
+  // to NULL and the request goes unattributed.
+  assert.ok(
+    SERVER_SRC.includes("'trackly_request_company'"),
+    'trackly_request_company tool must be registered in mcp/server.js',
+  );
+  // Endpoint path matches backend handler at jobscout.ts:9222.
+  assert.ok(
+    /apiRequest\(\s*['"]POST['"]\s*,\s*['"]\/api\/jobscout\/companies\/request['"]/.test(SERVER_SRC),
+    'trackly_request_company must POST to /api/jobscout/companies/request',
+  );
+  // Source attribution must be the literal string 'mcp' (backend whitelist:
+  // {ios, mac, web, cli, mcp}). Unknown values get coerced to NULL by the
+  // backend — silent attribution loss.
+  const requestRegion = SERVER_SRC.slice(SERVER_SRC.indexOf("'trackly_request_company'"));
+  assert.ok(
+    /source:\s*['"]mcp['"]/.test(requestRegion),
+    'trackly_request_company must tag requests with source: "mcp"',
+  );
+  // Body uses snake_case keys (company_name, company_url, notes) to match
+  // the Express handler's req.body destructure at jobscout.ts:9227.
+  assert.ok(
+    /company_name:\s*companyName/.test(requestRegion),
+    'request body must map companyName → company_name (backend expects snake_case)',
+  );
+  assert.ok(
+    /company_url:\s*companyUrl/.test(requestRegion),
+    'request body must map companyUrl → company_url',
+  );
+});
+
+test('CLI request-company command exists and tags source="cli"', () => {
+  const binSrc = fs.readFileSync(path.join(__dirname, '..', 'bin', 'trackly'), 'utf8');
+  // Dispatch case + handler function both present.
+  assert.ok(
+    /case 'request-company':/.test(binSrc),
+    "switch must include case 'request-company' (CLI dispatch)",
+  );
+  assert.ok(
+    /async function cmdRequestCompany\(/.test(binSrc),
+    'cmdRequestCompany handler must be defined',
+  );
+  // POST to the same backend endpoint as the MCP tool.
+  assert.ok(
+    /apiRequest\(\s*['"]POST['"]\s*,\s*['"]\/api\/jobscout\/companies\/request['"]/.test(binSrc),
+    'CLI must POST to /api/jobscout/companies/request',
+  );
+  // CLI tags source as 'cli' (NOT 'mcp' — the CLI shares lib/client.js with
+  // the MCP, so a copy-paste regression that flipped this would unattribute
+  // CLI requests entirely).
+  const cmdRegion = binSrc.slice(binSrc.indexOf('async function cmdRequestCompany'));
+  const cmdEndIdx = cmdRegion.indexOf('async function ', 1);
+  const cmdBody = cmdEndIdx === -1 ? cmdRegion : cmdRegion.slice(0, cmdEndIdx);
+  assert.ok(
+    /source:\s*['"]cli['"]/.test(cmdBody),
+    'cmdRequestCompany must tag requests with source: "cli"',
+  );
+  assert.ok(
+    !/source:\s*['"]mcp['"]/.test(cmdBody),
+    'CLI command must NOT use source="mcp" (that\'s for the MCP tool)',
+  );
+});
+
 test('trackly_search_jobs defaults jobFunction to ALL functions when caller omits `function`', () => {
   // Regression guard for the 2026-05-20 Cahoot/Iterative Health bug:
   // When the MCP caller doesn't specify `function`, the backend's legacy

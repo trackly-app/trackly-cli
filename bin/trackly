@@ -28,11 +28,13 @@ const VALUE_FLAGS = new Set([
   'keywords',
   'limit',
   'name',
+  'notes',
   'offset',
   'region',
   'search',
   'sort',
   'status',
+  'url',
 ]);
 const AUTH_HELP_TEXT = `Not authenticated.
   Option 1: trackly login                        (Google OAuth)
@@ -668,6 +670,43 @@ async function cmdCompanyWorkspace(args) {
   }
 }
 
+async function cmdRequestCompany(args) {
+  // Positional arg = company name. Allow multi-word names without forcing the user
+  // to quote, e.g. `trackly request-company Built Robotics --url ...` joins the
+  // free-floating positionals into "Built Robotics". Matches `trackly ask` UX.
+  const name = (args._ || []).join(' ').trim();
+  if (!name) {
+    failNow('Company name required. Usage: trackly request-company <name> [--url <url>] [--notes <notes>]');
+  }
+  if (!hasAuth()) failNow(AUTH_HELP_TEXT);
+
+  const url = typeof args.url === 'string' ? args.url : '';
+  const notes = typeof args.notes === 'string' ? args.notes : '';
+
+  try {
+    const result = await apiRequest('POST', '/api/jobscout/companies/request', {
+      company_name: name,
+      company_url: url,
+      notes: notes,
+      source: 'cli',
+    });
+    if (isJSON()) return printJson(result);
+    const requestId = result.requestId || result.id || '?';
+    console.log(color('green', `Requested "${name}" (#${requestId}). Trackly team will review shortly.`));
+  } catch (e) {
+    // Backend returns 429 (rate limit, max 5 pending) and 409 (duplicate pending request)
+    // with a specific `error` message. Surface that message verbatim so the user knows
+    // exactly which gate fired without having to enable --json.
+    if (e.status === 429) {
+      setErrorExit(e.error || 'Maximum 5 pending requests allowed. Please wait for existing requests to be reviewed.');
+    } else if (e.status === 409) {
+      setErrorExit(e.error || 'You already have a pending request for this company.');
+    } else {
+      setErrorExit(e.error || e.message || 'Failed to request company');
+    }
+  }
+}
+
 async function cmdConfig(args) {
   if (args['api-key'] === null) failNow('API key value required. Usage: trackly config --api-key <key>');
   if (args['base-url'] === null) failNow('Base URL value required. Usage: trackly config --base-url <url>');
@@ -770,6 +809,7 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'brief <id>')}           Get network brief for a job
   ${color('cyan', 'company-brief <id>')}   Get company brief (--refresh to generate)
   ${color('cyan', 'company-workspace <id>')} Show company workspace (jobs, contacts, campaigns)
+  ${color('cyan', 'request-company <name>')} Request a company be added to Trackly (--url, --notes)
   ${color('cyan', 'api-key create')}       Generate an API key
   ${color('cyan', 'api-key list')}         List your API keys
   ${color('cyan', 'config')}               Show or update CLI config (--api-key, --base-url)
@@ -925,6 +965,9 @@ async function main() {
       break;
     case 'company-workspace':
       await cmdCompanyWorkspace(args);
+      break;
+    case 'request-company':
+      await cmdRequestCompany(args);
       break;
     case 'api-key':
       await cmdApiKey(args);
