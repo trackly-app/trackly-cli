@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-05-23
+
+### Fixed
+
+- **CI provenance attestation restored.** v0.2.7's npm release lacks a provenance attestation (`npm view trackly-cli@0.2.7 dist.attestations` returns `null`) because the package was published manually from a laptop after the CI Publish workflow's first attempt failed on a pre-rotation NPM_TOKEN (issue #29). NPM_TOKEN was rotated to Automation type in the v0.2.7 cycle, but the workflow re-run hit `E403 EPUBLISHCONFLICT` since the version was already on npm. v0.2.8 is a no-code-change release whose sole purpose is to ship a clean attested tarball via the CI path. Verifies the rotated token works and closes the 3-release attestation gap (v0.2.5, v0.2.6, v0.2.7 are all unattested on npm).
+
 ## [0.2.7] - 2026-05-20
 
 ### Fixed
