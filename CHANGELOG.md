@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-27
+
+### Fixed
+
+- **CI publish failed at v0.3.0 with HTTP 404; OIDC token exchange was skipped.** PR #36's R1 fix stripped the stale `_authToken=` line from `~/.npmrc`, but `actions/setup-node` writes its `.npmrc` to the path in `$NPM_CONFIG_USERCONFIG` (`/home/runner/work/_temp/.npmrc` on GitHub-hosted runners) — NOT `~/.npmrc`. The actually-read file still had the empty `_authToken=` line, which tricked npm into skipping the OIDC token exchange. The Publish run signed a provenance statement (sigstore logIndex=1645376188) but the npm tarball PUT returned 404 because no auth header was sent. v0.3.1 retargets the strip step at `$NPM_CONFIG_USERCONFIG` and adds an explicit `NODE_AUTH_TOKEN: ""` at the publish step to clear any setup-node-injected job-level value. v0.3.0 GitHub release was deleted (never reached npm); the git tag remains in history. All v0.3.0 user-facing content (request-company command + MCP tool + Trusted Publishing) ships in v0.3.1.
+
 ## [0.3.0] - 2026-05-27
 
 ### Added
