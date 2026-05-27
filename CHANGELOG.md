@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **CI: npm publish migrated to Trusted Publishing.** Removed `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` from `publish.yml`. npm now authenticates via GitHub Actions OIDC token (`id-token: write` permission already set at the job level). Eliminates the 90-day npm-token expiry class of failure that hit v0.1.11 (Apr 11, 2026) and v0.2.7 (May 20, 2026 — manual laptop publish bypass). Provenance attestations continue to land via `--provenance` flag. Closes #7.
+
 ## [0.2.8] - 2026-05-23
 
 ### Fixed

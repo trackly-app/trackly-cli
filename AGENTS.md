@@ -36,9 +36,9 @@ There is no test suite, no linter, and no build step. The package ships raw JS.
 Publishing is fully automated via GitHub Actions:
 1. Bump version in `package.json` + `server.json` and push to `main`
 2. `auto-release.yml` creates a GitHub Release from the version bump
-3. `publish.yml` publishes to npm with provenance using a CI-only `NPM_TOKEN` secret
+3. `publish.yml` publishes to npm with provenance via **npm Trusted Publishing** (GitHub Actions OIDC, no token needed). Trusted Publisher configured at npmjs.com for `trackly-app/trackly-cli` + `publish.yml` workflow.
 
-**Do not run `npm publish` locally.** No local npm auth token is needed. If a manual publish is ever required as a break-glass measure, create a short-lived granular token just-in-time and revoke it immediately after.
+**Do not run `npm publish` locally.** Manual publishes from a laptop have no OIDC context and would ship without provenance (this is what created the v0.2.7 unattested-release gap). If a manual publish is ever absolutely required as a break-glass measure, document why on the next CHANGELOG entry and plan a cosmetic version bump immediately after to restore the attestation chain via CI.
 
 ## Key Patterns
 
