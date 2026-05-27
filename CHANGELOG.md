@@ -7,9 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-27
+
+### Added
+
+- **`trackly request-company <name>` CLI command + `trackly_request_company` MCP tool** (PR #32). Lets users request that a company be added to Trackly's tracked companies — useful when the company they care about isn't in `trackly_search_companies` / `trackly_list_companies` results yet. CLI: `trackly request-company "eBay" --url https://careers.ebay.com --notes "MBA hiring page"`. MCP tool follows the same shape (`companyName`, optional `companyUrl`, optional `notes`). Rate-limited to 5 pending requests per user. Closes the parity gap with TracklyWeb / TracklyApp / TracklyMac which already had this UI. Total MCP tool count: 10 → 11.
+
 ### Security
 
-- **CI: npm publish migrated to Trusted Publishing.** Removed `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` from `publish.yml`. npm now authenticates via GitHub Actions OIDC token (`id-token: write` permission already set at the job level). Eliminates the 90-day npm-token expiry class of failure that hit v0.1.11 (Apr 11, 2026) and v0.2.7 (May 20, 2026 — manual laptop publish bypass). Provenance attestations continue to land via `--provenance` flag. Closes #7.
+- **CI: npm publish migrated to Trusted Publishing** (PR #36, closes #7). Removed `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}` from `publish.yml`. npm now authenticates via GitHub Actions OIDC token (`id-token: write` permission already set at the job level). Eliminates the 90-day npm-token expiry class of failure that hit v0.1.11 (Apr 11, 2026) and v0.2.7 (May 20, 2026 — manual laptop publish bypass). Provenance attestations continue to land via the `--provenance` flag.
+- **CI: Node bumped to 22 in publish.yml** (PR #36 R1). Trusted Publishing OIDC requires npm CLI 11.5.1+, which ships with Node 22.14+. Node 20 ships npm 10.x with no OIDC publish-auth path. Other workflows stay on Node 20 (they don't publish). Caught by Cursor Bugbot HIGH on R0 — without R1 the next release would have failed at `npm publish` with `ENEEDAUTH`.
+- **CI: `.npmrc` auth-line cleanup step added before publish** (PR #36 R1). `actions/setup-node` with `registry-url` writes `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}` to `~/.npmrc`. With `NODE_AUTH_TOKEN` unset, the empty value tricks npm into thinking auth is configured and skipping the OIDC token exchange. `sed`-strips the stale line so OIDC activates. Documented at `actions/setup-node#1551`.
+- **`qs` transitive dependency advisory patched** (PR #33). GHSA-q8mj-m7cp-5q26 (CVSS 5.3 DoS in `qs.stringify` with `encodeValuesOnly` + null/undefined in comma arrays). Lockfile-only update; `qs@6.15.2` is above the vulnerable range 6.11.1-6.15.1. `npm audit` now reports 0 vulnerabilities at all severity levels.
+
+### Maintenance
+
+- **GitHub Actions: bumped `actions/checkout` v4 → v5.0.1 and `actions/setup-node` v4 → v5.0.0** across all 7 workflow files (PR #33). Node 24 runtime is the default for actions after June 2 2026; the new SHAs work on Node 24. Pinned by commit SHA per the existing supply-chain hardening policy.
+- **`social-preview.png` committed to repo root** (PR #33). 1456×720 OpenGraph / Twitter card for the GitHub repo + npm package page. Untracked in working tree since March 7.
+- **`AGENTS.md` updated** to reflect the Trusted Publishing path + a stronger warning against manual laptop publishes referencing the v0.2.7 unattested-release gap.
 
 ## [0.2.8] - 2026-05-23
 
