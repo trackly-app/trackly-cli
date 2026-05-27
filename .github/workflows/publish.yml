@@ -37,18 +37,29 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       # actions/setup-node writes `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`
-      # to ~/.npmrc when given a registry-url. With NODE_AUTH_TOKEN unset (Trusted
-      # Publishing), that line expands to an empty `_authToken=` value which npm
-      # interprets as "auth already configured" and SKIPS the OIDC token exchange,
-      # causing publish to fail with ENEEDAUTH. Stripping the stale auth line lets
-      # the OIDC path activate. See actions/setup-node#1551 + Cursor Bugbot High
-      # finding on PR #36 R0.
-      - name: Strip stale _authToken line from .npmrc (so OIDC exchange activates)
+      # to the .npmrc at ${NPM_CONFIG_USERCONFIG} (= /home/runner/work/_temp/.npmrc),
+      # NOT to ~/.npmrc. With NODE_AUTH_TOKEN unset (Trusted Publishing), that line
+      # expands to an empty `_authToken=` value which npm interprets as "auth already
+      # configured" and SKIPS the OIDC token exchange — publish then fails with a 404
+      # because no auth header is sent. Stripping the stale auth line lets the OIDC
+      # path activate. See actions/setup-node#1551.
+      #
+      # Targeting ${NPM_CONFIG_USERCONFIG} (the file npm actually reads) — NOT
+      # ${HOME}/.npmrc which the R1 fix on PR #36 mistakenly stripped. v0.3.0
+      # publish failed with E404 because of that file-path mismatch; v0.3.1 fixes it.
+      - name: Strip stale _authToken line from setup-node's .npmrc (so OIDC activates)
         run: |
           set -euo pipefail
-          if [ -f "${HOME}/.npmrc" ]; then
-            sed -i.bak '/^\/\/registry\.npmjs\.org\/:_authToken=/d' "${HOME}/.npmrc"
-            rm -f "${HOME}/.npmrc.bak"
+          NPMRC="${NPM_CONFIG_USERCONFIG:-${HOME}/.npmrc}"
+          if [ -f "${NPMRC}" ]; then
+            echo "--- pre-strip .npmrc (${NPMRC}) ---"
+            cat "${NPMRC}" || true
+            sed -i.bak '/^\/\/registry\.npmjs\.org\/:_authToken=/d' "${NPMRC}"
+            rm -f "${NPMRC}.bak"
+            echo "--- post-strip .npmrc (${NPMRC}) ---"
+            cat "${NPMRC}" || true
+          else
+            echo "::warning::Expected .npmrc not found at ${NPMRC}"
           fi
 
       - run: npm ci
@@ -73,6 +84,12 @@ jobs:
       # (same SLSA v1 provenance statements we've shipped since v0.2.3).
       - name: Publish to npm (with provenance via Trusted Publisher OIDC)
         id: npm_publish
+        env:
+          # Belt-and-suspenders: explicitly clear any inherited NODE_AUTH_TOKEN at
+          # the step level. setup-node injects NODE_AUTH_TOKEN at the JOB level when
+          # given registry-url, even when the value is empty. An empty value would
+          # otherwise hit the same "auth seems configured" path that defeated v0.3.0.
+          NODE_AUTH_TOKEN: ""
         run: |
           # GitHub Actions' default shell is `bash --noprofile --norc -eo pipefail {0}`,
           # so `set -e` is ACTIVE implicitly — any non-zero command aborts the step unless
