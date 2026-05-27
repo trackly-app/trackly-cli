@@ -26,15 +26,41 @@ jobs:
       # Pinned to commit SHA to prevent supply-chain attacks via tag re-pointing.
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
-      # Node 22 is REQUIRED for Trusted Publishing OIDC. The npm CLI 11.5.1+
-      # (bundled with Node 22.14+) added the OIDC token-exchange code path used
-      # by trusted publishers. Node 20 ships npm 10.x which has no OIDC
-      # publish-auth path — it would fail with ENEEDAUTH at the npm publish
-      # step. Cursor Bugbot High caught this on R0; see PR #36.
+      # Node 22 needed for npm 11.x compatibility (npm 11.5.1+ added OIDC
+      # Trusted Publishing token-exchange). HOWEVER: Node 22.22.3 ships npm
+      # 10.9.8 by default — NOT npm 11.x. We MUST explicitly upgrade npm
+      # below before the publish step, or publish fails with ENEEDAUTH.
+      # v0.3.0 + v0.3.1 publish attempts both failed because the npm CLI
+      # had no OIDC code path. v0.3.2 ships the explicit upgrade.
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+
+      # Upgrade npm to 11.x (11.5.1+ added OIDC Trusted Publishing). Pinning
+      # to npm@11 (latest 11.x major) for reproducibility while still picking
+      # up patch fixes within the 11.x line. Verifying the resulting version
+      # so a future npm@11 release that breaks publish flow is diagnosable.
+      #
+      # Version gate uses `sort -V` for proper semver comparison — handles
+      # 11.5.0 (must reject), 11.5.1 (must accept), 11.5.10 (must accept),
+      # and any future 11.x or 12.x release correctly. The previous arithmetic
+      # comparison (MAJOR/MINOR ints) let 11.5.0 through; caught by Amazon Q
+      # stop_sign + Cursor Low on PR #39 R0.
+      - name: Upgrade npm to 11.x for Trusted Publishing OIDC
+        run: |
+          set -euo pipefail
+          npm install -g npm@11
+          NPM_VERSION="$(npm --version)"
+          echo "node: $(node --version)"
+          echo "npm: ${NPM_VERSION}"
+          MIN_NPM="11.5.1"
+          # `sort -V` semantically: if MIN_NPM sorts first, then ACTUAL ≥ MIN.
+          # head -1 returns whichever is smaller; if that's MIN_NPM, actual is ≥.
+          if [ "$(printf '%s\n%s' "${MIN_NPM}" "${NPM_VERSION}" | sort -V | head -1)" != "${MIN_NPM}" ]; then
+            echo "::error::npm version must be ≥ ${MIN_NPM} for OIDC Trusted Publishing; got ${NPM_VERSION}"
+            exit 1
+          fi
 
       # actions/setup-node writes `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`
       # to the .npmrc at ${NPM_CONFIG_USERCONFIG} (= /home/runner/work/_temp/.npmrc),
