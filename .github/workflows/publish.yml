@@ -39,16 +39,20 @@ jobs:
 
       - run: npm pack --dry-run
 
-      # `--provenance` requires `id-token: write` (set at the job level above). This writes
-      # a sigstore attestation to the npm registry linking the tarball to this workflow run.
-      # README/CLAUDE.md claimed provenance was active on every publish since 0.1.1, but
-      # `npm view trackly-cli@0.2.2 dist.attestations` was empty before this fix — docs shipped
-      # ahead of reality. Users who verify attestations with `npm install --attestations` would
-      # have seen the failure.
-      - name: Publish to npm (with provenance)
+      # Trusted Publishing via GitHub Actions OIDC (closes #7).
+      # No NODE_AUTH_TOKEN — npm authenticates via the OIDC token requested by the
+      # `--provenance` flag against the workflow's `id-token: write` permission.
+      # See https://docs.npmjs.com/trusted-publishers
+      #
+      # PREREQUISITE: trackly-cli's npm package settings must list
+      #   org=trackly-app, repo=trackly-cli, workflow=publish.yml
+      # as a Trusted Publisher. Configured 2026-05-27 via npmjs.com → Package
+      # Settings → Publishing access → Add trusted publisher.
+      #
+      # `--provenance` still writes the sigstore attestation to the npm registry
+      # (same SLSA v1 provenance statements we've shipped since v0.2.3).
+      - name: Publish to npm (with provenance via Trusted Publisher OIDC)
         id: npm_publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           # GitHub Actions' default shell is `bash --noprofile --norc -eo pipefail {0}`,
           # so `set -e` is ACTIVE implicitly — any non-zero command aborts the step unless
