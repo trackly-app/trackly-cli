@@ -26,10 +26,30 @@ jobs:
       # Pinned to commit SHA to prevent supply-chain attacks via tag re-pointing.
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
+      # Node 22 is REQUIRED for Trusted Publishing OIDC. The npm CLI 11.5.1+
+      # (bundled with Node 22.14+) added the OIDC token-exchange code path used
+      # by trusted publishers. Node 20 ships npm 10.x which has no OIDC
+      # publish-auth path — it would fail with ENEEDAUTH at the npm publish
+      # step. Cursor Bugbot High caught this on R0; see PR #36.
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
-          node-version: 20
+          node-version: 22
           registry-url: https://registry.npmjs.org
+
+      # actions/setup-node writes `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`
+      # to ~/.npmrc when given a registry-url. With NODE_AUTH_TOKEN unset (Trusted
+      # Publishing), that line expands to an empty `_authToken=` value which npm
+      # interprets as "auth already configured" and SKIPS the OIDC token exchange,
+      # causing publish to fail with ENEEDAUTH. Stripping the stale auth line lets
+      # the OIDC path activate. See actions/setup-node#1551 + Cursor Bugbot High
+      # finding on PR #36 R0.
+      - name: Strip stale _authToken line from .npmrc (so OIDC exchange activates)
+        run: |
+          set -euo pipefail
+          if [ -f "${HOME}/.npmrc" ]; then
+            sed -i.bak '/^\/\/registry\.npmjs\.org\/:_authToken=/d' "${HOME}/.npmrc"
+            rm -f "${HOME}/.npmrc.bak"
+          fi
 
       - run: npm ci
 
