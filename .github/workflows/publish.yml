@@ -44,20 +44,26 @@ jobs:
       # because no auth header is sent. Stripping the stale auth line lets the OIDC
       # path activate. See actions/setup-node#1551.
       #
-      # Targeting ${NPM_CONFIG_USERCONFIG} (the file npm actually reads) — NOT
+      # Target ${NPM_CONFIG_USERCONFIG} (the file npm actually reads) — NOT
       # ${HOME}/.npmrc which the R1 fix on PR #36 mistakenly stripped. v0.3.0
-      # publish failed with E404 because of that file-path mismatch; v0.3.1 fixes it.
+      # publish failed with E404 because of that file-path mismatch; v0.3.1 R2
+      # corrected the path.
+      #
+      # Debug output redacts any _authToken value via sed so secrets cannot leak
+      # to CI logs even if NPM_TOKEN were ever reintroduced (CodeRabbit Major on
+      # R2). GitHub Actions auto-masks known secrets, but defense-in-depth keeps
+      # the redaction explicit at the workflow level.
       - name: Strip stale _authToken line from setup-node's .npmrc (so OIDC activates)
         run: |
           set -euo pipefail
-          NPMRC="${NPM_CONFIG_USERCONFIG:-${HOME}/.npmrc}"
+          NPMRC="${NPM_CONFIG_USERCONFIG}"
           if [ -f "${NPMRC}" ]; then
             echo "--- pre-strip .npmrc (${NPMRC}) ---"
-            cat "${NPMRC}" || true
+            sed -E 's#(//registry\.npmjs\.org/:_authToken=).*#\1[REDACTED]#' "${NPMRC}" || true
             sed -i.bak '/^\/\/registry\.npmjs\.org\/:_authToken=/d' "${NPMRC}"
             rm -f "${NPMRC}.bak"
             echo "--- post-strip .npmrc (${NPMRC}) ---"
-            cat "${NPMRC}" || true
+            sed -E 's#(//registry\.npmjs\.org/:_authToken=).*#\1[REDACTED]#' "${NPMRC}" || true
           else
             echo "::warning::Expected .npmrc not found at ${NPMRC}"
           fi
@@ -84,12 +90,6 @@ jobs:
       # (same SLSA v1 provenance statements we've shipped since v0.2.3).
       - name: Publish to npm (with provenance via Trusted Publisher OIDC)
         id: npm_publish
-        env:
-          # Belt-and-suspenders: explicitly clear any inherited NODE_AUTH_TOKEN at
-          # the step level. setup-node injects NODE_AUTH_TOKEN at the JOB level when
-          # given registry-url, even when the value is empty. An empty value would
-          # otherwise hit the same "auth seems configured" path that defeated v0.3.0.
-          NODE_AUTH_TOKEN: ""
         run: |
           # GitHub Actions' default shell is `bash --noprofile --norc -eo pipefail {0}`,
           # so `set -e` is ACTIVE implicitly — any non-zero command aborts the step unless
