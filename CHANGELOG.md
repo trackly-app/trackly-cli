@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-05-27
+
+### Fixed
+
+- **CI: explicit `npm install -g npm@11` step added before publish.** v0.3.0 and v0.3.1 publish attempts both failed with `ENEEDAUTH` because Node 22.22.3 (what `setup-node@v5.0.0` installs) ships npm **10.9.8** by default, which has NO OIDC Trusted Publishing code path. The PR #36 / #38 Trusted Publishing wiring was correct (npm dashboard configured, .npmrc auth-line stripping working, `id-token: write` permission set) but blocked at the CLI level. PR #39 adds an explicit npm upgrade step pinned to `npm@11` plus a runtime gate (`npm --version` ≥ 11.5.1) so future npm releases that downgrade or break the OIDC path fail loudly instead of silently shipping unattested. With npm 11.5.1+ in place, OIDC token exchange activates and the publish authenticates without `NODE_AUTH_TOKEN`.
+
 ## [0.3.1] - 2026-05-27
 
 ### Fixed
