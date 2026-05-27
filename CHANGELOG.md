@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<!-- CR activation test: this PR is a no-op typo fix to verify CodeRabbit
+review activity has resumed on trackly-cli after PR #24-#33 went silent
+between May 13 and May 23. Will close-without-merge regardless of outcome. -->
+
 ## [0.2.8] - 2026-05-23
 
 ### Fixed
