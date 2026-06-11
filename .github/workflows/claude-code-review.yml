@@ -24,6 +24,9 @@ jobs:
       github.event.pull_request.author_association == 'MEMBER' ||
       github.event.pull_request.author_association == 'COLLABORATOR'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      API_FORCE_IDLE_TIMEOUT: "1"
     permissions:
       contents: read
       pull-requests: write

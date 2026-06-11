@@ -14,6 +14,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       # Pinned to commit SHA to prevent supply-chain attacks via tag re-pointing.
