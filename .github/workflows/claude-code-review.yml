@@ -24,6 +24,9 @@ jobs:
       github.event.pull_request.author_association == 'MEMBER' ||
       github.event.pull_request.author_association == 'COLLABORATOR'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      API_FORCE_IDLE_TIMEOUT: "1"
     permissions:
       contents: read
       pull-requests: write
@@ -47,6 +50,8 @@ jobs:
         id: claude-review
         uses: anthropics/claude-code-action@6e2bd52842c65e914eba5c8badd17560bd26b5de # v1
         with:
+          settings: |
+            {"env": {"API_FORCE_IDLE_TIMEOUT": "1"}}
           use_bedrock: "true"
           plugin_marketplaces: |
             https://github.com/anthropics/claude-code.git
