@@ -55,7 +55,7 @@ jobs:
 
       - name: Run Claude Code
         id: claude
-        uses: anthropics/claude-code-action@6e2bd52842c65e914eba5c8badd17560bd26b5de # v1
+        uses: anthropics/claude-code-action@0f97b95b6536c26e5f6bd90faec370d41695beca # v1 (bumped 2026-06-11, canary-validated on TracklyApp #104)
         with:
           settings: |
             {"env": {"API_FORCE_IDLE_TIMEOUT": "1"}}
