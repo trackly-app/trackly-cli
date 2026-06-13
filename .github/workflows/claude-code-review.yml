@@ -1,8 +1,14 @@
 name: Claude Code Review
 
+# DEACTIVATED 2026-06-13: Claude CI review no longer runs automatically.
+# Bedrock auth is out (removed-advisor AWS account) and the Claude-subscription
+# Agent SDK credit (max $200/mo) can't fund fleet review volume. PR review is
+# already gated by CodeRabbit + Codex. Re-enable by restoring the triggers below.
 on:
-  pull_request:
-    types: [opened, synchronize, ready_for_review, reopened]
+  workflow_dispatch: {}
+  # Original auto-triggers (preserved for easy revert):
+  # pull_request:
+  # types: [opened, synchronize, ready_for_review, reopened]
 
 jobs:
   claude-review:
