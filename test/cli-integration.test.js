@@ -150,3 +150,11 @@ test('a valid flag on the wrong command is rejected', async (t) => {
   assert.notEqual(result.code, 0);
   assert.match(result.stderr, /Unknown option --url/);
 });
+
+test('config rejects --api-key together with --clear-api-key', async (t) => {
+  const dir = createTempConfigDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const result = await runCli(['config', '--api-key', 'trk_abcdefghij', '--clear-api-key'], { TRACKLY_CONFIG_DIR: dir });
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /Cannot use --api-key and --clear-api-key together/);
+});

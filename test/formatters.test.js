@@ -88,3 +88,29 @@ test('outputStats renders known metrics and is safe on an empty object', () => {
 test('color() preserves the input text (with or without ANSI codes)', () => {
   assert.match(fmt.color('green', 'hello'), /hello/);
 });
+
+test('shouldColor honors NO_COLOR / FORCE_COLOR / TTY', () => {
+  const tty = { isTTY: true };
+  const notty = { isTTY: false };
+  const saved = { NO_COLOR: process.env.NO_COLOR, FORCE_COLOR: process.env.FORCE_COLOR };
+  const set = (k, v) => { if (v === undefined) delete process.env[k]; else process.env[k] = v; };
+  try {
+    set('NO_COLOR', undefined); set('FORCE_COLOR', undefined);
+    assert.equal(fmt.shouldColor(tty), true, 'TTY default → color');
+    assert.equal(fmt.shouldColor(notty), false, 'non-TTY default → no color');
+
+    set('NO_COLOR', '1');
+    assert.equal(fmt.shouldColor(tty), false, 'NO_COLOR=1 disables even on a TTY');
+
+    set('NO_COLOR', ''); // empty NO_COLOR is ignored per no-color.org
+    assert.equal(fmt.shouldColor(tty), true, 'empty NO_COLOR is ignored');
+
+    set('NO_COLOR', undefined); set('FORCE_COLOR', '1');
+    assert.equal(fmt.shouldColor(notty), true, 'FORCE_COLOR=1 forces even on a non-TTY');
+
+    set('FORCE_COLOR', '0');
+    assert.equal(fmt.shouldColor(notty), false, 'FORCE_COLOR=0 does not force');
+  } finally {
+    set('NO_COLOR', saved.NO_COLOR); set('FORCE_COLOR', saved.FORCE_COLOR);
+  }
+});

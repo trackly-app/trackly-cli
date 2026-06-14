@@ -295,13 +295,16 @@ async function cmdLogin() {
 
   console.log(color('cyan', 'Opening browser for Google login...'));
 
-  function tryLogin(port) {
+  let activeServer = null;
+
+  function tryLogin() {
     return new Promise((resolve, reject) => {
       let settled = false;
       let timeoutId = null;
 
       const server = http.createServer((req, res) => {
-        const url = new URL(req.url, `http://localhost:${port}`);
+        // Base is only used to parse req.url's path + query; the port is irrelevant.
+        const url = new URL(req.url, 'http://127.0.0.1');
         if (url.pathname === '/callback') {
           const returnedState = url.searchParams.get('state');
           if (returnedState !== state) {
@@ -387,15 +390,20 @@ p{color:#a1a1aa;font-size:15px;line-height:1.5}
         }
       };
 
+      activeServer = server;
+
       server.on('error', (err) => {
-        if (err.code === 'EADDRINUSE') {
-          reject(err);
-        } else {
-          settle(err);
-        }
+        settle(err);
       });
 
-      server.listen(port, '127.0.0.1', () => {
+      // Port 0 → OS-assigned ephemeral port, always free (no fixed-range collision,
+      // so no retry loop needed). Verify it lands in the backend's accepted range.
+      server.listen(0, '127.0.0.1', () => {
+        const port = server.address().port;
+        if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+          settle(new Error(`OS assigned an out-of-range callback port (${port}); expected 1024-65535.`));
+          return;
+        }
         console.log(color('dim', `Callback server on port ${port}`));
         const loginUrl = `${baseUrl}/auth/google/cli?port=${port}&state=${state}`;
         if (!openExternalUrl(loginUrl)) {
@@ -409,18 +417,20 @@ p{color:#a1a1aa;font-size:15px;line-height:1.5}
     });
   }
 
-  const MAX_PORT_RETRIES = 3;
-  for (let attempt = 0; attempt < MAX_PORT_RETRIES; attempt++) {
-    const port = 19847 + Math.floor(Math.random() * 1000);
-    try {
-      return await tryLogin(port);
-    } catch (err) {
-      if (err.code === 'EADDRINUSE' && attempt < MAX_PORT_RETRIES - 1) {
-        console.log(color('dim', `Port ${port} in use, trying another...`));
-        continue;
-      }
-      throw err;
+  // One SIGINT handler for the whole login (not per-attempt): close the active
+  // callback server and exit cleanly on Ctrl-C, then always remove the handler so
+  // it can't leak. (No EADDRINUSE retry path now, so no handler-leak edge case.)
+  const onSigint = () => {
+    if (activeServer) {
+      try { activeServer.close(); } catch (_) {}
     }
+    process.exit(130);
+  };
+  process.on('SIGINT', onSigint);
+  try {
+    await tryLogin();
+  } finally {
+    process.removeListener('SIGINT', onSigint);
   }
 }
 
@@ -800,6 +810,15 @@ async function cmdRequestCompany(args) {
 async function cmdConfig(args) {
   if (args['api-key'] === null) failNow('API key value required. Usage: trackly config --api-key <key>');
   if (args['base-url'] === null) failNow('Base URL value required. Usage: trackly config --base-url <url>');
+
+  // Reject contradictory set+clear in the same invocation rather than silently
+  // letting last-write-win produce surprising results.
+  if (args['api-key'] !== undefined && args['clear-api-key']) {
+    failNow('Cannot use --api-key and --clear-api-key together.');
+  }
+  if (args['base-url'] !== undefined && args['clear-base-url']) {
+    failNow('Cannot use --base-url and --clear-base-url together.');
+  }
 
   const config = loadConfig();
   let updated = false;

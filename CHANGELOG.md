@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-14
+
+### Added
+
+- **`NO_COLOR` / `FORCE_COLOR` support.** Color output now follows the [no-color.org](https://no-color.org/) convention — `NO_COLOR` (present and non-empty) disables ANSI color, `FORCE_COLOR` (set and not `0`/`false`) forces it on, otherwise color is used only on a TTY. Error output keys on stderr's TTY-ness. Makes the CLI a better citizen in logs, CI, and pipelines.
+- **`config` rejects contradictory flags.** `trackly config --api-key … --clear-api-key` (and the `--base-url`/`--clear-base-url` pair) now error instead of silently letting one win.
+
+### Changed
+
+- **Login uses an OS-assigned ephemeral callback port** (`listen(0)`) with a 1024–65535 guard, replacing the fixed 19847–20846 range and its retry loop — eliminates the rare port-collision failure. Ctrl-C during login now closes the callback server cleanly via a single, properly-removed SIGINT handler.
+
 ## [0.4.0] - 2026-06-14
 
 ### Fixed
