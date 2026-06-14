@@ -4,7 +4,7 @@ reviews:
   path_instructions:
     - path: "**/*.{js,ts}"
       instructions: |
-        Public npm package (trackly v0.1.x). Semver rules:
+        Public npm package (trackly, 0.x semver). Semver rules:
         - Breaking changes (removed commands, changed output format) = MAJOR version bump
         - New features (new commands, new flags) = MINOR version bump
         - Bug fixes = PATCH version bump

@@ -16,7 +16,7 @@ Universal context for AI coding agents (Codex, Cursor, Copilot, Claude Code, Dev
 bin/trackly          # CLI entrypoint (shebang script). All commands + arg parser + main()
 lib/client.js        # HTTP client: config loading, token refresh, apiRequest()
 lib/formatters.js    # Terminal output: color(), outputJobs(), outputCompanies(), etc.
-mcp/server.js        # MCP server: 10 tools, launched via `trackly mcp`
+mcp/server.js        # MCP server: 11 tools, launched via `trackly mcp`
 docs/trackly-tools.md  # MCP tool reference (for embedding in AI agent contexts)
 server.json          # MCP Registry manifest (io.github.trackly-app/trackly)
 ```
@@ -29,7 +29,7 @@ node bin/trackly --help        # Run locally without installing
 npm link                       # Symlink for local dev
 ```
 
-There is no test suite, no linter, and no build step. The package ships raw JS.
+There is a small Node test suite (`npm test`), no linter, and no build step. The package ships raw JS.
 
 ## Publishing
 
@@ -49,7 +49,7 @@ Publishing is fully automated via GitHub Actions:
 - `_isRetry` flag prevents infinite refresh loops
 
 ### MCP Server
-- 10 tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`, `trackly_get_job_brief`, `trackly_contacts_at_company`, `trackly_get_company_workspace`
+- 11 tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`, `trackly_get_job_brief`, `trackly_contacts_at_company`, `trackly_get_company_workspace`, `trackly_request_company`
 - MCP User-Agent: `trackly-mcp/<version>` (from package.json)
 - CLI User-Agent: `trackly-cli/<version>` (separate channel attribution)
 
@@ -69,7 +69,8 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 | GET | `/api/jobscout/companies/search` | Semantic company search |
 | GET | `/api/jobscout/me` | User stats |
 | GET | `/api/jobscout/ask` | Natural language search (20/day limit) |
-| POST | `/api/jobscout-tracker/status` | Update job status |
+| POST | `/api/jobscout/tracker/jobs/:id/stage` | Update job tracker stage (applied/backlog/discarded) |
+| POST | `/api/jobscout/companies/request` | Request a company be added (rate-limited) |
 | POST | `/api/auth/api-key` | Create API key |
 | GET | `/auth/google/cli` | OAuth login redirect |
 

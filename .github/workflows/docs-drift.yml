@@ -21,45 +21,18 @@ jobs:
       # Pinned to commit SHA to prevent supply-chain attacks via tag re-pointing.
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
-      - name: Check MCP tool count matches docs
-        run: |
-          # Count actual tools registered in mcp/server.js
-          ACTUAL_TOOLS=$(grep -c "server\.tool(" mcp/server.js)
-          echo "Actual MCP tools: $ACTUAL_TOOLS"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 20
 
-          # Check README mentions correct count
-          README_COUNT=$(grep -oP '\d+ MCP tools' README.md | grep -oP '\d+')
-          echo "README claims: $README_COUNT MCP tools"
-
-          if [ "$ACTUAL_TOOLS" != "$README_COUNT" ]; then
-            echo "::error::README says $README_COUNT MCP tools but server.js has $ACTUAL_TOOLS"
-            exit 1
-          fi
-
-      - name: Check all MCP tools are documented
-        run: |
-          # Extract tool names from server.js
-          TOOLS=$(grep "server\.tool(" mcp/server.js | grep -oP "'[^']+'" | tr -d "'")
-          MISSING=0
-
-          for tool in $TOOLS; do
-            # Check README tool table
-            if ! grep -q "$tool" README.md; then
-              echo "::error::Tool '$tool' exists in mcp/server.js but missing from README.md"
-              MISSING=1
-            fi
-
-            # Check docs/trackly-tools.md
-            if ! grep -q "$tool" docs/trackly-tools.md; then
-              echo "::error::Tool '$tool' exists in mcp/server.js but missing from docs/trackly-tools.md"
-              MISSING=1
-            fi
-          done
-
-          if [ "$MISSING" = "1" ]; then
-            exit 1
-          fi
-          echo "All MCP tools documented"
+      # MCP-tool documentation coverage. Replaces the old grep-based extraction,
+      # which silently extracted ZERO tools (server.tool( and the name literal are
+      # on separate lines and grep is line-oriented) and therefore never failed —
+      # that is how the 11th tool reached main undocumented. The test cross-checks
+      # the extracted count against the raw server.tool( count and verifies each
+      # tool appears in the README table AND docs/trackly-tools.md.
+      - name: Check MCP tools are documented (README + docs/trackly-tools.md)
+        run: node --test test/docs-coverage.test.js
 
       - name: Check all CLI commands are documented
         run: |
@@ -107,3 +80,28 @@ jobs:
             exit 1
           fi
           echo "All versions in sync"
+
+      - name: Check mcp-publisher pin is in lockstep across publish workflows
+        run: |
+          # publish.yml and publish-mcp-registry.yml both pin mcp-publisher to a
+          # version + SHA256 with a "keep in lockstep" comment. Enforce it so a
+          # one-sided edit can't silently drift the two workflows apart.
+          PUB=.github/workflows/publish.yml
+          REG=.github/workflows/publish-mcp-registry.yml
+          PUB_VER=$(grep -m1 'MCP_PUBLISHER_VERSION:' "$PUB" | awk '{print $2}')
+          REG_VER=$(grep -m1 'MCP_PUBLISHER_VERSION:' "$REG" | awk '{print $2}')
+          PUB_SHA=$(grep -m1 'MCP_PUBLISHER_SHA256_LINUX_AMD64:' "$PUB" | awk '{print $2}')
+          REG_SHA=$(grep -m1 'MCP_PUBLISHER_SHA256_LINUX_AMD64:' "$REG" | awk '{print $2}')
+
+          echo "publish.yml:          $PUB_VER / $PUB_SHA"
+          echo "publish-mcp-registry: $REG_VER / $REG_SHA"
+
+          if [ -z "$PUB_VER" ] || [ -z "$REG_VER" ] || [ -z "$PUB_SHA" ] || [ -z "$REG_SHA" ]; then
+            echo "::error::Could not extract mcp-publisher version/SHA from one or both workflows"
+            exit 1
+          fi
+          if [ "$PUB_VER" != "$REG_VER" ] || [ "$PUB_SHA" != "$REG_SHA" ]; then
+            echo "::error::mcp-publisher pin drift between publish.yml and publish-mcp-registry.yml"
+            exit 1
+          fi
+          echo "mcp-publisher pin in lockstep"
