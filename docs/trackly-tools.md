@@ -88,6 +88,8 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 - **trackly_get_company_workspace** — Get full company workspace (jobs, contacts, hiring managers, campaigns)
 - **trackly_request_company** — Request that a company be added to Trackly's tracked companies. Rate-limited to 5 pending requests per user. Parameters: `companyName` (required), `companyUrl` (optional), `notes` (optional).
 
+> **Why no `trackly_chat` here (intentional, not drift):** the hosted connector (`mcp.usetrackly.app`) exposes a 12th tool, `trackly_chat`, that runs a backend agent which orchestrates these same primitives. It exists so **classic-UI** surfaces (web/iOS/macOS) — which have no agent — get an agentic chat experience. The CLI/MCP client **is** the agent (Claude, Cursor, ChatGPT), so calling `trackly_chat` would be an agent-inside-an-agent: opaque, slower, and double-cost. MCP users already have `trackly_ask` (natural-language search) and `trackly_search_jobs sort=match` (resume-fit ranking), and `trackly_get_stats` returns the user's structured job preferences — full capability coverage. So `trackly_chat` is deliberately hosted-only.
+
 ### Example Prompts
 
 - "Find me PM jobs at fintech companies"
