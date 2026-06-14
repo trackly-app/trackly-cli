@@ -3,44 +3,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 
 const client = require('../lib/client');
-
-function withEnv(overrides, fn) {
-  const previous = new Map();
-
-  for (const [key, value] of Object.entries(overrides)) {
-    previous.set(key, process.env[key]);
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-
-  const restore = () => {
-    for (const [key, value] of previous.entries()) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  };
-
-  try {
-    const result = fn();
-    if (result && typeof result.then === 'function') {
-      return result.finally(restore);
-    }
-    restore();
-    return result;
-  } catch (error) {
-    restore();
-    throw error;
-  }
-}
-
-function createTempConfigDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'trackly-cli-test-'));
-}
+const { withEnv, createTempConfigDir } = require('./helpers');
 
 test('API keys take precedence over stored OAuth tokens', async (t) => {
   const configDir = createTempConfigDir();
@@ -350,5 +317,97 @@ test('apiRequest times out stalled requests', async (t) => {
       client.apiRequest('GET', '/slow'),
       /Trackly request timed out after 50ms/
     );
+  });
+});
+
+// ─── single-flight refresh (PR 0.4.0) ────────────────────────────────────────
+// Concurrent 401s in the long-lived MCP server must coalesce into ONE backend
+// refresh. Without the single-flight latch, two parallel POSTs race; the backend
+// rotates the refresh token, so the second uses a stale token, 4xx, clearOAuthTokens,
+// and the user is silently logged out mid-session.
+test('refreshAccessToken single-flights concurrent calls into one backend POST', async (t) => {
+  let refreshCount = 0;
+  const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
+    if (req.url === '/api/auth/refresh') {
+      refreshCount++;
+      // Delay so both Promise.all callers enter refreshAccessToken before the
+      // first _doRefresh resolves — the latch must hand the second the same promise.
+      setTimeout(() => {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ success: true, token: 'jwt_new', refreshToken: 'rt_new' }));
+      }, 50);
+    } else {
+      res.statusCode = 404;
+      res.end('{}');
+    }
+  });
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: undefined,
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '2000',
+  }, async () => {
+    client.saveConfig({ token: 'jwt_old', refreshToken: 'rt_old' });
+    const [a, b] = await Promise.all([client.refreshAccessToken(), client.refreshAccessToken()]);
+    assert.equal(a, 'jwt_new');
+    assert.equal(b, 'jwt_new', 'both concurrent callers get the same rotated token');
+    assert.equal(refreshCount, 1, 'concurrent refreshes must coalesce into ONE backend POST');
+  });
+});
+
+test('apiRequest rejects 3xx redirects with a clear message', async (t) => {
+  const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
+    res.statusCode = 302;
+    res.setHeader('Location', '/somewhere-else');
+    res.end();
+  });
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: 'trk_k',
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '1000',
+  }, async () => {
+    // apiRequest rejects with a plain object (same shape as the >=400 path), so
+    // inspect fields directly rather than assert.rejects(RegExp), which only
+    // matches Error instances.
+    let caught;
+    try {
+      await client.apiRequest('GET', '/api/jobscout/jobs');
+    } catch (e) {
+      caught = e;
+    }
+    assert.ok(caught, 'must reject on a 3xx redirect');
+    assert.equal(caught.status, 302, 'status preserved');
+    assert.match(caught.message, /Unexpected redirect \(HTTP 302\)/);
+  });
+});
+
+test('loadConfig surfaces an unreadable config (EACCES) as a clear TracklyConfigError', async (t) => {
+  const configDir = createTempConfigDir();
+  const file = path.join(configDir, 'config.json');
+  t.after(() => {
+    try { fs.chmodSync(file, 0o600); } catch (_) {}
+    fs.rmSync(configDir, { recursive: true, force: true });
+  });
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: undefined,
+    TRACKLY_BASE_URL: undefined,
+  }, async () => {
+    fs.writeFileSync(file, '{}', { mode: 0o600 });
+    fs.chmodSync(file, 0o000);
+    // chmod 000 doesn't block root; detect that and assert accordingly so the
+    // test is robust whether or not it runs privileged (CI runs unprivileged).
+    let readable = true;
+    try { fs.readFileSync(file, 'utf8'); } catch (_) { readable = false; }
+    if (readable) {
+      assert.deepEqual(client.loadConfig(), {}, 'privileged reader: still parses');
+    } else {
+      assert.throws(() => client.loadConfig(), /not readable|permissions/);
+    }
   });
 });
