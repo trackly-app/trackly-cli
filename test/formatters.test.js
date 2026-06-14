@@ -12,7 +12,11 @@ const fmt = require('../lib/formatters');
 // Capture console.log output. tty=true → human/colored branch; tty=false → JSON branch.
 function capture(fn, { tty = false } = {}) {
   const prevTTY = process.stdout.isTTY;
+  const prevArgv = process.argv;
   process.stdout.isTTY = tty;
+  // isJSON() is `!isTTY || argv.includes('--json')`; strip --json so a stray flag
+  // in the runner's argv can't force the JSON branch during a tty:true test.
+  process.argv = process.argv.filter((arg) => arg !== '--json');
   const lines = [];
   const origLog = console.log;
   console.log = (...a) => lines.push(a.map(String).join(' '));
@@ -21,6 +25,7 @@ function capture(fn, { tty = false } = {}) {
   } finally {
     console.log = origLog;
     process.stdout.isTTY = prevTTY;
+    process.argv = prevArgv;
   }
   return lines.join('\n');
 }
@@ -80,7 +85,6 @@ test('outputStats renders known metrics and is safe on an empty object', () => {
   assert.doesNotThrow(() => capture(() => fmt.outputStats({}), { tty: true }));
 });
 
-test('color() respects the requested text and isJSON() tracks TTY + --json', () => {
-  // color returns the text (with or without ANSI codes) — the text must survive.
+test('color() preserves the input text (with or without ANSI codes)', () => {
   assert.match(fmt.color('green', 'hello'), /hello/);
 });
