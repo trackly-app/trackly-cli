@@ -1,8 +1,13 @@
 name: Auto Release
 
-# Creates a GitHub Release whenever package.json version changes on main.
-# This ensures GitHub Releases stay in sync with npm — no more forgotten releases.
-# The existing publish.yml workflow then triggers on the release to publish to npm + MCP Registry.
+# Creates a GitHub Release whenever package.json version changes on main, so the
+# GitHub Releases page stays in sync with npm.
+#
+# NOTE: this workflow does NOT trigger publishing. The Release/tag it creates use
+# GITHUB_TOKEN, which (by GitHub's recursion-prevention rule) does NOT fire downstream
+# `release:`/`push:` workflow runs — that's why v0.4.0/v0.4.1 had to be published via a
+# manual release recreate. publish.yml now triggers independently on the same
+# merge-to-main push (gated to version changes), so publishing is fully automatic.
 
 on:
   push:

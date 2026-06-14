@@ -53,11 +53,11 @@ NOTE: `/ask` lives in the backend (`trackly-app/close-ai`) and historically emit
 ## Publishing
 
 Publishing is fully automated via GitHub Actions:
-1. Bump version in `package.json` + `server.json` and push to `main`
-2. `auto-release.yml` creates a GitHub Release from the version bump
-3. `publish.yml` publishes to npm with provenance using a CI-only `NPM_TOKEN` secret
+1. Bump the version in `package.json`, `package-lock.json`, and `server.json` (run `npm version <patch|minor> --no-git-tag-version` for the first two, then edit `server.json`) and add a CHANGELOG entry; merge to `main`
+2. `auto-release.yml` creates a GitHub Release from the version bump (for the Releases page)
+3. `publish.yml` triggers on the same merge-to-main push (gated to version changes) and publishes to npm with provenance via **npm Trusted Publishing** (GitHub Actions OIDC, no token). It also publishes to the MCP Registry.
 
-**Do not run `npm publish` locally.** No local npm auth token is needed. If a manual publish is ever required as a break-glass measure, create a short-lived granular token just-in-time and revoke it immediately after.
+**Do not run `npm publish` locally.** No npm auth token is needed (OIDC). Manual fallback if a publish ever needs re-triggering: `gh workflow run publish.yml` (a PAT-authed dispatch fires the workflow; `GITHUB_TOKEN`-created Releases/tags do not).
 
 ## Merge Strategy
 

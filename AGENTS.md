@@ -34,9 +34,9 @@ There is a small Node test suite (`npm test`), no linter, and no build step. The
 ## Publishing
 
 Publishing is fully automated via GitHub Actions:
-1. Bump version in `package.json` + `server.json` and push to `main`
-2. `auto-release.yml` creates a GitHub Release from the version bump
-3. `publish.yml` publishes to npm with provenance via **npm Trusted Publishing** (GitHub Actions OIDC, no token needed). Trusted Publisher configured at npmjs.com for `trackly-app/trackly-cli` + `publish.yml` workflow.
+1. Bump version in `package.json` + `package-lock.json` + `server.json` and merge to `main`
+2. `auto-release.yml` creates a GitHub Release from the version bump (Releases page only — its `GITHUB_TOKEN` Release/tag does NOT trigger publishing)
+3. `publish.yml` triggers on the same merge-to-main push (gated to version changes) and publishes to npm with provenance via **npm Trusted Publishing** (GitHub Actions OIDC, no token needed). Trusted Publisher configured at npmjs.com for `trackly-app/trackly-cli` + `publish.yml` workflow. Manual fallback: `gh workflow run publish.yml`.
 
 **Do not run `npm publish` locally.** Manual publishes from a laptop have no OIDC context and would ship without provenance (this is what created the v0.2.7 unattested-release gap). If a manual publish is ever absolutely required as a break-glass measure, document why on the next CHANGELOG entry and plan a cosmetic version bump immediately after to restore the attestation chain via CI.
 
