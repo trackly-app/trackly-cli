@@ -44,6 +44,20 @@ test('normalizeBaseUrlValue trims trailing slashes', () => {
   assert.equal(cli.normalizeBaseUrlValue('https://closeai.mba/'), 'https://closeai.mba');
 });
 
+test('nearestFlag suggests the closest valid flag within edit distance 2', () => {
+  const allowed = new Set(['region', 'function', 'status', 'limit']);
+  assert.equal(cli.nearestFlag('regoin', allowed), 'region');
+  assert.equal(cli.nearestFlag('functon', allowed), 'function');
+  assert.equal(cli.nearestFlag('zzzzzzzzz', allowed), null, 'no suggestion when nothing is close');
+});
+
+test('COMMAND_FLAGS keeps deprecated jobs flags so they reach the migration message', () => {
+  assert.ok(cli.COMMAND_FLAGS.jobs.includes('location'));
+  assert.ok(cli.COMMAND_FLAGS.jobs.includes('modality'));
+  assert.ok(cli.COMMAND_FLAGS.jobs.includes('region'));
+  assert.deepEqual(cli.COMMAND_FLAGS.job, [], 'job detail accepts no filter flags');
+});
+
 test('trackly --version prints the package version', () => {
   const result = spawnSync(process.execPath, [BIN_PATH, '--version'], {
     encoding: 'utf8',

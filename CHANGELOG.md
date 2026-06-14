@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-14
+
+### Fixed
+
+- **Concurrent token refresh could silently log you out mid-session.** In the long-lived MCP server, simultaneous tool calls that each hit a 401 would each fire `POST /api/auth/refresh` in parallel. The backend rotates the refresh token on use, so the second in-flight refresh sent a now-stale token, got a 4xx, and cleared the stored OAuth credentials — logging the user out even though the first refresh had succeeded. Refreshes are now coalesced (single-flight) within a process, so concurrent 401s share one refresh and both retry with the freshly-rotated token. (Note: this does not coordinate across multiple separate `trackly` processes sharing `~/.trackly/config.json`.)
+- **Unexpected HTTP redirects are now surfaced as clear errors.** `apiRequest` previously treated any `<400` status as success, so a 3xx response would resolve with the redirect headers as bogus data. 3xx is now rejected with an explicit "Unexpected redirect" message.
+- **Unreadable config now gives an actionable error.** A `~/.trackly/config.json` that exists but isn't readable (EACCES/EPERM) now reports "Trackly config is not readable … Check file permissions" instead of a generic error.
+- **Invalid `--base-url` values report a clear message** ("Invalid base URL: …") at both the global-flag and `config` call sites.
+- Non-JSON API error responses now always carry a usable `message` for diagnostics.
+
+### Added
+
+- **Typo and wrong-command flag detection.** Mistyped or misplaced flags (e.g. `trackly jobs --regoin us`, or `trackly jobs --url x`) are now rejected with a "did you mean …?" suggestion instead of being silently ignored — which previously returned, for example, an unfiltered job feed that looked filtered. Deprecated `--location`/`--modality` still get their richer migration messages. `--help`/`--version` are unaffected.
+
+### Tests
+
+- New end-to-end CLI integration suite (flag → query-param/body mapping, deprecation + conflict guards, unknown-flag rejection, `--json` output), formatter unit tests, a concurrent-refresh test, a 3xx test, and an EACCES test. Shared test helpers extracted to `test/helpers.js`.
+
 ## [0.3.2] - 2026-05-27
 
 ### Fixed

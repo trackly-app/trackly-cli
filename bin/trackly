@@ -23,6 +23,7 @@ const BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'version', 'v', 'clear-api-k
 const VALUE_FLAGS = new Set([
   'api-key',
   'base-url',
+  'company',
   'function',
   'job-type',
   'keywords',
@@ -36,6 +37,42 @@ const VALUE_FLAGS = new Set([
   'status',
   'url',
 ]);
+
+// Flags accepted on ANY command. `api-key`/`base-url` are global overrides consumed
+// in main() before dispatch; help/version are handled by early-returns.
+const UNIVERSAL_FLAGS = new Set(['json', 'help', 'h', 'version', 'v', 'api-key', 'base-url']);
+
+// Per-command allow-lists — each set is the flags that command's handler actually
+// reads. Keyed at the command level (the union across a command's subcommands) so a
+// valid filtered detail call like `jobs 123 --region us` is never falsely rejected,
+// while typos (`--regoin`) and wrong-command flags (`jobs --url`, `jobs --search`)
+// still are. `jobs` includes the deprecated `location`/`modality` so they reach the
+// richer DEPRECATED_JOB_FLAGS migration message in cmdJobs rather than a generic error.
+// Commands NOT listed here (e.g. `mcp`, or an unknown command) skip flag validation —
+// the dispatcher reports unknown commands itself.
+const COMMAND_FLAGS = {
+  login: [],
+  logout: [],
+  whoami: [],
+  jobs: ['function', 'company', 'region', 'job-type', 'remote', 'status', 'sort', 'limit', 'offset', 'keywords', 'location', 'modality'],
+  job: [],
+  companies: ['limit', 'offset'],
+  search: [],
+  stats: [],
+  status: [],
+  apply: [],
+  save: [],
+  dismiss: [],
+  ask: [],
+  contacts: ['search', 'limit', 'offset'],
+  referral: [],
+  brief: [],
+  'company-brief': ['refresh'],
+  'company-workspace': [],
+  'request-company': ['url', 'notes'],
+  'api-key': ['name'],
+  config: ['api-key', 'base-url', 'clear-api-key', 'clear-base-url'],
+};
 const AUTH_HELP_TEXT = `Not authenticated.
   Option 1: trackly login                        (Google OAuth)
   Option 2: trackly config --api-key trk_xxx     (get key at usetrackly.app)
@@ -104,6 +141,59 @@ function parseArgs(args) {
   }
 
   return result;
+}
+
+// Tiny Levenshtein (no dep) for "did you mean" flag suggestions.
+function levenshtein(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+  }
+  return dp[m][n];
+}
+
+function nearestFlag(key, allowed) {
+  let best = null;
+  let bestDistance = Infinity;
+  for (const flag of allowed) {
+    const d = levenshtein(key, flag);
+    if (d < bestDistance) {
+      bestDistance = d;
+      best = flag;
+    }
+  }
+  return bestDistance <= 2 ? best : null;
+}
+
+// Reject flags that the resolved command doesn't accept. Catches typos
+// (`--regoin`) and wrong-command flags (`jobs --url`) that parseArgs would
+// otherwise capture and the handler would silently ignore — returning, e.g., an
+// unfiltered job feed that looks filtered. Unknown commands (and `mcp`) skip this;
+// the dispatcher reports unknown commands itself.
+function validateFlags(args) {
+  const cmd = args.command;
+  if (!cmd || !Object.prototype.hasOwnProperty.call(COMMAND_FLAGS, cmd)) return;
+  const allowed = new Set([...UNIVERSAL_FLAGS, ...COMMAND_FLAGS[cmd]]);
+  for (const key of Object.keys(args)) {
+    if (key === '_' || key === 'command') continue;
+    if (allowed.has(key)) continue;
+    // Strip non-printable chars so a crafted `--$'\x1b[…'` flag can't inject
+    // terminal escape sequences into the error message.
+    const safe = String(key).replace(/[^\x20-\x7e]/g, '');
+    const suggestion = nearestFlag(key, allowed);
+    const hint = suggestion ? ` Did you mean --${suggestion}?` : '';
+    failNow(`Unknown option --${safe} for 'trackly ${cmd}'.${hint} Run \`trackly --help\` for valid options.`);
+  }
 }
 
 function failNow(message, exitCode = 1) {
@@ -747,7 +837,11 @@ async function cmdConfig(args) {
   }
 
   if (args['base-url'] !== undefined) {
-    config.baseUrl = normalizeBaseUrlValue(args['base-url']);
+    try {
+      config.baseUrl = normalizeBaseUrlValue(args['base-url']);
+    } catch (e) {
+      failNow('Invalid base URL: ' + e.message);
+    }
     updated = true;
     console.log(color('green', `Base URL set to ${config.baseUrl}.`));
   }
@@ -882,7 +976,11 @@ async function main() {
   }
 
   if (args.command !== 'config' && args['base-url']) {
-    process.env.TRACKLY_BASE_URL = normalizeBaseUrlValue(args['base-url']);
+    try {
+      process.env.TRACKLY_BASE_URL = normalizeBaseUrlValue(args['base-url']);
+    } catch (e) {
+      failNow('Invalid base URL: ' + e.message);
+    }
   }
 
   if (args.version || args.v || args.command === 'version') {
@@ -894,6 +992,10 @@ async function main() {
     showHelp();
     process.exit(0);
   }
+
+  // Reject unknown / wrong-command flags AFTER the help+version early-returns
+  // (so `trackly --help --weird` still shows help instead of erroring).
+  validateFlags(args);
 
   switch (args.command) {
     case 'login':
@@ -993,9 +1095,13 @@ if (require.main === module) {
 }
 
 module.exports = {
+  COMMAND_FLAGS,
+  UNIVERSAL_FLAGS,
   getPublicConfig,
   hasJobListFilters,
+  levenshtein,
   main,
+  nearestFlag,
   normalizeBaseUrlValue,
   openExternalUrl,
   parseArgs,
