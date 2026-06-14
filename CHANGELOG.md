@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-06-14
+
+### Fixed
+
+- **Automated npm publishing now actually triggers itself.** `auto-release.yml` creates the GitHub Release/tag with `GITHUB_TOKEN`, which (per GitHub's recursion-prevention rule) does **not** fire `publish.yml`'s `release:`/`push: tags` events — so v0.4.0 and v0.4.1 each required a manual Release recreate to reach npm. `publish.yml` now also triggers on the merge-to-main `push` (a PAT-created event that reliably fires), gated to actual version bumps, and publishing still runs from `publish.yml` so npm Trusted Publishing's OIDC subject is unchanged. Added a `workflow_dispatch` trigger as a manual fallback (`gh workflow run publish.yml`).
+
 ## [0.4.1] - 2026-06-14
 
 ### Added

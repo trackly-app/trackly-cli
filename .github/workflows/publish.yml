@@ -1,21 +1,86 @@
 name: Publish
 
 on:
-  release:
-    types: [published]
-  # Also fire on version tag push so auto-release.yml's `git push origin <tag>` triggers a publish
-  # even when the Release is created by github-actions[bot]. GITHUB_TOKEN-created Releases do NOT
-  # trigger downstream `release:` events (well-known GitHub Actions restriction to prevent
-  # workflow recursion). v0.2.6 required a manual release recreate to publish to npm because of
-  # this. Tag-push events fire regardless of who pushed.
-  # npm's EPUBLISHCONFLICT branch in this workflow already handles the case where both events
-  # fire — the second one becomes a no-op without aborting the step.
+  # Primary trigger: the merge-to-main push. This event is created by the human/PAT
+  # that merges the PR, so it RELIABLY fires a workflow run. The `gate` job below only
+  # lets the publish proceed when package.json's version actually changed.
+  #
+  # Why not rely on auto-release.yml's Release/tag? GITHUB_TOKEN-created Releases and
+  # GITHUB_TOKEN tag pushes do NOT trigger downstream `release:`/`push:` workflow runs
+  # (GitHub's recursion-prevention rule). v0.2.6 and v0.4.0/v0.4.1 all required a manual
+  # release recreate because of this. Triggering on the main push sidesteps it entirely,
+  # and keeps the publish running from THIS workflow file so npm Trusted Publishing's
+  # OIDC subject (pinned to publish.yml) still matches.
   push:
+    branches: [main]
     tags:
       - 'v*'
+  # Kept as secondary paths: a human-created Release, and a manual re-run
+  # (`gh workflow run publish.yml`). npm's EPUBLISHCONFLICT branch makes any duplicate
+  # trigger a benign no-op.
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+# Serialize publish.yml runs so a duplicate trigger (e.g. a main push and a release
+# for the same version) can't publish concurrently. cancel-in-progress: false so an
+# in-flight publish is never aborted mid-upload.
+concurrency:
+  group: publish-trackly-cli
+  cancel-in-progress: false
 
 jobs:
+  # Decide whether to publish. For a main-branch push, only proceed on an actual version
+  # bump (so ordinary commits don't run the publish job). All other events (tag push,
+  # release, manual dispatch) always proceed.
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      proceed: ${{ steps.decide.outputs.proceed }}
+    steps:
+      # fetch-depth: 0 so the pre-push commit (github.event.before) is available for the
+      # version diff below — HEAD~1 is wrong when a push carries more than one commit.
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Context values pass through env vars (never spliced into the shell) so a crafted
+      # ref/tag name can't inject commands. (zizmor template-injection; CodeRabbit; Codex.)
+      - id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ] && [ "$REF" = "refs/heads/main" ]; then
+            CURRENT=$(node -p "require('./package.json').version")
+            # Compare against package.json at the commit main was on BEFORE this push
+            # (handles multi-commit pushes correctly; HEAD~1 would not). Other events
+            # (tag/release/dispatch) bypass this and always publish, covering first/edge releases.
+            PREVIOUS=""
+            ZERO="0000000000000000000000000000000000000000"
+            if [ -n "$BEFORE" ] && [ "$BEFORE" != "$ZERO" ] && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+              PREVIOUS=$(git show "${BEFORE}:package.json" 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).version" 2>/dev/null || echo "")
+            fi
+            if [ -n "$PREVIOUS" ] && [ "$CURRENT" != "$PREVIOUS" ]; then
+              echo "proceed=true" >> "$GITHUB_OUTPUT"
+              echo "main push bumped version $PREVIOUS → $CURRENT — will publish"
+            else
+              echo "proceed=false" >> "$GITHUB_OUTPUT"
+              echo "main push, no version change (current=$CURRENT previous=${PREVIOUS:-unknown}) — skipping publish"
+            fi
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            echo "event '$EVENT_NAME' (ref $REF) — will publish"
+          fi
+
   publish:
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -26,6 +91,8 @@ jobs:
     steps:
       # Pinned to commit SHA to prevent supply-chain attacks via tag re-pointing.
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       # Node 22 needed for npm 11.x compatibility (npm 11.5.1+ added OIDC
       # Trusted Publishing token-exchange). HOWEVER: Node 22.22.3 ships npm
