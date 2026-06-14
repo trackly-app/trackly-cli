@@ -43,15 +43,17 @@ Publishing is fully automated via GitHub Actions:
 ## Key Patterns
 
 ### Auth
-- Google OAuth via local callback server (127.0.0.1, random port 19847-20847, 2-min timeout)
+- Google OAuth via local callback server (127.0.0.1, OS-assigned ephemeral port via `listen(0)` with a 1024-65535 guard, 5-min timeout, single SIGINT handler cleans up on Ctrl-C)
 - Tokens stored in `~/.trackly/config.json` (file permissions 0600, directory 0700)
 - On 401, `apiRequest()` tries one automatic refresh via `/api/auth/refresh` before failing
 - `_isRetry` flag prevents infinite refresh loops
 
 ### MCP Server
 - 11 tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`, `trackly_get_job_brief`, `trackly_contacts_at_company`, `trackly_get_company_workspace`, `trackly_request_company`
+- **Intentionally NOT here: `trackly_chat`** (the hosted connector at `mcp.usetrackly.app` has a 12th tool). It's a backend agent over these same primitives — built for classic-UI surfaces (web/iOS/macOS) that have no agent. CLI/MCP clients ARE the agent, so it'd be an agent-in-an-agent (redundant). Coverage already exists via `trackly_ask` + `search_jobs sort=match` + `get_stats` (structured prefs). Do NOT port it; this asymmetry is by design.
 - MCP User-Agent: `trackly-mcp/<version>` (from package.json)
 - CLI User-Agent: `trackly-cli/<version>` (separate channel attribution)
+- Flag validation is **command-level** (`COMMAND_FLAGS` in `bin/trackly`): it rejects unknown/wrong-command flags + typos (with a "did you mean" hint), but does not reject a flag that's valid on a sibling subcommand yet ignored by the handler (e.g. `api-key list --name foo`). Deliberate — subcommand-strict scoping would risk false-rejects, which are worse than a silently-ignored flag.
 
 ### Output Modes
 - `--json` flag or non-TTY stdout triggers JSON output on all commands

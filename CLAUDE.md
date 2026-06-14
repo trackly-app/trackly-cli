@@ -95,7 +95,7 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 1. **Version is runtime-derived from `package.json`.** Release-critical version edits are `package.json` and `server.json`. `lib/client.js` and `mcp/server.js` read `version` from `package.json` at runtime.
 2. **No build step.** This is plain CommonJS JS. Do not add TypeScript, ESM, or a bundler.
 3. **Auth tokens at `~/.trackly/config.json`.** File permissions are 0600, directory is 0700. Do not change this.
-4. **OAuth callback binds to 127.0.0.1 only.** Port is randomized (19847-20847). 2-minute timeout.
+4. **OAuth callback binds to 127.0.0.1 only.** Port is OS-assigned (ephemeral via `listen(0)`, validated to 1024-65535 — the backend's accepted range). 5-minute timeout. A single `cmdLogin`-scoped SIGINT handler closes the callback server on Ctrl-C.
 5. **`--json` flag or non-TTY stdout** triggers JSON output mode on all commands.
 6. **The `ask` command has a 20/day rate limit** enforced server-side (429 response).
 7. **No dependencies beyond `@modelcontextprotocol/sdk` and `zod`.** Keep it minimal. The HTTP client uses raw `node:https`/`node:http`.
