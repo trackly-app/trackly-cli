@@ -151,6 +151,7 @@ Then use natural language in any of these clients:
 | trackly_get_job_brief | Get network brief for a job (company signal, top contact, actions) |
 | trackly_contacts_at_company | Search contacts at a specific company |
 | trackly_get_company_workspace | Full company workspace (jobs, contacts, hiring managers, campaigns) |
+| trackly_request_company | Request a company be added to Trackly (rate-limited to 5 pending) |
 
 ## Authentication
 
@@ -210,7 +211,7 @@ trackly config --base-url http://127.0.0.1:3000  # Point at a different backend
 | Job search + filters | Yes | Yes | Yes |
 | Apply/save/dismiss | Yes | Yes | Yes |
 | AI-powered search | Yes (trackly ask) | Yes | Yes |
-| MCP integration | Yes (10 tools) | -- | -- |
+| MCP integration | Yes (11 tools) | -- | -- |
 | Browser required | No | Yes | No |
 | Best for | Terminal + AI agents | Visual browsing | Custom integrations |
 
@@ -224,7 +225,7 @@ Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly l
 
 **What MCP servers exist for job searching?**
 
-trackly-cli includes a built-in MCP server with 10 tools for job search, company lookup, and application tracking. Run `trackly mcp` or add it to Claude Code with `claude mcp add --scope user trackly -- trackly mcp`. It connects to a live database of 128,000+ jobs across 1,900+ companies.
+trackly-cli includes a built-in MCP server with 11 tools for job search, company lookup, and application tracking. Run `trackly mcp` or add it to Claude Code with `claude mcp add --scope user trackly -- trackly mcp`. It connects to a live database of 128,000+ jobs across 1,900+ companies.
 
 **How do I use Claude Code for job hunting?**
 
