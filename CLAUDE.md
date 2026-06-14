@@ -75,6 +75,7 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `GET /api/jobscout/companies/search` -- Semantic company search
 - `GET /api/jobscout/me` -- User stats
 - `GET /api/jobscout/ask` -- Natural language search (20/day limit)
+- `POST /api/jobscout/companies/request` -- Request a company be added (rate-limited, 5 pending max)
 - `POST /api/jobscout/tracker/jobs/:id/stage` -- Update job tracker stage (`applied`/`backlog`/`discarded`; CLI maps apply/save/dismiss)
 - `POST /api/auth/api-key` -- Create API key
 - `GET /api/auth/api-keys` -- List API keys

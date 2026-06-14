@@ -49,16 +49,32 @@ function mcpTableRegion(readmeSrc) {
   return next === -1 ? rest : rest.slice(0, next);
 }
 
+// Exact-token presence (NOT plain substring): a `\b…\b` match so a short tool
+// name can't be masked by a longer one that contains it — e.g. deleting the
+// `trackly_get_job` row must still fail even though `trackly_get_job_brief`
+// (which contains "trackly_get_job") remains documented.
+function documented(haystack, name) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('\\b' + escaped + '\\b').test(haystack);
+}
+
 // Returns the coverage gaps as a list of { tool, where }.
 function coverageGaps(serverSrc, readmeSrc, docsSrc) {
   const names = extractToolNames(serverSrc);
   const region = mcpTableRegion(readmeSrc);
   const gaps = [];
   for (const name of names) {
-    if (!region.includes(name)) gaps.push({ tool: name, where: 'README MCP Tools Reference table' });
-    if (!docsSrc.includes(name)) gaps.push({ tool: name, where: 'docs/trackly-tools.md' });
+    if (!documented(region, name)) gaps.push({ tool: name, where: 'README MCP Tools Reference table' });
+    if (!documented(docsSrc, name)) gaps.push({ tool: name, where: 'docs/trackly-tools.md' });
   }
   return gaps;
+}
+
+// Every "N tools" / "N MCP tools" count claim in the README must equal the real
+// tool count. This restores the guard the old grep-based count step provided
+// (Codex P3): name-presence alone wouldn't catch a stale "11 MCP tools" headline.
+function toolCountClaims(readmeSrc) {
+  return [...readmeSrc.matchAll(/(\d+)\s+(?:MCP\s+)?tools\b/gi)].map((m) => Number(m[1]));
 }
 
 // --- real-repo assertions ---
@@ -87,6 +103,26 @@ test('every MCP tool is documented in the README table AND docs/trackly-tools.md
   );
 });
 
+test('README "N tools" count claims all match the real tool count', () => {
+  const count = extractToolNames(serverSrc).length;
+  const claims = toolCountClaims(readmeSrc);
+  assert.ok(claims.length > 0, 'expected at least one "N tools" claim in README');
+  for (const c of claims) {
+    assert.equal(c, count, `README claims ${c} tools but mcp/server.js registers ${count}`);
+  }
+});
+
+test('coverage uses exact-token match (a short name is not masked by a longer one)', () => {
+  // Doc that contains ONLY the longer name must NOT count as documenting the short one.
+  const fakeServer = "server.tool(\n  'trackly_get_job',\n  'x', {}, async () => ({}));";
+  const onlyLong = '## MCP Tools Reference\n\n| trackly_get_job_brief | brief |\n';
+  const gaps = coverageGaps(fakeServer, onlyLong, onlyLong);
+  assert.ok(
+    gaps.some((g) => g.tool === 'trackly_get_job'),
+    'trackly_get_job must be flagged missing even though trackly_get_job_brief is present'
+  );
+});
+
 test('checker FAILS on an undocumented tool (fixture — proves the gate is not vacuous)', () => {
   // Append a synthetic 12th tool that exists in neither doc. The checker must flag
   // it in BOTH the README table and docs/trackly-tools.md. No repo files are mutated.
@@ -100,4 +136,4 @@ test('checker FAILS on an undocumented tool (fixture — proves the gate is not 
   );
 });
 
-module.exports = { extractToolNames, countToolCalls, mcpTableRegion, coverageGaps };
+module.exports = { extractToolNames, countToolCalls, mcpTableRegion, documented, coverageGaps, toolCountClaims };
