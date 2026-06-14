@@ -22,6 +22,13 @@ on:
     types: [published]
   workflow_dispatch: {}
 
+# Serialize publish.yml runs so a duplicate trigger (e.g. a main push and a release
+# for the same version) can't publish concurrently. cancel-in-progress: false so an
+# in-flight publish is never aborted mid-upload.
+concurrency:
+  group: publish-trackly-cli
+  cancel-in-progress: false
+
 jobs:
   # Decide whether to publish. For a main-branch push, only proceed on an actual version
   # bump (so ordinary commits don't run the publish job). All other events (tag push,
@@ -29,28 +36,46 @@ jobs:
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
     outputs:
       proceed: ${{ steps.decide.outputs.proceed }}
     steps:
+      # fetch-depth: 0 so the pre-push commit (github.event.before) is available for the
+      # version diff below — HEAD~1 is wrong when a push carries more than one commit.
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
-          fetch-depth: 2
+          fetch-depth: 0
+          persist-credentials: false
+      # Context values pass through env vars (never spliced into the shell) so a crafted
+      # ref/tag name can't inject commands. (zizmor template-injection; CodeRabbit; Codex.)
       - id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [ "$EVENT_NAME" = "push" ] && [ "$REF" = "refs/heads/main" ]; then
             CURRENT=$(node -p "require('./package.json').version")
-            PREVIOUS=$(git show HEAD~1:package.json 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).version" 2>/dev/null || echo "")
-            if [ "$CURRENT" != "$PREVIOUS" ] && [ -n "$PREVIOUS" ]; then
+            # Compare against package.json at the commit main was on BEFORE this push
+            # (handles multi-commit pushes correctly; HEAD~1 would not). Other events
+            # (tag/release/dispatch) bypass this and always publish, covering first/edge releases.
+            PREVIOUS=""
+            ZERO="0000000000000000000000000000000000000000"
+            if [ -n "$BEFORE" ] && [ "$BEFORE" != "$ZERO" ] && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+              PREVIOUS=$(git show "${BEFORE}:package.json" 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).version" 2>/dev/null || echo "")
+            fi
+            if [ -n "$PREVIOUS" ] && [ "$CURRENT" != "$PREVIOUS" ]; then
               echo "proceed=true" >> "$GITHUB_OUTPUT"
               echo "main push bumped version $PREVIOUS → $CURRENT — will publish"
             else
               echo "proceed=false" >> "$GITHUB_OUTPUT"
-              echo "main push with no version change ($CURRENT) — skipping publish"
+              echo "main push, no version change (current=$CURRENT previous=${PREVIOUS:-unknown}) — skipping publish"
             fi
           else
             echo "proceed=true" >> "$GITHUB_OUTPUT"
-            echo "event '${{ github.event_name }}' (ref ${{ github.ref }}) — will publish"
+            echo "event '$EVENT_NAME' (ref $REF) — will publish"
           fi
 
   publish:
@@ -66,6 +91,8 @@ jobs:
     steps:
       # Pinned to commit SHA to prevent supply-chain attacks via tag re-pointing.
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       # Node 22 needed for npm 11.x compatibility (npm 11.5.1+ added OIDC
       # Trusted Publishing token-exchange). HOWEVER: Node 22.22.3 ships npm
