@@ -57,6 +57,9 @@
     "@modelcontextprotocol/sdk": "^1.27.1",
     "zod": "^3.23.0"
   },
+  "overrides": {
+    "hono": "^4.12.25"
+  },
   "engines": {
     "node": ">=18"
   }
