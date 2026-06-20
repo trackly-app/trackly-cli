@@ -1,8 +1,15 @@
 # Codex Review — trackly-cli PR #51
 
+**As of:** commit `29ed79d` (the migration + hono override), 2026-06-20.
+Companion signals below were current at that revision; later commits
+(e.g. the fork-head-skip guard) were reviewed on the PR directly. This record
+is a point-in-time snapshot, not a standing claim about all later revisions.
+
 **Method:** Local Codex CLI pass (`codex exec`, codex-cli 0.137.0). The external
 Codex bot dropped this PR (3 `@codex review` nudges, no response — known burst
-drop). This is the gate's sanctioned local-Codex fallback.
+drop). This is the gate's sanctioned local-Codex fallback. (The Codex bot later
+did review the PR directly and its P2 findings were addressed — fork-head skip
+fixed in code, the hono published-graph gap tracked as issue #52.)
 
 **Scope reviewed:** the full PR diff —
 (1) migrate `.github/workflows/claude-code-review.yml` from Bedrock+plugin to
