@@ -13,7 +13,7 @@ name: Claude Code Review
 #   review). The plugin still uses Opus internally for its bug-hunting agents.
 #
 # MIGRATED 2026-06-20 from Bedrock+plugin to OAuth+plugin+Sonnet. The plugin is
-# `gh`-CLI based; ubuntu-latest has gh preinstalled so the install step early-exits (the
+# `gh`-CLI based and `gh` is NOT preinstalled on the trackly-ci runner (PR #320
 # exit-127), so an "Install gh" step provisions it into the job PATH at runtime
 # (no box/SSH/AWS access needed).
 on:
@@ -29,10 +29,9 @@ jobs:
     # Fork guard + draft skip: this job runs on the production-credentialed
     # ubuntu-latest runner, so PR-head code from an untrusted fork
     # must NOT execute here. Same guard the sibling self-hosted PR workflows use.
-    # trackly-cli is PUBLIC, so anyone can open a fork PR. Gate to PRs AUTHORED
-    # by trusted users — pinned to the PR AUTHOR (not the event actor), AND
-    # same-repo head (fork PRs don't receive secrets). (CodeRabbit Critical #21
-    # + Codex #51.)
+    # trackly-cli is PUBLIC — gate to PRs AUTHORED by trusted users (pinned to
+    # the PR author, not the event actor) AND same-repo head (fork PRs don't get
+    # secrets). (CodeRabbit Critical #21 + Codex #51.)
     if: |
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository &&
@@ -70,14 +69,22 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
-          git fetch origin "$BASE_REF"
-          if MERGE_BASE="$(git merge-base "origin/${BASE_REF}" HEAD 2>/dev/null)"; then
-            CHANGED_FILES="$(git diff --name-status -M "$MERGE_BASE" HEAD | cut -f2-)"
+          # Fail-safe: if the base-ref fetch or merge-base can't be established,
+          # treat the workflow as self-changed (skip) rather than risk an
+          # incomplete changed-file list bypassing the self-change guard. (AQ.)
+          if ! git fetch origin "$BASE_REF"; then
+            echo "Failed to fetch origin/${BASE_REF}; treating workflow as self-changed (fail-safe skip)."
+            CHANGED_FILES=".github/workflows/claude-code-review.yml"
+          elif MERGE_BASE="$(git merge-base "origin/${BASE_REF}" HEAD 2>/dev/null)"; then
+            # --name-status -M emits "STATUS<TAB>old[<TAB>new]"; cut -f2- keeps the
+            # path column(s). For renames that yields "old<TAB>new" on one line,
+            # so split on tab into separate lines for the exact-match grep below.
+            CHANGED_FILES="$(git diff --name-status -M "$MERGE_BASE" HEAD | cut -f2- | tr '\t' '\n')"
           else
             echo "No merge base with origin/${BASE_REF}; treating workflow as self-changed (fail-safe skip)."
             CHANGED_FILES=".github/workflows/claude-code-review.yml"
           fi
-          if printf '%s\n' "$CHANGED_FILES" | tr '\t' '\n' | grep -Fxq '.github/workflows/claude-code-review.yml'; then
+          if printf '%s\n' "$CHANGED_FILES" | grep -Fxq '.github/workflows/claude-code-review.yml'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Claude review workflow changed in this PR; skipping until it is on the default branch."
           else
@@ -85,7 +92,7 @@ jobs:
           fi
 
       # The official code-review plugin is `gh`-CLI based, but `gh` is not
-      # preinstalled on the runner (ubuntu has gh, so the install step early-exits). Provision a
+      # preinstalled on the trackly-ci runner (PR #320 exit-127). Provision a
       # pinned static `gh` binary into the job PATH at runtime — no sudo, no box
       # access, no AWS. Idempotent: skips if gh is already on PATH.
       - name: Install gh CLI
@@ -123,7 +130,10 @@ jobs:
           ASSET="gh_${GH_VERSION}_${GOOS}_${GOARCH}.${EXT}"
           URL="https://github.com/cli/cli/releases/download/v${GH_VERSION}/${ASSET}"
           echo "Downloading $URL"
-          curl -fsSL "$URL" -o "$DEST/$ASSET"
+          curl -fsSL --show-error "$URL" -o "$DEST/$ASSET"
+          if [ ! -s "$DEST/$ASSET" ]; then
+            echo "::error::gh download failed or empty: $URL"; exit 1
+          fi
           # Verify the pinned checksum for this platform before extracting.
           SHA_VAR="SHA_${GOOS}_${GOARCH}"; EXPECTED="${!SHA_VAR}"
           if command -v sha256sum >/dev/null 2>&1; then
@@ -137,11 +147,19 @@ jobs:
           echo "gh checksum verified."
           if [ "$EXT" = "zip" ]; then
             unzip -q "$DEST/$ASSET" -d "$DEST/x"
-            # macOS zip extracts to gh_<ver>_macOS_<arch>/bin/gh
-            BIN_DIR="$(dirname "$(find "$DEST/x" -type f -name gh | head -1)")"
+            # macOS zip extracts to gh_<ver>_macOS_<arch>/bin/gh — locate it
+            # robustly and fail with a clear message if the layout is unexpected.
+            GH_BIN="$(find "$DEST/x" -type f -name gh | head -1)"
+            if [ -z "$GH_BIN" ]; then
+              echo "::error::gh binary not found in the extracted macOS archive ($DEST/x)"; exit 1
+            fi
+            BIN_DIR="$(dirname "$GH_BIN")"
           else
             tar -xzf "$DEST/$ASSET" -C "$DEST" --strip-components=1
             BIN_DIR="$DEST/bin"
+          fi
+          if [ ! -x "$BIN_DIR/gh" ]; then
+            echo "::error::gh not executable at $BIN_DIR/gh after install"; exit 1
           fi
           echo "$BIN_DIR" >> "$GITHUB_PATH"
           "$BIN_DIR/gh" --version | head -1
