@@ -459,6 +459,36 @@ test('apiRequest parses HTTP-date Retry-After on planned maintenance', async (t)
   });
 });
 
+test('apiRequest hides the planned maintenance sentinel code from user-facing title', async (t) => {
+  const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
+    res.statusCode = 503;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      error: 'planned_maintenance',
+      message: 'We will be back shortly.',
+    }));
+  });
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: 'trk_k',
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '1000',
+  }, async () => {
+    let caught;
+    try {
+      await client.apiRequest('GET', '/api/jobscout/jobs');
+    } catch (e) {
+      caught = e;
+    }
+    assert.ok(caught, 'must reject on planned maintenance');
+    assert.equal(caught.maintenance.title, 'Trackly is upgrading');
+    assert.match(caught.message, /Trackly is upgrading/);
+    assert.match(caught.message, /We will be back shortly\./);
+    assert.doesNotMatch(caught.message, /planned_maintenance/);
+  });
+});
+
 test('apiRequest handles null JSON 503 bodies without crashing', async (t) => {
   const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
     res.statusCode = 503;
