@@ -5,7 +5,7 @@
 
 # trackly-cli
 
-The only job tracking CLI built for AI agents.
+The only job tracking CLI built for AI agents. Install with `npx trackly`.
 
 Search 128,000+ jobs across 1,900+ companies and 40+ ATS types. Track applications, get AI-powered recommendations, and manage your job search -- from the terminal or through Claude, ChatGPT, Cursor, and other MCP-compatible AI agents.
 
