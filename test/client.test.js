@@ -420,6 +420,7 @@ test('apiRequest surfaces planned maintenance details from 503 responses', async
     assert.equal(caught.maintenance.estimatedReturnPt, 'Sunday 4:00 AM PT');
     assert.equal(caught.maintenance.retryAfterSeconds, 900);
     assert.match(caught.message, /Trackly is upgrading/);
+    assert.match(caught.message, /We will be back shortly\./);
     assert.match(caught.message, /Sunday 4:00 AM PT/);
   });
 });
