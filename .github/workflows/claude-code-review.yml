@@ -1,34 +1,48 @@
 name: Claude Code Review
 
-# DEACTIVATED 2026-06-13: Claude CI review no longer runs automatically.
-# Bedrock auth is out (removed-advisor AWS account) and the Claude-subscription
-# Agent SDK credit (max $200/mo) can't fund fleet review volume. PR review is
-# already gated by CodeRabbit + Codex. Re-enable by restoring the triggers below.
+# Posts severity-ranked inline review comments on every PR — same pattern as
+# CodeRabbit / Codex. Replaces the `/code-review:code-review` plugin invocation,
+# which silently no-ops on Bedrock (upstream claude-code-action#1087).
+#
+# Auth: Claude Max-plan subscription via CLAUDE_CODE_OAUTH_TOKEN (NOT Bedrock).
+#   Bedrock is out (removed-advisor AWS account). The token is the dedicated
+#   Trackly co-founder (jimmygregorio) Max subscription. trackly-cli is PUBLIC,
+#   so the trackly-app ORG secret (visibility: all) reaches it — no repo-level
+#   secret needed here (unlike the private repos, where org secrets don't reach
+#   on the Free plan). Precedence trap: keep ANTHROPIC_API_KEY nulled so the
+#   OAuth token wins.
+# Model: Opus 4.8.
+#
+# MIGRATED 2026-06-20 from Bedrock+plugin to OAuth+inline, mirroring the
+# close-ai (#749/#751) and TracklyWeb (#230) canaries — both validated
+# end-to-end (real Claude reviews posted). Was workflow_dispatch-only from
+# 2026-06-13 (deactivation mechanism). pull_request-only: the prompt is
+# PR-shaped, so a manual run has no PR to review.
 on:
-  workflow_dispatch: {}
-  # Original auto-triggers (preserved for easy revert):
-  # pull_request:
-  # types: [opened, synchronize, ready_for_review, reopened]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   claude-review:
-    # Gate: only run on PRs AUTHORED by trusted users. This job checks out PR code
-    # AFTER AWS credentials are configured, so we must pin the trust check to the PR
-    # AUTHOR (`pull_request.user.login`), NOT the event actor (`github.actor`).
-    #
-    # The difference matters: if an untrusted user opens a PR and Kevin later pushes to
-    # that branch (rare, but possible with branch-permission grants), `github.actor`
-    # would become `kevinastuhuaman` and satisfy an actor-based gate — while the PR's
-    # code (including workflow-affecting files in older history) was authored by the
-    # untrusted user. Using `pull_request.user.login` ensures the gate fails in that
-    # scenario because the ORIGINAL author remains untrusted.
-    #
-    # (CodeRabbit Critical finding on PR #21.)
+    # Gate: trackly-cli is a PUBLIC repo, so anyone can open a fork PR. Run ONLY
+    # on PRs AUTHORED by trusted users — pinned to the PR AUTHOR
+    # (`pull_request.user.login`), NOT the event actor (`github.actor`): if an
+    # untrusted user opens a PR and Kevin later pushes to that branch,
+    # `github.actor` would become `kevinastuhuaman` and satisfy an actor-based
+    # gate while the PR's code remains authored by the untrusted user. The
+    # author-association check is the right (stronger) guard for a public repo —
+    # a same-repo `head.repo.full_name` check is meaningless when anyone can
+    # fork. (CodeRabbit Critical on PR #21.) Draft PRs also skip to save quota.
     if: |
-      github.event.pull_request.user.login == 'kevinastuhuaman' ||
-      github.event.pull_request.author_association == 'OWNER' ||
-      github.event.pull_request.author_association == 'MEMBER' ||
-      github.event.pull_request.author_association == 'COLLABORATOR'
+      github.event.pull_request.draft == false &&
+      (github.event.pull_request.user.login == 'kevinastuhuaman' ||
+       github.event.pull_request.author_association == 'OWNER' ||
+       github.event.pull_request.author_association == 'MEMBER' ||
+       github.event.pull_request.author_association == 'COLLABORATOR')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -37,31 +51,118 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
+      # REQUIRED even with claude_code_oauth_token: the action fetches a GitHub
+      # OIDC token and exchanges it for a GitHub App token to POST comments.
       id-token: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
-          fetch-depth: 1
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          # ref: PR HEAD sha (not the synthetic merge commit), so diff line
+          # numbers match the head the inline-comment API posts against —
+          # avoids 422/wrong-line comments. (Codex, close-ai #751.)
+          ref: ${{ github.event.pull_request.head.sha }}
+          # fetch-depth: 0 — the prompt computes the changed-file list with
+          # `git diff` against the PR base, which needs the common ancestor.
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Run Claude Code Review
         id: claude-review
-        uses: anthropics/claude-code-action@0f97b95b6536c26e5f6bd90faec370d41695beca # v1 (bumped 2026-06-11, canary-validated on TracklyApp #104)
+        # continue-on-error: the claude.ai install pipeline has known checksum
+        # flakiness; don't let a flaky installer block PR merges.
+        continue-on-error: true
+        timeout-minutes: 24
+        uses: anthropics/claude-code-action@0f97b95b6536c26e5f6bd90faec370d41695beca # v1
+        env:
+          # Null any ambient ANTHROPIC_API_KEY so the OAuth token always wins.
+          ANTHROPIC_API_KEY: ""
         with:
           settings: |
             {"env": {"API_FORCE_IDLE_TIMEOUT": "1"}}
-          use_bedrock: "true"
-          plugin_marketplaces: |
-            https://github.com/anthropics/claude-code.git
-          plugins: |
-            code-review@claude-code-plugins
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          claude_args: '--model us.anthropic.claude-opus-4-6-v1'
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # `track_progress: true` intentionally omitted — it forces tag mode,
+          # unioning git-write tools into allowedTools (claude-code-action#860).
+          # Strictly read-only review; no top-level-comment tool (see STEP 3).
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request. The PR branch is already checked out.
+            This is trackly-cli — a Node.js CLI + MCP server, published to npm and
+            distributed via `npx trackly`.
+
+            Focus on (in priority order):
+            1. Correctness / regressions / logic bugs
+            2. Security (command injection, arbitrary file/path access, secret
+               leakage, unsafe child_process/exec, prototype pollution, supply
+               chain — this is a published npm package run on users' machines)
+            3. Data-loss or irreversible-op risk (fs writes/deletes, overwriting
+               user files without confirmation)
+            4. Missing tests for new behavior
+            5. Performance (blocking sync calls, unbounded loops)
+
+            Skip nits, formatting, and style unless they cause bugs.
+
+            Tag every finding with one of these severity labels:
+              🔴 P1 — must fix before merge (bug, security, regression, data loss)
+              🟡 P2 — should fix (missing test, risky pattern, perf cliff)
+              🟢 P3 — nice-to-have (naming, comment clarity)
+
+            STEP 1 — establish the changed-line map FIRST (before writing any
+            comment). The PR branch is checked out at full depth; `git` IS
+            present on the runner. Run, in order, the first that succeeds:
+              git diff --name-only "origin/${{ github.event.pull_request.base.ref }}...HEAD"
+              git diff --name-only "${{ github.event.pull_request.base.sha }}...HEAD"
+            Then for each changed file get the added/changed line numbers with:
+              git diff "origin/${{ github.event.pull_request.base.ref }}...HEAD" -- <file>
+            EVERY inline comment you post MUST target a (file, line) pair that
+            appears as an ADDED/CHANGED line in this diff. The GitHub API rejects
+            (HTTP 422 "could not be resolved") any comment whose path+line is not
+            part of the PR diff — that is the #1 cause of a run posting nothing.
+
+            STEP 2 — post ALL feedback as inline comments using
+            `mcp__github_inline_comment__create_inline_comment` with `confirmed: true`.
+            This is the ONLY comment tool available in this job (agent mode, no
+            `track_progress`) — there is NO top-level-comment path.
+            NEVER comment on a file or line outside the diff map from STEP 1,
+            even if you read that file for context. If a finding concerns code
+            outside the diff, describe it in the verdict comment with the path in
+            backticks — do NOT anchor a comment there.
+
+            STEP 3 — post the overall verdict (counts of P1/P2/P3 + APPROVE /
+            REQUEST_CHANGES / COMMENT) as ONE inline comment. ANCHOR IT TO THE
+            FIRST ANCHORABLE LINE IN THE STEP 1 DIFF MAP, in this priority order:
+              a. the first ADDED/CHANGED (right-side) line of the first file —
+                 preferred; always use this when any added/changed line exists;
+              b. if the PR is deletion-only (no added/changed right-side line),
+                 anchor to a DELETED (left-side) line of the first file, passing
+                 the tool's left-side/old-line parameter if available;
+              c. if neither is anchorable, do NOT silently skip — post the
+                 verdict text via the inline tool on the closest valid line and,
+                 if the tool still rejects it, emit the verdict to the job log
+                 prefixed `VERDICT:` so the run is not silently empty.
+            Use a real diff line — never a file you happened to read or a guessed
+            line. This keeps the anchor inside the diff so the comment posts.
+            Only post GitHub comments — do not emit review text as plain chat
+            messages, otherwise the PR stays empty even though the job reports
+            success.
+
+            If there are zero findings above P3, still post the verdict comment
+            from STEP 3 (anchored to the first changed line) saying
+            "LGTM — no P1/P2 findings" and stop.
+
+          claude_args: |
+            --model claude-opus-4-8
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
+
+      # Detectability backstop: the step above is continue-on-error, so any
+      # failure leaves the job green with NO review posted. Surface that as a
+      # non-blocking warning so a silent-no-review run is visible.
+      - name: Warn if Claude review did not succeed
+        if: always()
+        run: |
+          if [ "${{ steps.claude-review.outcome }}" != "success" ]; then
+            echo "::warning title=Claude review did not post::The Run Claude Code Review step outcome was '${{ steps.claude-review.outcome }}'. No review may have been posted to this PR. Check the step logs."
+          fi
