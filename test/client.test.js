@@ -385,6 +385,45 @@ test('apiRequest rejects 3xx redirects with a clear message', async (t) => {
   });
 });
 
+test('apiRequest surfaces planned maintenance details from 503 responses', async (t) => {
+  const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
+    res.statusCode = 503;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Retry-After', '900');
+    res.end(JSON.stringify({
+      success: false,
+      code: 'planned_maintenance',
+      error: 'Trackly is upgrading',
+      message: 'We will be back shortly.',
+      estimatedReturn: 'Sunday 4:00 AM PT',
+      retryAfterSeconds: 900,
+    }));
+  });
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: 'trk_k',
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '1000',
+  }, async () => {
+    let caught;
+    try {
+      await client.apiRequest('GET', '/api/jobscout/jobs');
+    } catch (e) {
+      caught = e;
+    }
+    assert.ok(caught, 'must reject on planned maintenance');
+    assert.equal(caught.status, 503);
+    assert.equal(caught.code, 'planned_maintenance');
+    assert.equal(caught.maintenance.title, 'Trackly is upgrading');
+    assert.equal(caught.maintenance.message, 'We will be back shortly.');
+    assert.equal(caught.maintenance.estimatedReturnPt, 'Sunday 4:00 AM PT');
+    assert.equal(caught.maintenance.retryAfterSeconds, 900);
+    assert.match(caught.message, /Trackly is upgrading/);
+    assert.match(caught.message, /Sunday 4:00 AM PT/);
+  });
+});
+
 test('loadConfig surfaces an unreadable config (EACCES) as a clear TracklyConfigError', async (t) => {
   const configDir = createTempConfigDir();
   const file = path.join(configDir, 'config.json');
