@@ -28,17 +28,22 @@ concurrency:
 
 jobs:
   claude-review:
-    # Gate: trackly-cli is a PUBLIC repo, so anyone can open a fork PR. Run ONLY
-    # on PRs AUTHORED by trusted users — pinned to the PR AUTHOR
-    # (`pull_request.user.login`), NOT the event actor (`github.actor`): if an
-    # untrusted user opens a PR and Kevin later pushes to that branch,
-    # `github.actor` would become `kevinastuhuaman` and satisfy an actor-based
-    # gate while the PR's code remains authored by the untrusted user. The
-    # author-association check is the right (stronger) guard for a public repo —
-    # a same-repo `head.repo.full_name` check is meaningless when anyone can
-    # fork. (CodeRabbit Critical on PR #21.) Draft PRs also skip to save quota.
+    # Gate: trackly-cli is a PUBLIC repo, so anyone can open a fork PR. Two
+    # conditions, BOTH required:
+    #   1. Trusted AUTHOR — pinned to the PR AUTHOR (`pull_request.user.login`),
+    #      NOT the event actor (`github.actor`): if an untrusted user opens a PR
+    #      and Kevin later pushes to that branch, `github.actor` would become
+    #      `kevinastuhuaman` and satisfy an actor-based gate while the PR's code
+    #      remains authored by the untrusted user. (CodeRabbit Critical on #21.)
+    #   2. Same-repo head — fork PRs do NOT receive repo/org secrets, so
+    #      `secrets.CLAUDE_CODE_OAUTH_TOKEN` would expand empty and the review
+    #      would fail under continue-on-error (only a warning, no review). Skip
+    #      fork heads cleanly rather than scheduling a guaranteed-empty run, even
+    #      for trusted authors who happen to PR from a fork. (Codex P2 on #51.)
+    # Draft PRs also skip to save quota.
     if: |
       github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
       (github.event.pull_request.user.login == 'kevinastuhuaman' ||
        github.event.pull_request.author_association == 'OWNER' ||
        github.event.pull_request.author_association == 'MEMBER' ||
