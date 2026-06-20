@@ -13,7 +13,7 @@ name: Claude Code Review
 #   review). The plugin still uses Opus internally for its bug-hunting agents.
 #
 # MIGRATED 2026-06-20 from Bedrock+plugin to OAuth+plugin+Sonnet. The plugin is
-# `gh`-CLI based and `gh` is NOT preinstalled on the lightsail runner (PR #320
+# `gh`-CLI based; ubuntu-latest has gh preinstalled so the install step early-exits (the
 # exit-127), so an "Install gh" step provisions it into the job PATH at runtime
 # (no box/SSH/AWS access needed).
 on:
