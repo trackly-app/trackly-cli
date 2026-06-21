@@ -38,7 +38,10 @@ jobs:
        github.event.pull_request.author_association == 'OWNER' ||
        github.event.pull_request.author_association == 'MEMBER' ||
        github.event.pull_request.author_association == 'COLLABORATOR')
-    timeout-minutes: 60
+    # 75 min: primary review step (30) + fallback step (30) + checkout/gh-install
+    # overhead must fit so a hung primary still leaves the fallback its full
+    # window to post. (Codex P2 on TracklyMac #188.)
+    timeout-minutes: 75
     env:
       API_FORCE_IDLE_TIMEOUT: "1"
     runs-on: ubuntu-latest
