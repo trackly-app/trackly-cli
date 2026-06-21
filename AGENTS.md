@@ -84,3 +84,5 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 4. **No dependencies beyond `@modelcontextprotocol/sdk` and `zod`.** Keep it minimal. HTTP uses raw `node:https`/`node:http`.
 5. **The `ask` command has a 20/day rate limit** enforced server-side (429 response).
 6. **Do not modify the backend.** This repo is a consumer of the Close AI API. Backend changes go in the `granola-followup-app` repo.
+
+<!-- final review-pipeline validation (jimmy->berkeley failover); safe to delete -->
