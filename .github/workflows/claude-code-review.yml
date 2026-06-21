@@ -149,7 +149,7 @@ jobs:
             unzip -q "$DEST/$ASSET" -d "$DEST/x"
             # macOS zip extracts to gh_<ver>_macOS_<arch>/bin/gh — locate it
             # robustly and fail with a clear message if the layout is unexpected.
-            GH_BIN="$(find "$DEST/x" -type f -name gh | head -1)"
+            GH_BIN="$(find "$DEST/x" -type f -path '*/bin/gh' -perm -111 | head -1)"
             if [ -z "$GH_BIN" ]; then
               echo "::error::gh binary not found in the extracted macOS archive ($DEST/x)"; exit 1
             fi
