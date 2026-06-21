@@ -29,9 +29,8 @@ jobs:
     # Fork guard + draft skip: this job runs on the production-credentialed
     # ubuntu-latest runner, so PR-head code from an untrusted fork
     # must NOT execute here. Same guard the sibling self-hosted PR workflows use.
-    # trackly-cli is PUBLIC — gate to PRs AUTHORED by trusted users (pinned to
-    # the PR author, not the event actor) AND same-repo head (fork PRs don't get
-    # secrets). (CodeRabbit Critical #21 + Codex #51.)
+    # trackly-cli is PUBLIC — gate to trusted PR authors (pinned to the PR author)
+    # AND same-repo head. (CodeRabbit Critical #21 + Codex #51.)
     if: |
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository &&
@@ -164,41 +163,72 @@ jobs:
           echo "$BIN_DIR" >> "$GITHUB_PATH"
           "$BIN_DIR/gh" --version | head -1
 
-      - name: Run Claude Code Review
+      # PRIMARY review — jimmygregorio token (CLAUDE_CODE_OAUTH_TOKEN). If this
+      # account is rate-limited / hits its session limit (or any other failure),
+      # the step fails under continue-on-error and the FALLBACK step below runs
+      # on the berkeley token so reviews don't stop. Token routing: jimmy first,
+      # berkeley as overflow (two independent Max subscriptions).
+      - name: Run Claude Code Review (primary)
         if: steps.review-workflow.outputs.changed != 'true'
         id: claude-review
-        # continue-on-error: the claude.ai install pipeline has known checksum
-        # flakiness; don't let a flaky installer block PR merges.
         continue-on-error: true
         timeout-minutes: 30
         uses: anthropics/claude-code-action@0f97b95b6536c26e5f6bd90faec370d41695beca # v1
         env:
-          # Null any ambient ANTHROPIC_API_KEY so the OAuth token always wins.
           ANTHROPIC_API_KEY: ""
-          # The plugin uses `gh`, which reads GH_TOKEN for auth.
           GH_TOKEN: ${{ github.token }}
         with:
           settings: |
             {"env": {"API_FORCE_IDLE_TIMEOUT": "1"}}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Read-scoped job token for posting comments (contents:read) instead of
-          # the action minting a contents:write App token.
           github_token: ${{ github.token }}
           plugin_marketplaces: |
             https://github.com/anthropics/claude-code.git
           plugins: |
             code-review@claude-code-plugins
-          # `--comment` is REQUIRED for the plugin to actually POST findings;
-          # without it the plugin reviews but stays silent (per the plugin spec).
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment'
           claude_args: '--model claude-sonnet-4-6'
 
-      # Detectability backstop: the Claude step is continue-on-error, so any
-      # failure leaves the job green with no review. Surface a non-blocking
-      # warning (only when the review was actually attempted).
-      - name: Warn if Claude review did not succeed
+      # FALLBACK review — berkeley token (CLAUDE_CODE_OAUTH_TOKEN_FALLBACK). Runs
+      # ONLY when the primary step did not succeed (e.g. jimmy hit its session
+      # limit). Identical plugin config, different account = a second quota
+      # bucket so a rate-limited primary doesn't leave the PR unreviewed.
+      - name: Run Claude Code Review (fallback)
+        if: >-
+          steps.review-workflow.outputs.changed != 'true' &&
+          steps.claude-review.outcome != 'success'
+        id: claude-review-fallback
+        continue-on-error: true
+        timeout-minutes: 30
+        uses: anthropics/claude-code-action@0f97b95b6536c26e5f6bd90faec370d41695beca # v1
+        env:
+          ANTHROPIC_API_KEY: ""
+          GH_TOKEN: ${{ github.token }}
+        with:
+          settings: |
+            {"env": {"API_FORCE_IDLE_TIMEOUT": "1"}}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_FALLBACK }}
+          github_token: ${{ github.token }}
+          plugin_marketplaces: |
+            https://github.com/anthropics/claude-code.git
+          plugins: |
+            code-review@claude-code-plugins
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment'
+          claude_args: '--model claude-sonnet-4-6'
+
+      # Detectability backstop: both review steps are continue-on-error, so if
+      # BOTH the primary and the fallback fail (e.g. both accounts rate-limited),
+      # the job would otherwise be green with no review. Emit a non-blocking
+      # warning naming both outcomes so a silent no-review is visible.
+      - name: Warn if no Claude review posted
         if: always() && steps.review-workflow.outputs.changed != 'true'
         run: |
-          if [ "${{ steps.claude-review.outcome }}" != "success" ]; then
-            echo "::warning title=Claude review did not post::The Run Claude Code Review step outcome was '${{ steps.claude-review.outcome }}'. No review may have been posted. Check the step logs."
+          PRIMARY="${{ steps.claude-review.outcome }}"
+          FALLBACK="${{ steps.claude-review-fallback.outcome }}"
+          if [ "$PRIMARY" = "success" ]; then
+            echo "Claude review posted via the primary (jimmygregorio) token."
+          elif [ "$FALLBACK" = "success" ]; then
+            echo "::notice title=Claude review used fallback::Primary token failed ($PRIMARY); review posted via the berkeley fallback token."
+          else
+            echo "::warning title=Claude review did not post::BOTH tokens failed (primary=$PRIMARY, fallback=$FALLBACK). No review posted — likely both accounts are rate-limited. Check the step logs."
           fi
