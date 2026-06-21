@@ -1,23 +1,21 @@
 name: Claude Code Review
 
-# Posts severity-ranked inline review comments on every PR — same pattern as
-# CodeRabbit / Codex. Replaces the `/code-review:code-review` plugin invocation,
-# which silently no-ops on Bedrock (upstream claude-code-action#1087).
+# Runs Anthropic's OFFICIAL `code-review` plugin (multi-agent + validation
+# pipeline: Haiku gate -> per-file CLAUDE.md compliance + parallel bug agents ->
+# a separate validation pass that re-checks every finding -> filter -> post).
+# Higher signal / fewer false positives than a custom single-pass prompt.
+# (anthropics/claude-code marketplace, `code-review@claude-code-plugins`.)
 #
-# Auth: Claude Max-plan subscription via CLAUDE_CODE_OAUTH_TOKEN (NOT Bedrock).
-#   Bedrock is out (removed-advisor AWS account). The token is the dedicated
-#   Trackly co-founder (jimmygregorio) Max subscription. trackly-cli is PUBLIC,
-#   so the trackly-app ORG secret (visibility: all) reaches it — no repo-level
-#   secret needed here (unlike the private repos, where org secrets don't reach
-#   on the Free plan). Precedence trap: keep ANTHROPIC_API_KEY nulled so the
-#   OAuth token wins.
-# Model: Opus 4.8.
+# Auth: Claude subscription via CLAUDE_CODE_OAUTH_TOKEN (NOT Bedrock — that
+#   account is gone). Repo-level secret (org secrets don't reach private repos
+#   on the GitHub Free plan). ANTHROPIC_API_KEY nulled so the token wins.
+# Model: Sonnet 4.6 at the top level (Anthropic's recommended default for
+#   review). The plugin still uses Opus internally for its bug-hunting agents.
 #
-# MIGRATED 2026-06-20 from Bedrock+plugin to OAuth+inline, mirroring the
-# close-ai (#749/#751) and TracklyWeb (#230) canaries — both validated
-# end-to-end (real Claude reviews posted). Was workflow_dispatch-only from
-# 2026-06-13 (deactivation mechanism). pull_request-only: the prompt is
-# PR-shaped, so a manual run has no PR to review.
+# MIGRATED 2026-06-20 from Bedrock+plugin to OAuth+plugin+Sonnet. The plugin is
+# `gh`-CLI based and `gh` is NOT preinstalled on the trackly-ci runner (PR #320
+# exit-127), so an "Install gh" step provisions it into the job PATH at runtime
+# (no box/SSH/AWS access needed).
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -28,19 +26,12 @@ concurrency:
 
 jobs:
   claude-review:
-    # Gate: trackly-cli is a PUBLIC repo, so anyone can open a fork PR. Two
-    # conditions, BOTH required:
-    #   1. Trusted AUTHOR — pinned to the PR AUTHOR (`pull_request.user.login`),
-    #      NOT the event actor (`github.actor`): if an untrusted user opens a PR
-    #      and Kevin later pushes to that branch, `github.actor` would become
-    #      `kevinastuhuaman` and satisfy an actor-based gate while the PR's code
-    #      remains authored by the untrusted user. (CodeRabbit Critical on #21.)
-    #   2. Same-repo head — fork PRs do NOT receive repo/org secrets, so
-    #      `secrets.CLAUDE_CODE_OAUTH_TOKEN` would expand empty and the review
-    #      would fail under continue-on-error (only a warning, no review). Skip
-    #      fork heads cleanly rather than scheduling a guaranteed-empty run, even
-    #      for trusted authors who happen to PR from a fork. (Codex P2 on #51.)
-    # Draft PRs also skip to save quota.
+    # Fork guard + draft skip: this job runs on the production-credentialed
+    # ubuntu-latest runner, so PR-head code from an untrusted fork
+    # must NOT execute here. Same guard the sibling self-hosted PR workflows use.
+    # trackly-cli is PUBLIC — gate to PRs AUTHORED by trusted users (pinned to
+    # the PR author, not the event actor) AND same-repo head (fork PRs don't get
+    # secrets). (CodeRabbit Critical #21 + Codex #51.)
     if: |
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository &&
@@ -48,126 +39,166 @@ jobs:
        github.event.pull_request.author_association == 'OWNER' ||
        github.event.pull_request.author_association == 'MEMBER' ||
        github.event.pull_request.author_association == 'COLLABORATOR')
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       API_FORCE_IDLE_TIMEOUT: "1"
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
       issues: write
       # REQUIRED even with claude_code_oauth_token: the action fetches a GitHub
-      # OIDC token and exchanges it for a GitHub App token to POST comments.
+      # OIDC token and exchanges it for a GitHub App token to post comments.
       id-token: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          # ref: PR HEAD sha (not the synthetic merge commit), so diff line
-          # numbers match the head the inline-comment API posts against —
-          # avoids 422/wrong-line comments. (Codex, close-ai #751.)
           ref: ${{ github.event.pull_request.head.sha }}
-          # fetch-depth: 0 — the prompt computes the changed-file list with
-          # `git diff` against the PR base, which needs the common ancestor.
           fetch-depth: 0
-          persist-credentials: false
+
+      # Skip the review when this PR edits the review workflow itself — a
+      # workflow change can't be trusted/validated until it's on the default
+      # branch, and this also avoids running edited secret-bearing workflow code
+      # from a PR head. --name-status -M so a RENAME of the workflow is caught.
+      - name: Check Claude review workflow self-change
+        id: review-workflow
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          # Fail-safe: if the base-ref fetch or merge-base can't be established,
+          # treat the workflow as self-changed (skip) rather than risk an
+          # incomplete changed-file list bypassing the self-change guard. (AQ.)
+          if ! git fetch origin "$BASE_REF"; then
+            echo "Failed to fetch origin/${BASE_REF}; treating workflow as self-changed (fail-safe skip)."
+            CHANGED_FILES=".github/workflows/claude-code-review.yml"
+          elif MERGE_BASE="$(git merge-base "origin/${BASE_REF}" HEAD 2>/dev/null)"; then
+            # --name-status -M emits "STATUS<TAB>old[<TAB>new]"; cut -f2- keeps the
+            # path column(s). For renames that yields "old<TAB>new" on one line,
+            # so split on tab into separate lines for the exact-match grep below.
+            CHANGED_FILES="$(git diff --name-status -M "$MERGE_BASE" HEAD | cut -f2- | tr '\t' '\n')"
+          else
+            echo "No merge base with origin/${BASE_REF}; treating workflow as self-changed (fail-safe skip)."
+            CHANGED_FILES=".github/workflows/claude-code-review.yml"
+          fi
+          if printf '%s\n' "$CHANGED_FILES" | grep -Fxq '.github/workflows/claude-code-review.yml'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Claude review workflow changed in this PR; skipping until it is on the default branch."
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The official code-review plugin is `gh`-CLI based, but `gh` is not
+      # preinstalled on the trackly-ci runner (PR #320 exit-127). Provision a
+      # pinned static `gh` binary into the job PATH at runtime — no sudo, no box
+      # access, no AWS. Idempotent: skips if gh is already on PATH.
+      - name: Install gh CLI
+        if: steps.review-workflow.outputs.changed != 'true'
+        shell: bash
+        env:
+          GH_VERSION: "2.62.0"
+          # Pinned SHA256 of the official gh 2.62.0 release archives. The
+          # download is verified against these before use, so a compromised
+          # mirror / MITM can't inject a malicious gh that runs with the job's
+          # token. (Amazon Q on PR #755.) Update these together with GH_VERSION.
+          SHA_linux_amd64: "41c8b0698ad3003cb5c44bde672a1ffd5f818595abd80162fbf8cc999418446a"
+          SHA_linux_arm64: "a165413209aab98bfb1db9629b97bc9c59778d38bb7378a33a0363cf822e7965"
+          SHA_macOS_amd64: "cd547c05c175a79e5af6f95ba4881a11ca550c0ff37a63f234bc5c79a58435d5"
+          SHA_macOS_arm64: "fdb77f31b8a6dd23c3fd858758d692a45f7fc76383e37d475bdcae038df92afc"
+        run: |
+          set -euo pipefail
+          if command -v gh >/dev/null 2>&1; then
+            echo "gh already present: $(gh --version | head -1)"
+            exit 0
+          fi
+          OS="$(uname -s)"; ARCH="$(uname -m)"
+          # gh ships Linux as .tar.gz and macOS as .zip — handle both.
+          case "$OS" in
+            Linux)  GOOS=linux;  EXT=tar.gz;;
+            Darwin) GOOS=macOS;  EXT=zip;;
+            *) echo "::error::unsupported OS $OS for gh install"; exit 1;;
+          esac
+          case "$ARCH" in
+            x86_64|amd64)   GOARCH=amd64;;
+            arm64|aarch64)  GOARCH=arm64;;
+            *) echo "::error::unsupported arch $ARCH for gh install"; exit 1;;
+          esac
+          DEST="$RUNNER_TEMP/gh"; mkdir -p "$DEST"
+          ASSET="gh_${GH_VERSION}_${GOOS}_${GOARCH}.${EXT}"
+          URL="https://github.com/cli/cli/releases/download/v${GH_VERSION}/${ASSET}"
+          echo "Downloading $URL"
+          curl -fsSL --show-error "$URL" -o "$DEST/$ASSET"
+          if [ ! -s "$DEST/$ASSET" ]; then
+            echo "::error::gh download failed or empty: $URL"; exit 1
+          fi
+          # Verify the pinned checksum for this platform before extracting.
+          SHA_VAR="SHA_${GOOS}_${GOARCH}"; EXPECTED="${!SHA_VAR}"
+          if command -v sha256sum >/dev/null 2>&1; then
+            ACTUAL="$(sha256sum "$DEST/$ASSET" | awk '{print $1}')"
+          else
+            ACTUAL="$(shasum -a 256 "$DEST/$ASSET" | awk '{print $1}')"
+          fi
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::gh checksum mismatch for $ASSET (expected $EXPECTED, got $ACTUAL)"; exit 1
+          fi
+          echo "gh checksum verified."
+          if [ "$EXT" = "zip" ]; then
+            unzip -q "$DEST/$ASSET" -d "$DEST/x"
+            # macOS zip extracts to gh_<ver>_macOS_<arch>/bin/gh — locate it
+            # robustly and fail with a clear message if the layout is unexpected.
+            GH_BIN="$(find "$DEST/x" -type f -name gh | head -1)"
+            if [ -z "$GH_BIN" ]; then
+              echo "::error::gh binary not found in the extracted macOS archive ($DEST/x)"; exit 1
+            fi
+            BIN_DIR="$(dirname "$GH_BIN")"
+          else
+            tar -xzf "$DEST/$ASSET" -C "$DEST" --strip-components=1
+            BIN_DIR="$DEST/bin"
+          fi
+          if [ ! -x "$BIN_DIR/gh" ]; then
+            echo "::error::gh not executable at $BIN_DIR/gh after install"; exit 1
+          fi
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+          "$BIN_DIR/gh" --version | head -1
 
       - name: Run Claude Code Review
+        if: steps.review-workflow.outputs.changed != 'true'
         id: claude-review
         # continue-on-error: the claude.ai install pipeline has known checksum
         # flakiness; don't let a flaky installer block PR merges.
         continue-on-error: true
-        timeout-minutes: 24
+        timeout-minutes: 30
         uses: anthropics/claude-code-action@0f97b95b6536c26e5f6bd90faec370d41695beca # v1
         env:
           # Null any ambient ANTHROPIC_API_KEY so the OAuth token always wins.
           ANTHROPIC_API_KEY: ""
+          # The plugin uses `gh`, which reads GH_TOKEN for auth.
+          GH_TOKEN: ${{ github.token }}
         with:
           settings: |
             {"env": {"API_FORCE_IDLE_TIMEOUT": "1"}}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # `track_progress: true` intentionally omitted — it forces tag mode,
-          # unioning git-write tools into allowedTools (claude-code-action#860).
-          # Strictly read-only review; no top-level-comment tool (see STEP 3).
-          prompt: |
-            REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
+          # Read-scoped job token for posting comments (contents:read) instead of
+          # the action minting a contents:write App token.
+          github_token: ${{ github.token }}
+          plugin_marketplaces: |
+            https://github.com/anthropics/claude-code.git
+          plugins: |
+            code-review@claude-code-plugins
+          # `--comment` is REQUIRED for the plugin to actually POST findings;
+          # without it the plugin reviews but stays silent (per the plugin spec).
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment'
+          claude_args: '--model claude-sonnet-4-6'
 
-            Review this pull request. The PR branch is already checked out.
-            This is trackly-cli — a Node.js CLI + MCP server, published to npm and
-            distributed via `npx trackly`.
-
-            Focus on (in priority order):
-            1. Correctness / regressions / logic bugs
-            2. Security (command injection, arbitrary file/path access, secret
-               leakage, unsafe child_process/exec, prototype pollution, supply
-               chain — this is a published npm package run on users' machines)
-            3. Data-loss or irreversible-op risk (fs writes/deletes, overwriting
-               user files without confirmation)
-            4. Missing tests for new behavior
-            5. Performance (blocking sync calls, unbounded loops)
-
-            Skip nits, formatting, and style unless they cause bugs.
-
-            Tag every finding with one of these severity labels:
-              🔴 P1 — must fix before merge (bug, security, regression, data loss)
-              🟡 P2 — should fix (missing test, risky pattern, perf cliff)
-              🟢 P3 — nice-to-have (naming, comment clarity)
-
-            STEP 1 — establish the changed-line map FIRST (before writing any
-            comment). The PR branch is checked out at full depth; `git` IS
-            present on the runner. Run, in order, the first that succeeds:
-              git diff --name-only "origin/${{ github.event.pull_request.base.ref }}...HEAD"
-              git diff --name-only "${{ github.event.pull_request.base.sha }}...HEAD"
-            Then for each changed file get the added/changed line numbers with:
-              git diff "origin/${{ github.event.pull_request.base.ref }}...HEAD" -- <file>
-            EVERY inline comment you post MUST target a (file, line) pair that
-            appears as an ADDED/CHANGED line in this diff. The GitHub API rejects
-            (HTTP 422 "could not be resolved") any comment whose path+line is not
-            part of the PR diff — that is the #1 cause of a run posting nothing.
-
-            STEP 2 — post ALL feedback as inline comments using
-            `mcp__github_inline_comment__create_inline_comment` with `confirmed: true`.
-            This is the ONLY comment tool available in this job (agent mode, no
-            `track_progress`) — there is NO top-level-comment path.
-            NEVER comment on a file or line outside the diff map from STEP 1,
-            even if you read that file for context. If a finding concerns code
-            outside the diff, describe it in the verdict comment with the path in
-            backticks — do NOT anchor a comment there.
-
-            STEP 3 — post the overall verdict (counts of P1/P2/P3 + APPROVE /
-            REQUEST_CHANGES / COMMENT) as ONE inline comment. ANCHOR IT TO THE
-            FIRST ANCHORABLE LINE IN THE STEP 1 DIFF MAP, in this priority order:
-              a. the first ADDED/CHANGED (right-side) line of the first file —
-                 preferred; always use this when any added/changed line exists;
-              b. if the PR is deletion-only (no added/changed right-side line),
-                 anchor to a DELETED (left-side) line of the first file, passing
-                 the tool's left-side/old-line parameter if available;
-              c. if neither is anchorable, do NOT silently skip — post the
-                 verdict text via the inline tool on the closest valid line and,
-                 if the tool still rejects it, emit the verdict to the job log
-                 prefixed `VERDICT:` so the run is not silently empty.
-            Use a real diff line — never a file you happened to read or a guessed
-            line. This keeps the anchor inside the diff so the comment posts.
-            Only post GitHub comments — do not emit review text as plain chat
-            messages, otherwise the PR stays empty even though the job reports
-            success.
-
-            If there are zero findings above P3, still post the verdict comment
-            from STEP 3 (anchored to the first changed line) saying
-            "LGTM — no P1/P2 findings" and stop.
-
-          claude_args: |
-            --model claude-opus-4-8
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
-
-      # Detectability backstop: the step above is continue-on-error, so any
-      # failure leaves the job green with NO review posted. Surface that as a
-      # non-blocking warning so a silent-no-review run is visible.
+      # Detectability backstop: the Claude step is continue-on-error, so any
+      # failure leaves the job green with no review. Surface a non-blocking
+      # warning (only when the review was actually attempted).
       - name: Warn if Claude review did not succeed
-        if: always()
+        if: always() && steps.review-workflow.outputs.changed != 'true'
         run: |
           if [ "${{ steps.claude-review.outcome }}" != "success" ]; then
-            echo "::warning title=Claude review did not post::The Run Claude Code Review step outcome was '${{ steps.claude-review.outcome }}'. No review may have been posted to this PR. Check the step logs."
+            echo "::warning title=Claude review did not post::The Run Claude Code Review step outcome was '${{ steps.claude-review.outcome }}'. No review may have been posted. Check the step logs."
           fi
