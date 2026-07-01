@@ -8,6 +8,11 @@ Universal context for AI coding agents (Codex, Cursor, Copilot, Claude Code, Dev
 - **Stack:** Node.js 18+ / plain CommonJS JavaScript (no TypeScript, no build step)
 - **Package:** `npm install -g trackly-cli` (public npm package)
 - **Backend API:** https://closeai.mba (same as Close AI — do NOT modify the backend from this repo)
+- **Backend production source of truth:** after the 2026-06-30 Azure cutover,
+  `https://closeai.mba` is served by Azure and the live DB is Azure blue
+  Postgres behind the backend/VNet. This CLI repo is a consumer only; do not use
+  AWS RDS, Render, old DB aliases, `ssh closeai-web`, or direct SQL for live
+  production claims, migrations, user exports, or company-add decisions.
 - **Repo:** Public GitHub — `trackly-app/trackly-cli`
 
 ## Architecture
@@ -34,7 +39,7 @@ There is a small Node test suite (`npm test`), no linter, and no build step. The
 ## Publishing
 
 Publishing is fully automated via GitHub Actions:
-1. Bump version in `package.json` + `package-lock.json` + `server.json` and merge to `main`
+1. Bump version in `package.json` + `package-lock.json` + `server.json` in a reviewed PR; merge the PR to `main`
 2. `auto-release.yml` creates a GitHub Release from the version bump (Releases page only — its `GITHUB_TOKEN` Release/tag does NOT trigger publishing)
 3. `publish.yml` triggers on the same merge-to-main push (gated to version changes) and publishes to npm with provenance via **npm Trusted Publishing** (GitHub Actions OIDC, no token needed). Trusted Publisher configured at npmjs.com for `trackly-app/trackly-cli` + `publish.yml` workflow. Manual fallback: `gh workflow run publish.yml`.
 

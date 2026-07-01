@@ -10,6 +10,16 @@ CLI + MCP server for the Trackly job tracker. Lets users search 128K+ jobs acros
 - **Auth:** Google OAuth via local callback server, tokens stored in `~/.trackly/config.json`
 - **API:** All requests go to `https://closeai.mba` (the backend, same as CLOSE AI)
 
+## Backend Production Source Of Truth
+
+After the 2026-06-30 Azure cutover, `https://closeai.mba` is served by Azure and
+the live DB is Azure blue Postgres behind the backend/VNet. This CLI repo is a
+consumer only; do not use AWS RDS, Render, old DB aliases, `ssh closeai-web`, or
+direct SQL for live production claims, migrations, user exports, or company-add
+decisions. Backend data checks belong in protected close-ai admin/report
+endpoints, or `dbq` only after `dbq --identity` proves it targets Azure
+production.
+
 ## Directory Structure
 
 ```
@@ -53,7 +63,7 @@ NOTE: `/ask` lives in the backend (`trackly-app/close-ai`) and historically emit
 ## Publishing
 
 Publishing is fully automated via GitHub Actions:
-1. Bump the version in `package.json`, `package-lock.json`, and `server.json` (run `npm version <patch|minor> --no-git-tag-version` for the first two, then edit `server.json`) and add a CHANGELOG entry; merge to `main`
+1. Bump the version in `package.json`, `package-lock.json`, and `server.json` (run `npm version <patch|minor> --no-git-tag-version` for the first two, then edit `server.json`) and add a CHANGELOG entry in a reviewed PR; merge the PR to `main`
 2. `auto-release.yml` creates a GitHub Release from the version bump (for the Releases page)
 3. `publish.yml` triggers on the same merge-to-main push (gated to version changes) and publishes to npm with provenance via **npm Trusted Publishing** (GitHub Actions OIDC, no token). It also publishes to the MCP Registry.
 
