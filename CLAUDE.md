@@ -17,8 +17,7 @@ the live DB is Azure blue Postgres behind the backend/VNet. This CLI repo is a
 consumer only; do not use AWS RDS, Render, old DB aliases, `ssh closeai-web`, or
 direct SQL for live production claims, migrations, user exports, or company-add
 decisions. Backend data checks belong in protected close-ai admin/report
-endpoints, or `dbq` only after `dbq --identity` proves it targets Azure
-production.
+endpoints, not this CLI repo.
 
 ## Directory Structure
 
