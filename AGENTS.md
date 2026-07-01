@@ -39,7 +39,7 @@ There is a small Node test suite (`npm test`), no linter, and no build step. The
 ## Publishing
 
 Publishing is fully automated via GitHub Actions:
-1. Bump version in `package.json` + `package-lock.json` + `server.json` in a reviewed PR; merge the PR to `main`
+1. Bump version in `package.json` + `package-lock.json` + `server.json`, and add a CHANGELOG entry in a reviewed PR; merge the PR to `main`
 2. `auto-release.yml` creates a GitHub Release from the version bump (Releases page only — its `GITHUB_TOKEN` Release/tag does NOT trigger publishing)
 3. `publish.yml` triggers on the same merge-to-main push (gated to version changes) and publishes to npm with provenance via **npm Trusted Publishing** (GitHub Actions OIDC, no token needed). Trusted Publisher configured at npmjs.com for `trackly-app/trackly-cli` + `publish.yml` workflow. Manual fallback: `gh workflow run publish.yml`.
 
