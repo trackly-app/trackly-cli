@@ -385,6 +385,174 @@ test('apiRequest rejects 3xx redirects with a clear message', async (t) => {
   });
 });
 
+test('apiRequest surfaces planned maintenance details from 503 responses', async (t) => {
+  const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
+    res.statusCode = 503;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Retry-After', '900');
+    res.end(JSON.stringify({
+      success: false,
+      code: 'planned_maintenance',
+      error: 'Trackly is upgrading',
+      message: 'We will be back shortly.',
+      estimatedReturn: 'Sunday 4:00 AM PT',
+      retryAfterSeconds: 900,
+    }));
+  });
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: 'trk_k',
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '1000',
+  }, async () => {
+    let caught;
+    try {
+      await client.apiRequest('GET', '/api/jobscout/jobs');
+    } catch (e) {
+      caught = e;
+    }
+    assert.ok(caught, 'must reject on planned maintenance');
+    assert.equal(caught.status, 503);
+    assert.equal(caught.code, 'planned_maintenance');
+    assert.equal(caught.maintenance.title, 'Trackly is upgrading');
+    assert.equal(caught.maintenance.message, 'We will be back shortly.');
+    assert.equal(caught.maintenance.estimatedReturnPt, 'Sunday 4:00 AM PT');
+    assert.equal(caught.maintenance.retryAfterSeconds, 900);
+    assert.equal(caught.error, caught.message);
+    assert.match(caught.message, /Trackly is upgrading/);
+    assert.match(caught.message, /We will be back shortly\./);
+    assert.match(caught.message, /Sunday 4:00 AM PT/);
+  });
+});
+
+test('apiRequest parses HTTP-date Retry-After on planned maintenance', async (t) => {
+  const originalNow = Date.now;
+  Date.now = () => Date.parse('2026-06-21T10:00:00Z');
+  t.after(() => { Date.now = originalNow; });
+
+  const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
+    res.statusCode = 503;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Retry-After', 'Sun, 21 Jun 2026 10:15:00 GMT');
+    res.end(JSON.stringify({
+      code: 'planned_maintenance',
+      message: 'We will be back shortly.',
+    }));
+  });
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: 'trk_k',
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '1000',
+  }, async () => {
+    let caught;
+    try {
+      await client.apiRequest('GET', '/api/jobscout/jobs');
+    } catch (e) {
+      caught = e;
+    }
+    assert.ok(caught, 'must reject on planned maintenance');
+    assert.equal(caught.maintenance.retryAfterSeconds, 900);
+    assert.match(caught.message, /Retry in about 15 minutes\./);
+  });
+});
+
+test('apiRequest hides the planned maintenance sentinel code from user-facing title', async (t) => {
+  const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
+    res.statusCode = 503;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      error: 'planned_maintenance',
+      message: 'We will be back shortly.',
+    }));
+  });
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: 'trk_k',
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '1000',
+  }, async () => {
+    let caught;
+    try {
+      await client.apiRequest('GET', '/api/jobscout/jobs');
+    } catch (e) {
+      caught = e;
+    }
+    assert.ok(caught, 'must reject on planned maintenance');
+    assert.equal(caught.maintenance.title, 'Trackly is upgrading');
+    assert.match(caught.message, /Trackly is upgrading/);
+    assert.match(caught.message, /We will be back shortly\./);
+    assert.doesNotMatch(caught.message, /planned_maintenance/);
+  });
+});
+
+test('apiRequest handles null JSON 503 bodies without crashing', async (t) => {
+  const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
+    res.statusCode = 503;
+    res.setHeader('Content-Type', 'application/json');
+    res.end('null');
+  });
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: 'trk_k',
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '1000',
+  }, async () => {
+    let caught;
+    try {
+      await client.apiRequest('GET', '/api/jobscout/jobs');
+    } catch (e) {
+      caught = e;
+    }
+    assert.deepEqual(caught, { status: 503 });
+  });
+});
+
+test('apiRequest propagates planned maintenance from token refresh without clearing credentials', async (t) => {
+  const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
+    if (req.url === '/api/auth/refresh') {
+      res.statusCode = 503;
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Retry-After', '900');
+      res.end(JSON.stringify({
+        code: 'planned_maintenance',
+        error: 'Trackly is upgrading',
+        message: 'We will be back shortly.',
+      }));
+      return;
+    }
+
+    res.statusCode = 401;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'Expired token' }));
+  });
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: undefined,
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '1000',
+  }, async () => {
+    client.saveConfig({ token: 'jwt_expired', refreshToken: 'rt_keep' });
+
+    let caught;
+    try {
+      await client.apiRequest('GET', '/api/jobscout/jobs');
+    } catch (e) {
+      caught = e;
+    }
+
+    assert.equal(caught?.code, 'planned_maintenance');
+    assert.match(caught.message, /We will be back shortly\./);
+    assert.equal(client.getToken(), 'jwt_expired');
+    assert.equal(client.getRefreshToken(), 'rt_keep');
+  });
+});
+
 test('loadConfig surfaces an unreadable config (EACCES) as a clear TracklyConfigError', async (t) => {
   const configDir = createTempConfigDir();
   const file = path.join(configDir, 'config.json');
