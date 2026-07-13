@@ -76,6 +76,37 @@ test('agent setup falls back to a private managed copy when symlinks are unavail
   });
 });
 
+test('agent setup never exposes a partial skill when fallback copying fails', () => {
+  withTempAgentHome(() => {
+    const originalSymlink = fs.symlinkSync;
+    const originalCopyFile = fs.copyFileSync;
+    let copies = 0;
+    fs.symlinkSync = () => {
+      const error = new Error('symlinks unavailable');
+      error.code = 'ENOTSUP';
+      throw error;
+    };
+    fs.copyFileSync = (...args) => {
+      copies += 1;
+      if (copies === 2) throw new Error('simulated interrupted copy');
+      return originalCopyFile(...args);
+    };
+    try {
+      const target = agent.clientSkillDir('codex');
+      assert.throws(() => agent.setupAgent('codex'), /simulated interrupted copy/);
+      assert.equal(fs.existsSync(target), false);
+      const parent = path.dirname(target);
+      const leftovers = fs.existsSync(parent)
+        ? fs.readdirSync(parent).filter((entry) => entry.startsWith('trackly-apply.staging.'))
+        : [];
+      assert.deepEqual(leftovers, []);
+    } finally {
+      fs.symlinkSync = originalSymlink;
+      fs.copyFileSync = originalCopyFile;
+    }
+  });
+});
+
 test('resume validation checks PDF type and server hash', () => {
   const buffer = Buffer.from('%PDF-1.7\nexample');
   const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
