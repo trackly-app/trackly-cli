@@ -1,0 +1,47 @@
+{
+  "contractVersion": "1.0.0",
+  "tools": {
+    "trackly_get_apply_queue": ["limit: z.number().int().min(1).max(100).optional()"],
+    "trackly_get_application_profile": [
+      "includeSensitive: z.boolean().optional()",
+      "provider: z.string().max(100).optional()",
+      "companyId: z.string().max(100).optional()"
+    ],
+    "trackly_get_profile_onboarding": [],
+    "trackly_update_application_profile": [
+      "expectedRevision: z.number().int().min(1)",
+      "source: z.enum(['web', 'ios', 'macos', 'codex', 'claude', 'mcp']).optional()",
+      "changes: z.array(z.object({",
+      "key: z.string().min(1).max(200)",
+      "state: z.enum(['unknown', 'answered', 'intentionally_blank', 'declined'])",
+      "value: z.any().optional()",
+      "scope: z.enum(['global', 'provider', 'company']).optional()",
+      "scopeValue: z.string().max(200).optional()",
+      "questionLabel: z.string().max(1000).optional()",
+      "education: z.array(z.object({",
+      "school: z.string().min(1).max(500)",
+      "fieldOfStudy: z.string().max(500).nullable().optional()",
+      "confirmProfile: z.boolean().optional()",
+      "sensitiveStorageConsent: z.boolean().optional()"
+    ],
+    "trackly_start_apply_run": [
+      "jobId: z.number().int().min(1)",
+      "clientName: z.string().max(100).optional()"
+    ],
+    "trackly_get_apply_protocol": [],
+    "trackly_report_apply_observation": [
+      "provider: z.string().min(1).max(100)",
+      "fieldLabel: z.string().min(1).max(1000)",
+      "observationType: z.string().min(1).max(100)",
+      "resolutionCode: z.string().max(100).optional()",
+      "metadata: z.object({",
+      "committed: z.boolean().optional()"
+    ],
+    "trackly_record_application_outcome": [
+      "runId: z.number().int().min(1)",
+      "outcome: z.enum(['review_ready', 'submitted', 'failed', 'blocked'])",
+      "confirmation: z.string().max(500).optional()"
+    ],
+    "trackly_prepare_resume": []
+  }
+}

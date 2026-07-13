@@ -87,8 +87,17 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 - **trackly_contacts_at_company** — Search contacts at a specific company
 - **trackly_get_company_workspace** — Get full company workspace (jobs, contacts, hiring managers, campaigns)
 - **trackly_request_company** — Request that a company be added to Trackly's tracked companies. Rate-limited to 5 pending requests per user. Parameters: `companyName` (required), `companyUrl` (optional), `notes` (optional).
+- **trackly_get_apply_queue** — Get user-approved check-later jobs in deterministic execution order.
+- **trackly_get_application_profile** — Get the versioned, scoped application profile.
+- **trackly_get_profile_onboarding** — Get backend-owned questions plus only missing/unconfirmed answers.
+- **trackly_update_application_profile** — Save explicit answer states with optimistic concurrency and global/provider/company scope.
+- **trackly_start_apply_run** — Start a manual-submit browser run for a queued job.
+- **trackly_get_apply_protocol** — Get the current ATS support, browser integrity rules, and compatible skill version.
+- **trackly_report_apply_observation** — Report redacted ATS mechanics without answer values.
+- **trackly_record_application_outcome** — Record review readiness or a confirmed manual submission.
+- **trackly_prepare_resume** — Local MCP only: materialize the default resume in a private, expiring mode-0600 cache. Hosted MCP returns a manual/local-agent requirement.
 
-> **Why no `trackly_chat` here (intentional, not drift):** the hosted connector (`mcp.usetrackly.app`) exposes a 12th tool, `trackly_chat`, that runs a backend agent which orchestrates these same primitives. It exists so **classic-UI** surfaces (web/iOS/macOS) — which have no agent — get an agentic chat experience. The CLI/MCP client **is** the agent (Claude, Cursor, ChatGPT), so calling `trackly_chat` would be an agent-inside-an-agent: opaque, slower, and double-cost. MCP users already have `trackly_ask` (natural-language search) and `trackly_search_jobs sort=match` (resume-fit ranking), and `trackly_get_stats` returns the user's structured job preferences — full capability coverage. So `trackly_chat` is deliberately hosted-only.
+> **Why no `trackly_chat` here (intentional, not drift):** the hosted connector exposes one extra tool, `trackly_chat`, that runs a backend agent over these same primitives. The local MCP client is already an agent, so `trackly_chat` remains deliberately hosted-only.
 
 ### Example Prompts
 
@@ -96,3 +105,4 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 - "What remote engineering roles are available?"
 - "Show me jobs at Stripe"
 - "Mark job 1234 as applied"
+- "Use Trackly Apply to fill my next saved application and stop before Submit"

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-13
+
+### Added
+
+- Public, sanitized `trackly-apply` skill for Codex and Claude Code on macOS. It fetches profile and browser rules from Trackly, fills only user-approved queued applications, verifies committed form state, and always stops before Submit.
+- `trackly agent setup --client codex|claude|both` installs one canonical skill copy and registers the local MCP server. `trackly agent doctor` checks authentication, client registration, skill/protocol compatibility, profile completeness, default resume, permissions, and cache cleanup.
+- Nine Trackly Apply MCP tools for queue execution, versioned profile onboarding, scoped answer updates, run outcomes, redacted observations, and secure local resume preparation.
+- Local default-resume caching with mode-0600 files, SHA-256/type validation, and two-hour expiry cleanup.
+
+### Security
+
+- The public skill contains no user profile, resume, address, answers, application logs, or absolute personal paths. OTP and human-verification values are never stored, and submission remains manual.
+
 ## [0.4.2] - 2026-06-14
 
 ### Fixed

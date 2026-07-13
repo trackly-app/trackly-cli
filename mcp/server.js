@@ -4,6 +4,7 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
 const { apiRequest, hasAuth } = require('../lib/client');
+const { prepareResume } = require('../lib/agent');
 const { version: PACKAGE_VERSION } = require('../package.json');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
@@ -314,6 +315,148 @@ function createServer() {
       }, false, false, MCP_USER_AGENT);
     }, 'Failed to request company')
   );
+
+  // Trackly Apply tools. Keep schemas aligned with the hosted MCP server.
+  server.tool(
+    'trackly_get_apply_queue',
+    'Get the deterministic queue of jobs the user already approved by saving as check later. Do not rescore or veto these jobs.',
+    { limit: z.number().int().min(1).max(100).optional() },
+    wrapTool(async ({ limit }) => {
+      const qs = limit ? `?limit=${limit}` : '';
+      return apiRequest('GET', `/api/jobscout/apply/queue${qs}`, null, false, false, MCP_USER_AGENT);
+    }, 'Failed to fetch apply queue')
+  );
+
+  server.tool(
+    'trackly_get_application_profile',
+    'Get the versioned application profile. Sensitive values are returned only after the user opted into encrypted storage.',
+    {
+      includeSensitive: z.boolean().optional(),
+      provider: z.string().max(100).optional(),
+      companyId: z.string().max(100).optional(),
+    },
+    wrapTool(async ({ includeSensitive, provider, companyId }) => {
+      const qs = new URLSearchParams();
+      if (includeSensitive) qs.set('includeSensitive', 'true');
+      if (provider) qs.set('provider', provider);
+      if (companyId) qs.set('companyId', companyId);
+      return apiRequest('GET', `/api/jobscout/application-profile?${qs.toString()}`, null, false, false, MCP_USER_AGENT);
+    }, 'Failed to fetch application profile')
+  );
+
+  server.tool(
+    'trackly_get_profile_onboarding',
+    'Get the backend-owned profile schema and onboarding questions. Ask only fields whose state is unknown or needs confirmation.',
+    {},
+    wrapTool(async () => {
+      const [schema, profile] = await Promise.all([
+        apiRequest('GET', '/api/jobscout/application-profile/schema', null, false, false, MCP_USER_AGENT),
+        apiRequest('GET', '/api/jobscout/application-profile', null, false, false, MCP_USER_AGENT),
+      ]);
+      return { schema, profile };
+    }, 'Failed to fetch profile onboarding')
+  );
+
+  server.tool(
+    'trackly_update_application_profile',
+    'Update confirmed profile answers with optimistic concurrency. Use global scope only for an explicit always-answer preference.',
+    {
+      expectedRevision: z.number().int().min(1),
+      source: z.enum(['web', 'ios', 'macos', 'codex', 'claude', 'mcp']).optional(),
+      changes: z.array(z.object({
+        key: z.string().min(1).max(200),
+        state: z.enum(['unknown', 'answered', 'intentionally_blank', 'declined']),
+        value: z.any().optional(),
+        scope: z.enum(['global', 'provider', 'company']).optional(),
+        scopeValue: z.string().max(200).optional(),
+        questionLabel: z.string().max(1000).optional(),
+      })).max(100).optional(),
+      education: z.array(z.object({
+        school: z.string().min(1).max(500),
+        degree: z.string().max(500).nullable().optional(),
+        fieldOfStudy: z.string().max(500).nullable().optional(),
+        gpa: z.string().max(50).nullable().optional(),
+        startDate: z.string().max(50).nullable().optional(),
+        endDate: z.string().max(50).nullable().optional(),
+      })).max(20).optional(),
+      confirmProfile: z.boolean().optional(),
+      sensitiveStorageConsent: z.boolean().optional(),
+    },
+    wrapTool(async (params) => apiRequest('PATCH', '/api/jobscout/application-profile', params, false, false, MCP_USER_AGENT), 'Failed to update application profile')
+  );
+
+  server.tool(
+    'trackly_start_apply_run',
+    'Start a manual-submit browser run for a job already in the approved queue.',
+    { jobId: z.number().int().min(1), clientName: z.string().max(100).optional() },
+    wrapTool(async (params) => apiRequest('POST', '/api/jobscout/apply/runs', params, false, false, MCP_USER_AGENT), 'Failed to start apply run')
+  );
+
+  server.tool(
+    'trackly_get_apply_protocol',
+    'Get the current browser workflow, ATS support matrix, integrity rules, and compatible public-skill major version. Fetch at the start of every run.',
+    {},
+    wrapTool(async () => apiRequest('GET', '/api/jobscout/apply/protocol', null, false, false, MCP_USER_AGENT), 'Failed to fetch apply protocol')
+  );
+
+  server.tool(
+    'trackly_report_apply_observation',
+    'Report a redacted ATS mechanics observation. Never include answer values, addresses, contact data, OTPs, or free-form page content.',
+    {
+      runId: z.number().int().min(1).optional(),
+      provider: z.string().min(1).max(100),
+      fieldLabel: z.string().min(1).max(1000),
+      observationType: z.string().min(1).max(100),
+      resolutionCode: z.string().max(100).optional(),
+      metadata: z.object({
+        controlType: z.string().max(100).optional(),
+        required: z.boolean().optional(),
+        errorCode: z.string().max(100).optional(),
+        committed: z.boolean().optional(),
+      }).optional(),
+    },
+    wrapTool(async (params) => apiRequest('POST', '/api/jobscout/apply/observations', params, false, false, MCP_USER_AGENT), 'Failed to report apply observation')
+  );
+
+  server.tool(
+    'trackly_record_application_outcome',
+    'Record review readiness or a user-confirmed outcome. Mark submitted only after a success page or explicit user confirmation.',
+    {
+      runId: z.number().int().min(1),
+      outcome: z.enum(['review_ready', 'submitted', 'failed', 'blocked']),
+      confirmation: z.string().max(500).optional(),
+    },
+    wrapTool(async ({ runId, ...body }) => apiRequest('POST', `/api/jobscout/apply/runs/${runId}/outcome`, body, false, false, MCP_USER_AGENT), 'Failed to record application outcome')
+  );
+
+  server.tool(
+    'trackly_prepare_resume',
+    'Download the authenticated default resume into a mode-0600 temporary Trackly cache for browser upload.',
+    {},
+    wrapTool(async () => prepareResume(), 'Failed to prepare default resume')
+  );
+
+  server.registerPrompt('trackly-apply', {
+    title: 'Apply to the next Trackly job',
+    description: 'Run the manual-submit Trackly Apply workflow for the next user-approved job.',
+  }, async () => ({
+    messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: 'Fetch the Trackly Apply protocol and profile onboarding, resolve missing answers with me, start the next approved queue run, fill the form, verify every required field, and stop before Submit.',
+      },
+    }],
+  }));
+
+  server.registerResource('trackly-apply-protocol', 'trackly://apply/protocol', {
+    title: 'Current Trackly Apply protocol',
+    description: 'Versioned browser mechanics and compatibility contract.',
+    mimeType: 'application/json',
+  }, async (uri) => {
+    const result = await apiRequest('GET', '/api/jobscout/apply/protocol', null, false, false, MCP_USER_AGENT);
+    return { contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(result) }] };
+  });
 
   return server;
 }
