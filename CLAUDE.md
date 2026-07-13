@@ -86,6 +86,15 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `GET /api/jobscout/ask` -- Natural language search (20/day limit)
 - `POST /api/jobscout/companies/request` -- Request a company be added (rate-limited, 5 pending max)
 - `POST /api/jobscout/tracker/jobs/:id/stage` -- Update job tracker stage (`applied`/`backlog`/`discarded`; CLI maps apply/save/dismiss)
+- `GET /api/jobscout/apply/queue` -- Get the user's approved application queue (`trackly_get_apply_queue`)
+- `GET /api/jobscout/application-profile` -- Get the versioned application profile (`trackly_get_application_profile`)
+- `GET /api/jobscout/application-profile/schema` -- Get profile fields and onboarding questions (`trackly_get_profile_onboarding`)
+- `PATCH /api/jobscout/application-profile` -- Update profile answers with optimistic concurrency (`trackly_update_application_profile`)
+- `POST /api/jobscout/apply/runs` -- Start an agent-assisted application run (`trackly_start_apply_run`)
+- `GET /api/jobscout/apply/protocol` -- Get the versioned browser workflow (`trackly_get_apply_protocol`)
+- `POST /api/jobscout/apply/observations` -- Report a redacted ATS observation (`trackly_report_apply_observation`)
+- `POST /api/jobscout/apply/runs/:runId/outcome` -- Record review or submission outcome (`trackly_record_application_outcome`)
+- `GET /api/jobscout/application-profile/default-resume` -- Download the default resume into the private local cache (`trackly_prepare_resume`)
 - `POST /api/auth/api-key` -- Create API key
 - `GET /api/auth/api-keys` -- List API keys
 - `GET /api/auth/user` -- Current user info
