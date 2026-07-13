@@ -367,7 +367,7 @@ function createServer() {
         key: z.string().min(1).max(200),
         state: z.enum(['unknown', 'answered', 'intentionally_blank', 'declined']),
         value: z.any().optional(),
-        scope: z.enum(['global', 'provider', 'company']).optional(),
+        scope: z.enum(['global', 'provider', 'company']),
         scopeValue: z.string().max(200).optional(),
         questionLabel: z.string().max(1000).optional(),
       })).max(100).optional(),

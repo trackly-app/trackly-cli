@@ -6,8 +6,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const cliRoot = path.join(__dirname, '..');
-const backendRoot = process.env.TRACKLY_BACKEND_DIR || path.resolve(cliRoot, '..', 'backend');
+const backendCandidates = process.env.TRACKLY_BACKEND_DIR
+  ? [path.resolve(process.env.TRACKLY_BACKEND_DIR)]
+  : [
+      path.resolve(cliRoot, '..', 'backend'),
+      path.resolve(cliRoot, '..', 'granola-followup-app'),
+      path.join(require('node:os').homedir(), 'closeai', 'granola-followup-app'),
+    ];
 const localContractPath = path.join(cliRoot, 'contracts', 'trackly-apply-tools.json');
+const backendRoot = backendCandidates.find((candidate) => fs.existsSync(path.join(candidate, 'contracts', 'trackly-apply-tools.json')))
+  || backendCandidates[0];
 const hostedContractPath = path.join(backendRoot, 'contracts', 'trackly-apply-tools.json');
 
 if (!fs.existsSync(hostedContractPath)) {

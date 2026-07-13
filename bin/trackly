@@ -898,9 +898,12 @@ async function cmdMcp() {
 async function cmdAgent(args) {
   const subcommand = args._[0];
   if (subcommand === 'setup') {
+    if (args.client === null) return failNow('Missing value for --client. Use codex, claude, or both.');
     const client = String(args.client || 'both').toLowerCase();
     try {
       const result = setupAgent(client);
+      const registrationFailed = result.clients.some((item) => item.mcp.status === 'failed');
+      if (registrationFailed) process.exitCode = 1;
       if (isJSON()) return printJson(result);
       console.log(color('green', `Trackly Apply ${result.skillVersion} installed.`));
       console.log(`Canonical skill: ${result.canonical}`);
@@ -916,6 +919,7 @@ async function cmdAgent(args) {
   }
   if (subcommand === 'doctor') {
     const report = await doctorAgent();
+    if (!report.ok) process.exitCode = 1;
     if (isJSON()) return printJson(report);
     console.log(color('bold', 'Trackly Apply doctor'));
     console.log(`Overall: ${color(report.ok ? 'green' : 'yellow', report.ok ? 'ready' : 'needs attention')}`);
@@ -930,9 +934,10 @@ async function cmdAgent(args) {
         console.log(`Missing: ${report.profile.completeness.missingKeys.join(', ')}`);
       }
     }
+    console.log(`Resume validation: ${report.resume?.verified ? 'passed' : 'failed'}`);
+    if (report.resume?.error) console.log(color('yellow', `Resume: ${report.resume.error}`));
     if (report.apiError) console.log(color('yellow', `API: ${report.apiError}`));
     console.log(report.browserControl.note);
-    if (!report.ok) process.exitCode = 1;
     return;
   }
   failNow('Unknown agent subcommand. Use: trackly agent setup --client codex|claude|both | trackly agent doctor');

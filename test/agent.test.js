@@ -46,6 +46,21 @@ test('agent setup installs one canonical skill and links both clients', () => {
   });
 });
 
+test('agent setup resolves a relative Trackly config directory before symlinking', () => {
+  withTempAgentHome((root) => {
+    const previousCwd = process.cwd();
+    process.chdir(root);
+    process.env.TRACKLY_CONFIG_DIR = '.trackly';
+    try {
+      const result = agent.setupAgent('codex');
+      assert.equal(path.isAbsolute(result.canonical), true);
+      assert.ok(fs.existsSync(path.join(result.clients[0].target, 'SKILL.md')));
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
+});
+
 test('agent setup refuses to overwrite an unmanaged client skill', () => {
   withTempAgentHome(() => {
     const target = agent.clientSkillDir('codex');
@@ -107,6 +122,34 @@ test('agent setup never exposes a partial skill when fallback copying fails', ()
   });
 });
 
+test('agent setup restores the previous managed copy when replacement copying fails', () => {
+  withTempAgentHome(() => {
+    const originalSymlink = fs.symlinkSync;
+    const originalCopyFile = fs.copyFileSync;
+    fs.symlinkSync = () => {
+      const error = new Error('symlinks unavailable');
+      error.code = 'ENOTSUP';
+      throw error;
+    };
+    try {
+      const first = agent.setupAgent('codex');
+      const target = first.clients[0].target;
+      fs.writeFileSync(path.join(target, 'sentinel.txt'), 'previous-good-copy');
+      fs.copyFileSync = (source, destination, ...rest) => {
+        if (destination.includes(`${path.sep}.codex${path.sep}skills${path.sep}trackly-apply.staging.`)) {
+          throw new Error('simulated replacement failure');
+        }
+        return originalCopyFile(source, destination, ...rest);
+      };
+      assert.throws(() => agent.setupAgent('codex'), /simulated replacement failure/);
+      assert.equal(fs.readFileSync(path.join(target, 'sentinel.txt'), 'utf8'), 'previous-good-copy');
+    } finally {
+      fs.symlinkSync = originalSymlink;
+      fs.copyFileSync = originalCopyFile;
+    }
+  });
+});
+
 test('resume validation checks PDF type and server hash', () => {
   const buffer = Buffer.from('%PDF-1.7\nexample');
   const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
@@ -117,6 +160,16 @@ test('resume validation checks PDF type and server hash', () => {
   assert.throws(
     () => agent.validateResumeFile({ buffer, contentType: 'application/pdf', sha256: '0'.repeat(64) }),
     /SHA-256/,
+  );
+});
+
+test('resume validation normalizes generic MIME types from file signatures', () => {
+  const pdf = Buffer.from('%PDF-1.7\nexample');
+  assert.equal(agent.validateResumeFile({ buffer: pdf, contentType: 'application/octet-stream' }).contentType, 'application/pdf');
+  const docx = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+  assert.equal(
+    agent.validateResumeFile({ buffer: docx, contentType: '' }).contentType,
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   );
 });
 

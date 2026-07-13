@@ -12,6 +12,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const { createTempConfigDir, seedApiKey, startMockServer, runCli } = require('./helpers');
 
 // Spin up a temp config (seeded API key) + mock server, run the CLI, return the
@@ -28,8 +29,13 @@ async function runAgainstMock(t, args, respond) {
     req.on('end', () => {
       requests.push({ method: req.method, url: req.url, body });
       const r = (respond && respond(req)) || { status: 200, json: {} };
-      res.writeHead(r.status || 200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(r.json || {}));
+      if (r.body !== undefined) {
+        res.writeHead(r.status || 200, r.headers || { 'Content-Type': 'application/octet-stream' });
+        res.end(r.body);
+      } else {
+        res.writeHead(r.status || 200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(r.json || {}));
+      }
     });
   });
   t.after(() => server.close());
@@ -157,4 +163,77 @@ test('config rejects --api-key together with --clear-api-key', async (t) => {
   const result = await runCli(['config', '--api-key', 'trk_abcdefghij', '--clear-api-key'], { TRACKLY_CONFIG_DIR: dir });
   assert.notEqual(result.code, 0);
   assert.match(result.stderr, /Cannot use --api-key and --clear-api-key together/);
+});
+
+test('agent setup rejects --client without a value', async () => {
+  const result = await runCli(['agent', 'setup', '--client']);
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /Missing value for --client/);
+});
+
+test('agent doctor JSON exits non-zero when setup is not ready', async (t) => {
+  const dir = createTempConfigDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const result = await runCli(['agent', 'doctor', '--json'], { TRACKLY_CONFIG_DIR: dir });
+  assert.notEqual(result.code, 0);
+  assert.equal(JSON.parse(result.stdout).ok, false);
+});
+
+test('agent doctor validates the downloaded default resume before reporting readiness', async (t) => {
+  const { result } = await runAgainstMock(t, ['agent', 'doctor', '--json'], (req) => {
+    if (req.url === '/api/jobscout/apply/protocol') {
+      return { json: { protocol: { compatibleSkillMajor: 1 } } };
+    }
+    if (req.url === '/api/jobscout/application-profile') {
+      return { json: { profile: { revision: 1, completeness: { percent: 100, missingKeys: [] }, defaultResume: { id: 7 } } } };
+    }
+    if (req.url === '/api/jobscout/application-profile/default-resume') {
+      return { body: Buffer.from('not-a-resume'), headers: { 'Content-Type': 'application/octet-stream' } };
+    }
+    return { status: 404, json: { error: 'not found' } };
+  });
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.resume.verified, false);
+  assert.match(report.resume.error, /Unsupported or invalid resume type/);
+  assert.notEqual(result.code, 0);
+});
+
+test('agent setup does not treat similarly named Codex MCP tables as registered', async (t) => {
+  const root = createTempConfigDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'bin');
+  const codexHome = path.join(root, '.codex');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.writeFileSync(path.join(codexHome, 'config.toml'), '[mcp_servers.trackly-old]\n# [mcp_servers.trackly]\n');
+  const codex = path.join(bin, 'codex');
+  fs.writeFileSync(codex, '#!/bin/sh\nexit 2\n', { mode: 0o755 });
+  const result = await runCli(['agent', 'setup', '--client', 'codex', '--json'], {
+    TRACKLY_CONFIG_DIR: path.join(root, '.trackly'),
+    CODEX_HOME: codexHome,
+    PATH: `${bin}:${process.env.PATH}`,
+  });
+  assert.notEqual(result.code, 0);
+  assert.equal(JSON.parse(result.stdout).clients[0].mcp.status, 'failed');
+});
+
+test('agent doctor rejects an installed skill with stale managed metadata', async (t) => {
+  const root = createTempConfigDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const codexHome = path.join(root, '.codex');
+  const skill = path.join(codexHome, 'skills', 'trackly-apply');
+  fs.mkdirSync(skill, { recursive: true });
+  fs.writeFileSync(path.join(skill, 'SKILL.md'), 'stale');
+  fs.writeFileSync(path.join(skill, '.trackly-managed.json'), JSON.stringify({
+    managedBy: 'trackly-cli',
+    skill: 'trackly-apply',
+    skillVersion: '0.9.0',
+  }));
+  const result = await runCli(['agent', 'doctor', '--json'], {
+    TRACKLY_CONFIG_DIR: path.join(root, '.trackly'),
+    CODEX_HOME: codexHome,
+  });
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.clients.find((client) => client.client === 'codex').installed, false);
+  assert.equal(report.clients.find((client) => client.client === 'codex').installedSkillVersion, '0.9.0');
 });
