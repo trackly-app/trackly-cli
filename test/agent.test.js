@@ -71,6 +71,20 @@ test('agent setup refuses to overwrite an unmanaged client skill', () => {
   });
 });
 
+test('agent setup refuses to overwrite an unmanaged client skill symlink', () => {
+  withTempAgentHome((root) => {
+    const unmanaged = path.join(root, 'user-owned-trackly-apply');
+    fs.mkdirSync(unmanaged, { recursive: true });
+    fs.writeFileSync(path.join(unmanaged, 'SKILL.md'), 'user-owned');
+    const target = agent.clientSkillDir('codex');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.symlinkSync(unmanaged, target, 'dir');
+    assert.throws(() => agent.setupAgent('codex'), /Refusing to overwrite unmanaged skill/);
+    assert.equal(fs.readlinkSync(target), unmanaged);
+    assert.equal(fs.readFileSync(path.join(unmanaged, 'SKILL.md'), 'utf8'), 'user-owned');
+  });
+});
+
 test('agent setup falls back to a private managed copy when symlinks are unavailable', () => {
   withTempAgentHome(() => {
     const originalSymlink = fs.symlinkSync;
@@ -166,10 +180,17 @@ test('resume validation checks PDF type and server hash', () => {
 test('resume validation normalizes generic MIME types from file signatures', () => {
   const pdf = Buffer.from('%PDF-1.7\nexample');
   assert.equal(agent.validateResumeFile({ buffer: pdf, contentType: 'application/octet-stream' }).contentType, 'application/pdf');
-  const docx = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+  const docx = Buffer.concat([
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+    Buffer.from('[Content_Types].xml\0word/document.xml'),
+  ]);
   assert.equal(
     agent.validateResumeFile({ buffer: docx, contentType: '' }).contentType,
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  );
+  assert.throws(
+    () => agent.validateResumeFile({ buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04]), contentType: 'application/zip' }),
+    /Unsupported or invalid resume type/,
   );
 });
 

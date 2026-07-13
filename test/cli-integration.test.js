@@ -171,6 +171,20 @@ test('agent setup rejects --client without a value', async () => {
   assert.match(result.stderr, /Missing value for --client/);
 });
 
+test('agent setup exits non-zero when the requested client is not installed', async (t) => {
+  const root = createTempConfigDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const emptyBin = path.join(root, 'empty-bin');
+  fs.mkdirSync(emptyBin, { recursive: true });
+  const result = await runCli(['agent', 'setup', '--client', 'codex', '--json'], {
+    TRACKLY_CONFIG_DIR: path.join(root, '.trackly'),
+    CODEX_HOME: path.join(root, '.codex'),
+    PATH: emptyBin,
+  });
+  assert.notEqual(result.code, 0);
+  assert.equal(JSON.parse(result.stdout).clients[0].mcp.status, 'missing_client');
+});
+
 test('agent doctor JSON exits non-zero when setup is not ready', async (t) => {
   const dir = createTempConfigDir();
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));

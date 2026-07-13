@@ -902,7 +902,7 @@ async function cmdAgent(args) {
     const client = String(args.client || 'both').toLowerCase();
     try {
       const result = setupAgent(client);
-      const registrationFailed = result.clients.some((item) => item.mcp.status === 'failed');
+      const registrationFailed = result.clients.some((item) => !['current', 'installed'].includes(item.mcp.status));
       if (registrationFailed) process.exitCode = 1;
       if (isJSON()) return printJson(result);
       console.log(color('green', `Trackly Apply ${result.skillVersion} installed.`));
