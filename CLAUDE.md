@@ -25,7 +25,7 @@ endpoints, not this CLI repo.
 bin/trackly          # CLI entrypoint (shebang script). All 19 commands + arg parser + main()
 lib/client.js        # HTTP client: config loading, token refresh, apiRequest()
 lib/formatters.js    # Terminal output: color(), outputJobs(), outputCompanies(), outputStats(), outputContacts(), outputReferralCampaign(), outputNetworkBrief()
-mcp/server.js        # MCP server: 11 tools, launched via `trackly mcp`
+mcp/server.js        # MCP server: 20 tools, launched via `trackly mcp`
 docs/trackly-tools.md  # MCP tool reference (for embedding in AI contexts)
 server.json          # MCP Registry manifest (io.github.trackly-app/trackly)
 ```
@@ -44,7 +44,7 @@ There is a small Node test suite (`npm test`), but no linter and no build step. 
 
 1. User runs `trackly mcp` (or AI agent spawns it via stdio)
 2. `bin/trackly` delegates to `mcp/server.js`
-3. `mcp/server.js` creates an `McpServer` with 11 tools, connects via `StdioServerTransport`
+3. `mcp/server.js` creates an `McpServer` with 20 tools, connects via `StdioServerTransport`
 4. Each tool calls `apiRequest()` from `lib/client.js` with a `trackly-mcp/<version>` User-Agent derived from `package.json`
 5. CLI commands use `trackly-cli/<version>` User-Agent derived from `package.json` (separate channel attribution)
 
@@ -53,7 +53,7 @@ MCP setup for Claude Code:
 claude mcp add --scope user trackly -- trackly mcp
 ```
 
-The 11 MCP tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`, `trackly_get_job_brief`, `trackly_contacts_at_company`, `trackly_get_company_workspace`, `trackly_request_company`
+The 20 MCP tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`, `trackly_get_job_brief`, `trackly_contacts_at_company`, `trackly_get_company_workspace`, `trackly_request_company`, `trackly_get_apply_queue`, `trackly_get_application_profile`, `trackly_get_profile_onboarding`, `trackly_update_application_profile`, `trackly_start_apply_run`, `trackly_get_apply_protocol`, `trackly_report_apply_observation`, `trackly_record_application_outcome`, `trackly_prepare_resume`
 
 Job function values — **14 canonical values** that match backend `ALL_JOB_FUNCTIONS` at `granola-followup-app/src/routes/jobscout-filter-utils.ts:17-21`, the backend `job_function` DB column, and the local mirror `JOB_FUNCTIONS` in `mcp/server.js`: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`. `partnerships` is documented in CHANGELOG `0.2.1`; any doc still listing 13 values is stale. The MCP test at `test/mcp-schema.test.js` locks this local/backend mapping.
 
