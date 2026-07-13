@@ -8,20 +8,48 @@ const contract = require('../contracts/trackly-apply-tools.json');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'mcp', 'server.js'), 'utf8');
 
-function toolBlock(name) {
-  const start = source.indexOf(`'${name}'`);
-  assert.notEqual(start, -1, `${name} is not registered`);
-  const nextTool = source.indexOf('server.tool(', start);
-  const nextPrompt = source.indexOf('server.registerPrompt(', start);
-  const ends = [nextTool, nextPrompt].filter((value) => value !== -1);
-  return source.slice(start, ends.length ? Math.min(...ends) : source.length);
+function toolArguments(name) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const registration = new RegExp(`server\\.tool\\(\\s*['"]${escapedName}['"]`).exec(source);
+  assert.ok(registration, `${name} is not registered`);
+  const open = source.indexOf('(', registration.index);
+  const args = [];
+  let argStart = open + 1;
+  let parens = 0;
+  let braces = 0;
+  let brackets = 0;
+  let quote = '';
+  let escaped = false;
+  for (let index = open + 1; index < source.length; index++) {
+    const char = source[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === quote) quote = '';
+      continue;
+    }
+    if (char === "'" || char === '"' || char === '`') { quote = char; continue; }
+    if (char === '(') parens++;
+    else if (char === ')' && parens > 0) parens--;
+    else if (char === '{') braces++;
+    else if (char === '}') braces--;
+    else if (char === '[') brackets++;
+    else if (char === ']') brackets--;
+    else if ((char === ',' || char === ')') && parens === 0 && braces === 0 && brackets === 0) {
+      args.push(source.slice(argStart, index).trim());
+      if (char === ')') break;
+      argStart = index + 1;
+    }
+  }
+  return args;
 }
 
-test('local MCP Apply schemas match the versioned contract fragments', () => {
+const normalizeSchema = (schema) => schema.replace(/\s+/g, '').replace(/,([}\]])/g, '$1');
+
+test('local MCP Apply schemas match each complete versioned input schema', () => {
   assert.equal(contract.contractVersion, '1.0.0');
-  for (const [name, fragments] of Object.entries(contract.tools)) {
-    const block = toolBlock(name);
-    for (const fragment of fragments) assert.ok(block.includes(fragment), `${name} missing schema fragment: ${fragment}`);
+  for (const [name, expectedSchema] of Object.entries(contract.tools)) {
+    assert.equal(normalizeSchema(toolArguments(name)[2]), expectedSchema, `${name} schema drifted`);
   }
 });
 
