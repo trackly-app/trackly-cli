@@ -57,7 +57,7 @@ function query(requests) {
 test('jobs maps every filter flag to the right query param', async (t) => {
   const { requests, result } = await runAgainstMock(
     t,
-    ['jobs', '--function', 'product', '--region', 'us', '--job-type', 'internship', '--company', '243', '--keywords', 'fintech'],
+    ['jobs', '--function', 'product', '--region', 'us', '--job-type', 'internship', '--work-arrangement', 'hybrid,remote', '--company', '243', '--keywords', 'fintech'],
     () => ({ status: 200, json: { jobs: [] } })
   );
   assert.equal(result.code, 0, result.stderr);
@@ -67,8 +67,27 @@ test('jobs maps every filter flag to the right query param', async (t) => {
   assert.equal(q.get('jobFunction'), 'product');
   assert.equal(q.get('locationFilter'), 'us');
   assert.equal(q.get('jobModality'), 'internship');
+  assert.equal(q.get('workArrangements'), 'hybrid,remote');
   assert.equal(q.get('companyId'), '243');
   assert.equal(q.get('search'), 'fintech');
+});
+
+test('jobs rejects invalid work-arrangement values before making a request', async (t) => {
+  const { requests, result } = await runAgainstMock(t, ['jobs', '--work-arrangement', 'onsite']);
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /remote, hybrid, in_person, unspecified/);
+  assert.equal(requests.length, 0, 'must fail before any API call');
+});
+
+test('jobs ID alias with work-arrangement stays on the filtered list route', async (t) => {
+  const { requests, result } = await runAgainstMock(
+    t,
+    ['jobs', '123', '--work-arrangement', 'remote'],
+    () => ({ status: 200, json: { jobs: [] } })
+  );
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(requests[0].url.split('?')[0], '/api/jobscout/jobs');
+  assert.equal(query(requests).get('workArrangements'), 'remote');
 });
 
 test('jobs --remote maps to usStates=REMOTE', async (t) => {

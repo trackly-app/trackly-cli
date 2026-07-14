@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-14
+
+### Added
+
+- `trackly jobs --work-arrangement remote,hybrid` filters by the first-class work-arrangement dimension independently from region and employment type. Canonical values are `remote`, `hybrid`, `in_person`, and `unspecified`.
+- Local MCP `trackly_search_jobs` accepts the typed `workArrangements` array with the same independent, multi-select semantics as Trackly Web, iOS, and macOS. Natural-language `trackly_ask` uses the backend's matching work-arrangement mapping.
+
 ## [0.5.2] - 2026-07-14
 
 ### Fixed
