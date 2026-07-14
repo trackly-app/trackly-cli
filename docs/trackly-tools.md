@@ -74,7 +74,7 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
     - an array of region tags for multi-region (e.g. `["europe", "canada"]`). The array form excludes `us` — combining `us` with other tags in an array causes the backend to silently drop the others. To get "not US" use the scalar `non_us` alone.
   - `jobModality`: `full_time`, `internship`, `all` — employment type, NOT work-location style. For remote filtering, use the `remote` boolean or `locationFilter: "remote"`. Hybrid and onsite are not exposed as filters.
   - `remote` (boolean): filter to remote jobs only. Maps to `usStates=REMOTE`.
-  - `status`: your application pipeline state. Values: `new`, `applying`, `applied_confirmed`, `check_later`, `not_interested`, `all`.
+  - `status`: your application pipeline state. Values: `new`, `applied_confirmed`, `check_later`, `not_interested`, `all`. Older `applying` requests are accepted by the backend as a private compatibility alias for `check_later`, but new clients must not emit it.
   - `sort`: `newest` (default) or `match` (highest match score first; requires a resume on file). Backend rejects the deprecated values `oldest` and `company` with HTTP 400.
   - `keywords`, `companyId`, `limit`, `offset`.
 - **trackly_get_job** — Get full job details by ID
