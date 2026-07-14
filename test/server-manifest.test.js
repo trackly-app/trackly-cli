@@ -22,4 +22,5 @@ test('server manifest stays aligned with the npm package and MCP launch contract
 
 test('package files include the registry manifest', () => {
   assert.ok(pkg.files.includes('server.json'));
+  assert.ok(!pkg.files.includes('scripts/verify-hosted-contract.js'));
 });

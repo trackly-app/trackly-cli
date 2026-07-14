@@ -8,6 +8,11 @@ Universal context for AI coding agents (Codex, Cursor, Copilot, Claude Code, Dev
 - **Stack:** Node.js 18+ / plain CommonJS JavaScript (no TypeScript, no build step)
 - **Package:** `npm install -g trackly-cli` (public npm package)
 - **Backend API:** https://closeai.mba (same as Close AI — do NOT modify the backend from this repo)
+- **Backend production source of truth:** after the 2026-06-30 Azure cutover,
+  `https://closeai.mba` is served by Azure and the live DB is Azure blue
+  Postgres behind the backend/VNet. This CLI repo is a consumer only; do not use
+  AWS RDS, Render, old DB aliases, `ssh closeai-web`, or direct SQL for live
+  production claims, migrations, user exports, or company-add decisions.
 - **Repo:** Public GitHub — `trackly-app/trackly-cli`
 
 ## Architecture
@@ -16,7 +21,7 @@ Universal context for AI coding agents (Codex, Cursor, Copilot, Claude Code, Dev
 bin/trackly          # CLI entrypoint (shebang script). All commands + arg parser + main()
 lib/client.js        # HTTP client: config loading, token refresh, apiRequest()
 lib/formatters.js    # Terminal output: color(), outputJobs(), outputCompanies(), etc.
-mcp/server.js        # MCP server: 11 tools, launched via `trackly mcp`
+mcp/server.js        # MCP server: search/network + Trackly Apply tools, launched via `trackly mcp`
 docs/trackly-tools.md  # MCP tool reference (for embedding in AI agent contexts)
 server.json          # MCP Registry manifest (io.github.trackly-app/trackly)
 ```
@@ -34,7 +39,7 @@ There is a small Node test suite (`npm test`), no linter, and no build step. The
 ## Publishing
 
 Publishing is fully automated via GitHub Actions:
-1. Bump version in `package.json` + `package-lock.json` + `server.json` and merge to `main`
+1. Bump version in `package.json` + `package-lock.json` + `server.json`, and add a CHANGELOG entry in a reviewed PR; merge the PR to `main`
 2. `auto-release.yml` creates a GitHub Release from the version bump (Releases page only — its `GITHUB_TOKEN` Release/tag does NOT trigger publishing)
 3. `publish.yml` triggers on the same merge-to-main push (gated to version changes) and publishes to npm with provenance via **npm Trusted Publishing** (GitHub Actions OIDC, no token needed). Trusted Publisher configured at npmjs.com for `trackly-app/trackly-cli` + `publish.yml` workflow. Manual fallback: `gh workflow run publish.yml`.
 
@@ -49,8 +54,8 @@ Publishing is fully automated via GitHub Actions:
 - `_isRetry` flag prevents infinite refresh loops
 
 ### MCP Server
-- 11 tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`, `trackly_get_job_brief`, `trackly_contacts_at_company`, `trackly_get_company_workspace`, `trackly_request_company`
-- **Intentionally NOT here: `trackly_chat`** (the hosted connector at `mcp.usetrackly.app` has a 12th tool). It's a backend agent over these same primitives — built for classic-UI surfaces (web/iOS/macOS) that have no agent. CLI/MCP clients ARE the agent, so it'd be an agent-in-an-agent (redundant). Coverage already exists via `trackly_ask` + `search_jobs sort=match` + `get_stats` (structured prefs). Do NOT port it; this asymmetry is by design.
+- Search/network tools plus the versioned Trackly Apply tool set. Hosted/local Apply schemas must remain in contract parity; `trackly_prepare_resume` is local-only behavior and hosted MCP returns an explicit local-agent/manual-upload requirement.
+- **Intentionally NOT here: `trackly_chat`** (the hosted connector has one extra tool). It's a backend agent over these same primitives — built for classic-UI surfaces that have no agent. CLI/MCP clients ARE the agent, so it'd be an agent-in-an-agent. Do NOT port it; this single-tool asymmetry is by design.
 - MCP User-Agent: `trackly-mcp/<version>` (from package.json)
 - CLI User-Agent: `trackly-cli/<version>` (separate channel attribution)
 - Flag validation is **command-level** (`COMMAND_FLAGS` in `bin/trackly`): it rejects unknown/wrong-command flags + typos (with a "did you mean" hint), but does not reject a flag that's valid on a sibling subcommand yet ignored by the handler (e.g. `api-key list --name foo`). Deliberate — subcommand-strict scoping would risk false-rejects, which are worse than a silently-ignored flag.

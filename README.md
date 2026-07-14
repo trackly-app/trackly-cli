@@ -35,7 +35,7 @@ trackly jobs --function product
 
 ## At a Glance
 
-1,900+ companies | 128K+ jobs | 40+ ATS types | CLI + MCP | 11 MCP tools
+1,900+ companies | 128K+ jobs | 40+ ATS types | CLI + MCP | 20 local MCP tools
 
 ## CLI Commands
 
@@ -71,6 +71,8 @@ trackly config --api-key trk_xxx      # Save an API key for future commands
 trackly version                       # Show installed version
 trackly whoami                        # Show current user
 trackly logout                        # Clear credentials
+trackly agent setup --client both    # Install Trackly Apply for Codex + Claude Code
+trackly agent doctor                 # Verify setup, profile, resume, and compatibility
 ```
 
 Add `--json` to any command for JSON output. Use `--api-key <key>` or `--base-url <url>` as one-off global flags when needed.
@@ -88,6 +90,15 @@ https://mcp.usetrackly.app/api/mcp
 Sign in with Google when prompted. [Full visual guide →](https://usetrackly.app/connector)
 
 ### Local (CLI via stdio, for Cursor / Windsurf / Claude Code)
+
+For agent-assisted form filling on macOS, install the public skill and local MCP together:
+
+```bash
+trackly agent setup --client codex    # or claude / both
+trackly agent doctor
+```
+
+The skill uses the profile and default resume in your Trackly account, asks only missing questions, fills user-approved saved jobs, and always stops before Submit. Greenhouse is fully supported; Ashby and Lever are best effort.
 
 #### Claude Code one-liner
 
@@ -152,6 +163,15 @@ Then use natural language in any of these clients:
 | trackly_contacts_at_company | Search contacts at a specific company |
 | trackly_get_company_workspace | Full company workspace (jobs, contacts, hiring managers, campaigns) |
 | trackly_request_company | Request a company be added to Trackly (rate-limited to 5 pending) |
+| trackly_get_apply_queue | Get user-approved jobs ready for execution |
+| trackly_get_application_profile | Get versioned profile answers and provenance |
+| trackly_get_profile_onboarding | Get schema plus missing questions |
+| trackly_update_application_profile | Save scoped answers with optimistic concurrency |
+| trackly_start_apply_run | Start a manual-submit browser run |
+| trackly_get_apply_protocol | Get current workflow and compatibility rules |
+| trackly_report_apply_observation | Send redacted ATS mechanics feedback |
+| trackly_record_application_outcome | Record review or confirmed submission outcome |
+| trackly_prepare_resume | Prepare a private expiring resume file for upload |
 
 ## Authentication
 
@@ -211,7 +231,7 @@ trackly config --base-url http://127.0.0.1:3000  # Point at a different backend
 | Job search + filters | Yes | Yes | Yes |
 | Apply/save/dismiss | Yes | Yes | Yes |
 | AI-powered search | Yes (trackly ask) | Yes | Yes |
-| MCP integration | Yes (11 tools) | -- | -- |
+| MCP integration | Yes (20 local tools) | -- | -- |
 | Browser required | No | Yes | No |
 | Best for | Terminal + AI agents | Visual browsing | Custom integrations |
 
@@ -225,7 +245,7 @@ Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly l
 
 **What MCP servers exist for job searching?**
 
-trackly-cli includes a built-in MCP server with 11 tools for job search, company lookup, and application tracking. Run `trackly mcp` or add it to Claude Code with `claude mcp add --scope user trackly -- trackly mcp`. It connects to a live database of 128,000+ jobs across 1,900+ companies.
+trackly-cli includes a built-in MCP server with 20 tools for job search, company lookup, application tracking, profile onboarding, and manual-submit form preparation. Run `trackly mcp` or use `trackly agent setup --client claude`.
 
 **How do I use Claude Code for job hunting?**
 

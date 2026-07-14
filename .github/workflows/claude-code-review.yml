@@ -1,67 +1,237 @@
 name: Claude Code Review
 
-# DEACTIVATED 2026-06-13: Claude CI review no longer runs automatically.
-# Bedrock auth is out (removed-advisor AWS account) and the Claude-subscription
-# Agent SDK credit (max $200/mo) can't fund fleet review volume. PR review is
-# already gated by CodeRabbit + Codex. Re-enable by restoring the triggers below.
+# Runs Anthropic's OFFICIAL `code-review` plugin (multi-agent + validation
+# pipeline: Haiku gate -> per-file CLAUDE.md compliance + parallel bug agents ->
+# a separate validation pass that re-checks every finding -> filter -> post).
+# Higher signal / fewer false positives than a custom single-pass prompt.
+# (anthropics/claude-code marketplace, `code-review@claude-code-plugins`.)
+#
+# Auth: Claude subscription via CLAUDE_CODE_OAUTH_TOKEN (NOT Bedrock — that
+#   account is gone). Repo-level secret (org secrets don't reach private repos
+#   on the GitHub Free plan). ANTHROPIC_API_KEY nulled so the token wins.
+# Model: Sonnet 4.6 at the top level (Anthropic's recommended default for
+#   review). The plugin still uses Opus internally for its bug-hunting agents.
+#
+# MIGRATED 2026-06-20 from Bedrock+plugin to OAuth+plugin+Sonnet. The plugin is
+# `gh`-CLI based and `gh` is NOT preinstalled on the trackly-ci runner (PR #320
+# exit-127), so an "Install gh" step provisions it into the job PATH at runtime
+# (no box/SSH/AWS access needed).
 on:
-  workflow_dispatch: {}
-  # Original auto-triggers (preserved for easy revert):
-  # pull_request:
-  # types: [opened, synchronize, ready_for_review, reopened]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   claude-review:
-    # Gate: only run on PRs AUTHORED by trusted users. This job checks out PR code
-    # AFTER AWS credentials are configured, so we must pin the trust check to the PR
-    # AUTHOR (`pull_request.user.login`), NOT the event actor (`github.actor`).
-    #
-    # The difference matters: if an untrusted user opens a PR and Kevin later pushes to
-    # that branch (rare, but possible with branch-permission grants), `github.actor`
-    # would become `kevinastuhuaman` and satisfy an actor-based gate — while the PR's
-    # code (including workflow-affecting files in older history) was authored by the
-    # untrusted user. Using `pull_request.user.login` ensures the gate fails in that
-    # scenario because the ORIGINAL author remains untrusted.
-    #
-    # (CodeRabbit Critical finding on PR #21.)
+    # Fork guard + draft skip: this job runs on the production-credentialed
+    # ubuntu-latest runner, so PR-head code from an untrusted fork
+    # must NOT execute here. Same guard the sibling self-hosted PR workflows use.
+    # trackly-cli is PUBLIC — gate to trusted PR authors (pinned to the PR author)
+    # AND same-repo head. (CodeRabbit Critical #21 + Codex #51.)
     if: |
-      github.event.pull_request.user.login == 'kevinastuhuaman' ||
-      github.event.pull_request.author_association == 'OWNER' ||
-      github.event.pull_request.author_association == 'MEMBER' ||
-      github.event.pull_request.author_association == 'COLLABORATOR'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.pull_request.user.login == 'kevinastuhuaman' ||
+       github.event.pull_request.author_association == 'OWNER' ||
+       github.event.pull_request.author_association == 'MEMBER' ||
+       github.event.pull_request.author_association == 'COLLABORATOR')
+    # 75 min: primary review step (30) + fallback step (30) + checkout/gh-install
+    # overhead must fit so a hung primary still leaves the fallback its full
+    # window to post. (Codex P2 on TracklyMac #188.)
+    timeout-minutes: 75
     env:
       API_FORCE_IDLE_TIMEOUT: "1"
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
       issues: write
+      # REQUIRED even with claude_code_oauth_token: the action fetches a GitHub
+      # OIDC token and exchanges it for a GitHub App token to post comments.
       id-token: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          fetch-depth: 1
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+      # Skip the review when this PR edits the review workflow itself — a
+      # workflow change can't be trusted/validated until it's on the default
+      # branch, and this also avoids running edited secret-bearing workflow code
+      # from a PR head. --name-status -M so a RENAME of the workflow is caught.
+      - name: Check Claude review workflow self-change
+        id: review-workflow
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          # Fail-safe: if the base-ref fetch or merge-base can't be established,
+          # treat the workflow as self-changed (skip) rather than risk an
+          # incomplete changed-file list bypassing the self-change guard. (AQ.)
+          if ! git fetch origin "$BASE_REF"; then
+            echo "Failed to fetch origin/${BASE_REF}; treating workflow as self-changed (fail-safe skip)."
+            CHANGED_FILES=".github/workflows/claude-code-review.yml"
+          elif MERGE_BASE="$(git merge-base "origin/${BASE_REF}" HEAD 2>/dev/null)"; then
+            # --name-status -M emits "STATUS<TAB>old[<TAB>new]"; cut -f2- keeps the
+            # path column(s). For renames that yields "old<TAB>new" on one line,
+            # so split on tab into separate lines for the exact-match grep below.
+            CHANGED_FILES="$(git diff --name-status -M "$MERGE_BASE" HEAD | cut -f2- | tr '\t' '\n')"
+          else
+            echo "No merge base with origin/${BASE_REF}; treating workflow as self-changed (fail-safe skip)."
+            CHANGED_FILES=".github/workflows/claude-code-review.yml"
+          fi
+          if printf '%s\n' "$CHANGED_FILES" | grep -Fxq '.github/workflows/claude-code-review.yml'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Claude review workflow changed in this PR; skipping until it is on the default branch."
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Run Claude Code Review
+      # The official code-review plugin is `gh`-CLI based, but `gh` is not
+      # preinstalled on the trackly-ci runner (PR #320 exit-127). Provision a
+      # pinned static `gh` binary into the job PATH at runtime — no sudo, no box
+      # access, no AWS. Idempotent: skips if gh is already on PATH.
+      - name: Install gh CLI
+        if: steps.review-workflow.outputs.changed != 'true'
+        shell: bash
+        env:
+          GH_VERSION: "2.62.0"
+          # Pinned SHA256 of the official gh 2.62.0 release archives. The
+          # download is verified against these before use, so a compromised
+          # mirror / MITM can't inject a malicious gh that runs with the job's
+          # token. (Amazon Q on PR #755.) Update these together with GH_VERSION.
+          SHA_linux_amd64: "41c8b0698ad3003cb5c44bde672a1ffd5f818595abd80162fbf8cc999418446a"
+          SHA_linux_arm64: "a165413209aab98bfb1db9629b97bc9c59778d38bb7378a33a0363cf822e7965"
+          SHA_macOS_amd64: "cd547c05c175a79e5af6f95ba4881a11ca550c0ff37a63f234bc5c79a58435d5"
+          SHA_macOS_arm64: "fdb77f31b8a6dd23c3fd858758d692a45f7fc76383e37d475bdcae038df92afc"
+        run: |
+          set -euo pipefail
+          if command -v gh >/dev/null 2>&1; then
+            echo "gh already present: $(gh --version | head -1)"
+            exit 0
+          fi
+          OS="$(uname -s)"; ARCH="$(uname -m)"
+          # gh ships Linux as .tar.gz and macOS as .zip — handle both.
+          case "$OS" in
+            Linux)  GOOS=linux;  EXT=tar.gz;;
+            Darwin) GOOS=macOS;  EXT=zip;;
+            *) echo "::error::unsupported OS $OS for gh install"; exit 1;;
+          esac
+          case "$ARCH" in
+            x86_64|amd64)   GOARCH=amd64;;
+            arm64|aarch64)  GOARCH=arm64;;
+            *) echo "::error::unsupported arch $ARCH for gh install"; exit 1;;
+          esac
+          DEST="$RUNNER_TEMP/gh"; mkdir -p "$DEST"
+          ASSET="gh_${GH_VERSION}_${GOOS}_${GOARCH}.${EXT}"
+          URL="https://github.com/cli/cli/releases/download/v${GH_VERSION}/${ASSET}"
+          echo "Downloading $URL"
+          curl -fsSL --show-error "$URL" -o "$DEST/$ASSET"
+          if [ ! -s "$DEST/$ASSET" ]; then
+            echo "::error::gh download failed or empty: $URL"; exit 1
+          fi
+          # Verify the pinned checksum for this platform before extracting.
+          SHA_VAR="SHA_${GOOS}_${GOARCH}"; EXPECTED="${!SHA_VAR}"
+          if command -v sha256sum >/dev/null 2>&1; then
+            ACTUAL="$(sha256sum "$DEST/$ASSET" | awk '{print $1}')"
+          else
+            ACTUAL="$(shasum -a 256 "$DEST/$ASSET" | awk '{print $1}')"
+          fi
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::gh checksum mismatch for $ASSET (expected $EXPECTED, got $ACTUAL)"; exit 1
+          fi
+          echo "gh checksum verified."
+          if [ "$EXT" = "zip" ]; then
+            unzip -q "$DEST/$ASSET" -d "$DEST/x"
+            # macOS zip extracts to gh_<ver>_macOS_<arch>/bin/gh — locate it
+            # robustly and fail with a clear message if the layout is unexpected.
+            GH_BIN="$(find "$DEST/x" -type f -path '*/bin/gh' -perm -111 | head -1)"
+            if [ -z "$GH_BIN" ]; then
+              echo "::error::gh binary not found in the extracted macOS archive ($DEST/x)"; exit 1
+            fi
+            BIN_DIR="$(dirname "$GH_BIN")"
+          else
+            tar -xzf "$DEST/$ASSET" -C "$DEST" --strip-components=1
+            BIN_DIR="$DEST/bin"
+          fi
+          if [ ! -x "$BIN_DIR/gh" ]; then
+            echo "::error::gh not executable at $BIN_DIR/gh after install"; exit 1
+          fi
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+          "$BIN_DIR/gh" --version | head -1
+
+      # PRIMARY review — jimmygregorio token (CLAUDE_CODE_OAUTH_TOKEN). If this
+      # account is rate-limited / hits its session limit (or any other failure),
+      # the step fails under continue-on-error and the FALLBACK step below runs
+      # on the berkeley token so reviews don't stop. Token routing: jimmy first,
+      # berkeley as overflow (two independent Max subscriptions).
+      - name: Run Claude Code Review (primary)
+        if: steps.review-workflow.outputs.changed != 'true'
         id: claude-review
-        uses: anthropics/claude-code-action@0f97b95b6536c26e5f6bd90faec370d41695beca # v1 (bumped 2026-06-11, canary-validated on TracklyApp #104)
+        continue-on-error: true
+        timeout-minutes: 30
+        uses: anthropics/claude-code-action@0f97b95b6536c26e5f6bd90faec370d41695beca # v1
+        env:
+          ANTHROPIC_API_KEY: ""
+          GH_TOKEN: ${{ github.token }}
         with:
           settings: |
             {"env": {"API_FORCE_IDLE_TIMEOUT": "1"}}
-          use_bedrock: "true"
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
           plugin_marketplaces: |
             https://github.com/anthropics/claude-code.git
           plugins: |
             code-review@claude-code-plugins
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          claude_args: '--model us.anthropic.claude-opus-4-6-v1'
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment'
+          claude_args: '--model claude-sonnet-4-6'
+
+      # FALLBACK review — berkeley token (CLAUDE_CODE_OAUTH_TOKEN_FALLBACK). Runs
+      # ONLY when the primary step did not succeed (e.g. jimmy hit its session
+      # limit). Identical plugin config, different account = a second quota
+      # bucket so a rate-limited primary doesn't leave the PR unreviewed.
+      - name: Run Claude Code Review (fallback)
+        if: >-
+          steps.review-workflow.outputs.changed != 'true' &&
+          steps.claude-review.outcome != 'success'
+        id: claude-review-fallback
+        continue-on-error: true
+        timeout-minutes: 30
+        uses: anthropics/claude-code-action@0f97b95b6536c26e5f6bd90faec370d41695beca # v1
+        env:
+          ANTHROPIC_API_KEY: ""
+          GH_TOKEN: ${{ github.token }}
+        with:
+          settings: |
+            {"env": {"API_FORCE_IDLE_TIMEOUT": "1"}}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_FALLBACK }}
+          github_token: ${{ github.token }}
+          plugin_marketplaces: |
+            https://github.com/anthropics/claude-code.git
+          plugins: |
+            code-review@claude-code-plugins
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment'
+          claude_args: '--model claude-sonnet-4-6'
+
+      # Detectability backstop: both review steps are continue-on-error, so if
+      # BOTH the primary and the fallback fail (e.g. both accounts rate-limited),
+      # the job would otherwise be green with no review. Emit a non-blocking
+      # warning naming both outcomes so a silent no-review is visible.
+      - name: Warn if no Claude review posted
+        if: always() && steps.review-workflow.outputs.changed != 'true'
+        run: |
+          PRIMARY="${{ steps.claude-review.outcome }}"
+          FALLBACK="${{ steps.claude-review-fallback.outcome }}"
+          if [ "$PRIMARY" = "success" ]; then
+            echo "Claude review posted via the primary (jimmygregorio) token."
+          elif [ "$FALLBACK" = "success" ]; then
+            echo "::notice title=Claude review used fallback::Primary token failed ($PRIMARY); review posted via the berkeley fallback token."
+          else
+            echo "::warning title=Claude review did not post::BOTH tokens failed (primary=$PRIMARY, fallback=$FALLBACK). No review posted — likely both accounts are rate-limited. Check the step logs."
+          fi

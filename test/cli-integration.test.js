@@ -12,6 +12,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const { createTempConfigDir, seedApiKey, startMockServer, runCli } = require('./helpers');
 
 // Spin up a temp config (seeded API key) + mock server, run the CLI, return the
@@ -28,8 +29,13 @@ async function runAgainstMock(t, args, respond) {
     req.on('end', () => {
       requests.push({ method: req.method, url: req.url, body });
       const r = (respond && respond(req)) || { status: 200, json: {} };
-      res.writeHead(r.status || 200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(r.json || {}));
+      if (r.body !== undefined) {
+        res.writeHead(r.status || 200, r.headers || { 'Content-Type': 'application/octet-stream' });
+        res.end(r.body);
+      } else {
+        res.writeHead(r.status || 200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(r.json || {}));
+      }
     });
   });
   t.after(() => server.close());
@@ -157,4 +163,205 @@ test('config rejects --api-key together with --clear-api-key', async (t) => {
   const result = await runCli(['config', '--api-key', 'trk_abcdefghij', '--clear-api-key'], { TRACKLY_CONFIG_DIR: dir });
   assert.notEqual(result.code, 0);
   assert.match(result.stderr, /Cannot use --api-key and --clear-api-key together/);
+});
+
+test('agent setup rejects --client without a value', async () => {
+  const result = await runCli(['agent', 'setup', '--client']);
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /Missing value for --client/);
+});
+
+test('agent setup returns structured errors in JSON mode', async () => {
+  const result = await runCli(['agent', 'setup', '--client', 'unsupported', '--json']);
+  assert.notEqual(result.code, 0);
+  assert.deepEqual(JSON.parse(result.stdout), { error: 'Use --client codex, claude, or both.' });
+  assert.equal(result.stderr, '');
+});
+
+test('agent setup exits non-zero when the requested client is not installed', async (t) => {
+  const root = createTempConfigDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const emptyBin = path.join(root, 'empty-bin');
+  fs.mkdirSync(emptyBin, { recursive: true });
+  const result = await runCli(['agent', 'setup', '--client', 'codex', '--json'], {
+    TRACKLY_CONFIG_DIR: path.join(root, '.trackly'),
+    CODEX_HOME: path.join(root, '.codex'),
+    PATH: emptyBin,
+  });
+  assert.notEqual(result.code, 0);
+  assert.equal(JSON.parse(result.stdout).clients[0].mcp.status, 'missing_client');
+});
+
+test('agent doctor JSON exits non-zero when setup is not ready', async (t) => {
+  const dir = createTempConfigDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const result = await runCli(['agent', 'doctor', '--json'], { TRACKLY_CONFIG_DIR: dir });
+  assert.notEqual(result.code, 0);
+  assert.equal(JSON.parse(result.stdout).ok, false);
+});
+
+test('agent doctor validates the downloaded default resume before reporting readiness', async (t) => {
+  const { result } = await runAgainstMock(t, ['agent', 'doctor', '--json'], (req) => {
+    if (req.url === '/api/jobscout/apply/protocol') {
+      return { json: { protocol: { compatibleSkillMajor: 1 } } };
+    }
+    if (req.url === '/api/jobscout/application-profile') {
+      return { json: { profile: { revision: 1, completeness: { percent: 100, missingKeys: [] }, defaultResume: { id: 7 } } } };
+    }
+    if (req.url === '/api/jobscout/application-profile/default-resume') {
+      return { body: Buffer.from('not-a-resume'), headers: { 'Content-Type': 'application/octet-stream' } };
+    }
+    return { status: 404, json: { error: 'not found' } };
+  });
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.resume.verified, false);
+  assert.match(report.resume.error, /Unsupported or invalid resume type/);
+  assert.notEqual(result.code, 0);
+});
+
+test('agent setup does not treat similarly named Codex MCP tables as registered', async (t) => {
+  const root = createTempConfigDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'bin');
+  const codexHome = path.join(root, '.codex');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.writeFileSync(path.join(codexHome, 'config.toml'), '[mcp_servers.trackly-old]\n# [mcp_servers.trackly]\n');
+  const codex = path.join(bin, 'codex');
+  fs.writeFileSync(codex, '#!/bin/sh\nexit 2\n', { mode: 0o755 });
+  const result = await runCli(['agent', 'setup', '--client', 'codex', '--json'], {
+    TRACKLY_CONFIG_DIR: path.join(root, '.trackly'),
+    CODEX_HOME: codexHome,
+    PATH: `${bin}:${process.env.PATH}`,
+  });
+  assert.notEqual(result.code, 0);
+  assert.equal(JSON.parse(result.stdout).clients[0].mcp.status, 'failed');
+});
+
+test('agent setup replaces a stale exact Codex MCP registration', async (t) => {
+  const root = createTempConfigDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'bin');
+  const codexHome = path.join(root, '.codex');
+  const log = path.join(root, 'codex-args.log');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.writeFileSync(
+    path.join(codexHome, 'config.toml'),
+    '[mcp_servers.trackly]\ncommand = "node"\nargs = ["old-server.js"]\n',
+  );
+  const codex = path.join(bin, 'codex');
+  fs.writeFileSync(codex, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TRACKLY_TEST_LOG"\nexit 0\n', { mode: 0o755 });
+
+  const result = await runCli(['agent', 'setup', '--client', 'codex', '--json'], {
+    TRACKLY_CONFIG_DIR: path.join(root, '.trackly'),
+    TRACKLY_TEST_LOG: log,
+    CODEX_HOME: codexHome,
+    PATH: `${bin}:${process.env.PATH}`,
+  });
+
+  assert.equal(result.code, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.clients[0].mcp.status, 'installed');
+  assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n'), [
+    'mcp remove trackly',
+    'mcp add trackly -- trackly mcp',
+  ]);
+});
+
+test('agent setup repairs stale Claude metadata when no registered server exists', async (t) => {
+  const root = createTempConfigDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'bin');
+  const claudeHome = path.join(root, '.claude');
+  const log = path.join(root, 'claude-args.log');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(claudeHome, { recursive: true });
+  fs.writeFileSync(
+    path.join(claudeHome, 'settings.json'),
+    JSON.stringify({ mcpServers: { trackly: { command: 'node', args: ['old-server.js'] } } }),
+  );
+  const claude = path.join(bin, 'claude');
+  fs.writeFileSync(claude, `#!/bin/sh
+printf "%s\\n" "$*" >> "$TRACKLY_TEST_LOG"
+if [ "$*" = "mcp remove --scope user trackly" ]; then
+  printf "%s\\n" 'No MCP server named "trackly" in user scope' >&2
+  exit 1
+fi
+exit 0
+`, { mode: 0o755 });
+
+  const result = await runCli(['agent', 'setup', '--client', 'claude', '--json'], {
+    TRACKLY_CONFIG_DIR: path.join(root, '.trackly'),
+    TRACKLY_TEST_LOG: log,
+    CLAUDE_CONFIG_DIR: claudeHome,
+    PATH: `${bin}:${process.env.PATH}`,
+  });
+
+  assert.equal(result.code, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.clients[0].mcp.status, 'installed');
+  assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n'), [
+    'mcp remove --scope user trackly',
+    'mcp add --scope user trackly -- trackly mcp',
+  ]);
+});
+
+for (const removalError of [
+  'permission denied',
+  'Permission denied: No MCP server named "trackly" in user scope',
+  'No MCP server named "trackly-old" in user scope',
+  'No MCP server named "trackly" in user scope\npermission denied',
+]) test(`agent setup does not ignore Claude MCP removal failure: ${removalError}`, async (t) => {
+  const root = createTempConfigDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'bin');
+  const claudeHome = path.join(root, '.claude');
+  const log = path.join(root, 'claude-args.log');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(claudeHome, { recursive: true });
+  fs.writeFileSync(
+    path.join(claudeHome, 'settings.json'),
+    JSON.stringify({ mcpServers: { trackly: { command: 'node', args: ['old-server.js'] } } }),
+  );
+  const claude = path.join(bin, 'claude');
+  fs.writeFileSync(claude, `#!/bin/sh
+printf "%s\\n" "$*" >> "$TRACKLY_TEST_LOG"
+printf "%s\\n" '${removalError}' >&2
+exit 1
+`, { mode: 0o755 });
+
+  const result = await runCli(['agent', 'setup', '--client', 'claude', '--json'], {
+    TRACKLY_CONFIG_DIR: path.join(root, '.trackly'),
+    TRACKLY_TEST_LOG: log,
+    CLAUDE_CONFIG_DIR: claudeHome,
+    PATH: `${bin}:${process.env.PATH}`,
+  });
+
+  assert.notEqual(result.code, 0);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.clients[0].mcp.status, 'failed');
+  assert.match(report.clients[0].mcp.error, new RegExp(removalError.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.equal(fs.readFileSync(log, 'utf8').trim(), 'mcp remove --scope user trackly');
+});
+
+test('agent doctor rejects an installed skill with stale managed metadata', async (t) => {
+  const root = createTempConfigDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const codexHome = path.join(root, '.codex');
+  const skill = path.join(codexHome, 'skills', 'trackly-apply');
+  fs.mkdirSync(skill, { recursive: true });
+  fs.writeFileSync(path.join(skill, 'SKILL.md'), 'stale');
+  fs.writeFileSync(path.join(skill, '.trackly-managed.json'), JSON.stringify({
+    managedBy: 'trackly-cli',
+    skill: 'trackly-apply',
+    skillVersion: '0.9.0',
+  }));
+  const result = await runCli(['agent', 'doctor', '--json'], {
+    TRACKLY_CONFIG_DIR: path.join(root, '.trackly'),
+    CODEX_HOME: codexHome,
+  });
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.clients.find((client) => client.client === 'codex').installed, false);
+  assert.equal(report.clients.find((client) => client.client === 'codex').installedSkillVersion, '0.9.0');
 });
