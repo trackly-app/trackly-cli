@@ -21,7 +21,7 @@ Universal context for AI coding agents (Codex, Cursor, Copilot, Claude Code, Dev
 bin/trackly          # CLI entrypoint (shebang script). All commands + arg parser + main()
 lib/client.js        # HTTP client: config loading, token refresh, apiRequest()
 lib/formatters.js    # Terminal output: color(), outputJobs(), outputCompanies(), etc.
-mcp/server.js        # MCP server: 11 tools, launched via `trackly mcp`
+mcp/server.js        # MCP server: search/network + Trackly Apply tools, launched via `trackly mcp`
 docs/trackly-tools.md  # MCP tool reference (for embedding in AI agent contexts)
 server.json          # MCP Registry manifest (io.github.trackly-app/trackly)
 ```
@@ -54,8 +54,8 @@ Publishing is fully automated via GitHub Actions:
 - `_isRetry` flag prevents infinite refresh loops
 
 ### MCP Server
-- 11 tools: `trackly_search_jobs`, `trackly_get_job`, `trackly_search_companies`, `trackly_list_companies`, `trackly_get_stats`, `trackly_update_status`, `trackly_ask`, `trackly_get_job_brief`, `trackly_contacts_at_company`, `trackly_get_company_workspace`, `trackly_request_company`
-- **Intentionally NOT here: `trackly_chat`** (the hosted connector at `mcp.usetrackly.app` has a 12th tool). It's a backend agent over these same primitives — built for classic-UI surfaces (web/iOS/macOS) that have no agent. CLI/MCP clients ARE the agent, so it'd be an agent-in-an-agent (redundant). Coverage already exists via `trackly_ask` + `search_jobs sort=match` + `get_stats` (structured prefs). Do NOT port it; this asymmetry is by design.
+- Search/network tools plus the versioned Trackly Apply tool set. Hosted/local Apply schemas must remain in contract parity; `trackly_prepare_resume` is local-only behavior and hosted MCP returns an explicit local-agent/manual-upload requirement.
+- **Intentionally NOT here: `trackly_chat`** (the hosted connector has one extra tool). It's a backend agent over these same primitives — built for classic-UI surfaces that have no agent. CLI/MCP clients ARE the agent, so it'd be an agent-in-an-agent. Do NOT port it; this single-tool asymmetry is by design.
 - MCP User-Agent: `trackly-mcp/<version>` (from package.json)
 - CLI User-Agent: `trackly-cli/<version>` (separate channel attribution)
 - Flag validation is **command-level** (`COMMAND_FLAGS` in `bin/trackly`): it rejects unknown/wrong-command flags + typos (with a "did you mean" hint), but does not reject a flag that's valid on a sibling subcommand yet ignored by the handler (e.g. `api-key list --name foo`). Deliberate — subcommand-strict scoping would risk false-rejects, which are worse than a silently-ignored flag.

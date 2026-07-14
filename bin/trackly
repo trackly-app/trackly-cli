@@ -18,11 +18,13 @@ const http = require('http');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { version: VERSION } = require('../package.json');
+const { doctorAgent, resumeValidationStatus, setupAgent } = require('../lib/agent');
 
 const BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'version', 'v', 'clear-api-key', 'clear-base-url', 'refresh', 'remote']);
 const VALUE_FLAGS = new Set([
   'api-key',
   'base-url',
+  'client',
   'company',
   'function',
   'job-type',
@@ -72,6 +74,7 @@ const COMMAND_FLAGS = {
   'request-company': ['url', 'notes'],
   'api-key': ['name'],
   config: ['api-key', 'base-url', 'clear-api-key', 'clear-base-url'],
+  agent: ['client'],
 };
 const AUTH_HELP_TEXT = `Not authenticated.
   Option 1: trackly login                        (Google OAuth)
@@ -892,6 +895,59 @@ async function cmdMcp() {
   await require('../mcp/server').startMcpServer();
 }
 
+async function cmdAgent(args) {
+  const subcommand = args._[0];
+  if (subcommand === 'setup') {
+    if (args.client === null) return failNow('Missing value for --client. Use codex, claude, or both.');
+    const client = String(args.client || 'both').toLowerCase();
+    try {
+      const result = setupAgent(client);
+      const registrationFailed = result.clients.some((item) => !['current', 'installed'].includes(item.mcp.status));
+      if (registrationFailed) process.exitCode = 1;
+      if (isJSON()) return printJson(result);
+      console.log(color('green', `Trackly Apply ${result.skillVersion} installed.`));
+      console.log(`Canonical skill: ${result.canonical}`);
+      for (const item of result.clients) {
+        console.log(`${item.client}: skill ${item.status} (${item.method}); MCP ${item.mcp.status}`);
+        if (item.mcp.error) console.log(color('yellow', `  ${item.mcp.error}`));
+      }
+      return;
+    } catch (error) {
+      const message = error.message || String(error);
+      if (isJSON()) {
+        process.exitCode = 1;
+        return printJson({ error: message });
+      }
+      setErrorExit(message);
+      return;
+    }
+  }
+  if (subcommand === 'doctor') {
+    const report = await doctorAgent();
+    if (!report.ok) process.exitCode = 1;
+    if (isJSON()) return printJson(report);
+    console.log(color('bold', 'Trackly Apply doctor'));
+    console.log(`Overall: ${color(report.ok ? 'green' : 'yellow', report.ok ? 'ready' : 'needs attention')}`);
+    console.log(`Authenticated: ${report.authenticated ? 'yes' : 'no'}`);
+    console.log(`Protocol compatible: ${report.compatible ? 'yes' : 'no'}`);
+    for (const client of report.clients) {
+      console.log(`${client.client}: executable=${client.executable ? 'yes' : 'no'}, skill=${client.installed ? 'yes' : 'no'}, MCP=${client.mcpRegistered ? 'yes' : 'no'}`);
+    }
+    if (report.profile) {
+      console.log(`Profile: ${report.profile.completeness?.percent ?? 0}% complete; default resume=${report.profile.hasDefaultResume ? 'yes' : 'no'}`);
+      if (report.profile.completeness?.missingKeys?.length) {
+        console.log(`Missing: ${report.profile.completeness.missingKeys.join(', ')}`);
+      }
+    }
+    console.log(`Resume validation: ${resumeValidationStatus(report)}`);
+    if (report.resume?.error) console.log(color('yellow', `Resume: ${report.resume.error}`));
+    if (report.apiError) console.log(color('yellow', `API: ${report.apiError}`));
+    console.log(report.browserControl.note);
+    return;
+  }
+  failNow('Unknown agent subcommand. Use: trackly agent setup --client codex|claude|both | trackly agent doctor');
+}
+
 function showHelp() {
   console.log(`
 ${color('bold', 'trackly')} v${VERSION} — Trackly job tracker CLI + MCP server
@@ -928,6 +984,8 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'config')}               Show or update CLI config (--api-key, --base-url)
   ${color('cyan', 'version')}              Show CLI version
   ${color('cyan', 'mcp')}                  Start MCP server
+  ${color('cyan', 'agent setup')}          Install Trackly Apply for Codex/Claude (--client codex|claude|both)
+  ${color('cyan', 'agent doctor')}         Verify auth, MCP, skill, profile, resume, and compatibility
 
 ${color('bold', 'Flags:')}
   --api-key <key>       Use an API key for this command
@@ -1098,6 +1156,9 @@ async function main() {
       break;
     case 'mcp':
       await cmdMcp();
+      break;
+    case 'agent':
+      await cmdAgent(args);
       break;
     default:
       setErrorExit(`Unknown command: ${args.command}`);
