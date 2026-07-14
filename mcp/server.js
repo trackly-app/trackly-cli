@@ -496,7 +496,7 @@ function createServer() {
       role: 'user',
       content: {
         type: 'text',
-        text: 'Fetch the Trackly Apply protocol and profile onboarding, resolve missing answers with me, start the next approved queue run, fill the form, verify every required field, and stop before Submit. If maintenance interrupts the run, retain the run and browser context, wait for the advertised window, refetch protocol and profile state, and resume the existing agent_browser run. Never start a duplicate run, blindly retry a mutation, or click Submit.',
+        text: 'Fetch the Trackly Apply protocol and profile onboarding, resolve missing answers with me, and start the next approved queue run. Prepare the run-bound resume locally, show me its exact path, filename, size, SHA-256, run, and expiration, and obtain my explicit confirmation. Immediately before attachment, use the local verifier to validate the signed proof, recompute hash and size, check expiration, and lock the file read-only. Then fill the form, verify every required field, and stop before Submit. If maintenance interrupts the run, retain the run and browser context, wait for the advertised window, refetch protocol and profile state, and resume the existing agent_browser run. Never start a duplicate run, blindly retry a mutation, or click Submit.',
       },
     }],
   }));

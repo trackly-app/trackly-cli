@@ -312,8 +312,11 @@ test('resume validation normalizes generic MIME types from file signatures', () 
 
 test('agent doctor distinguishes missing resumes from failed validation', () => {
   assert.equal(agent.resumeValidationStatus({ profile: { hasDefaultResume: false } }), 'not applicable (no default resume set)');
-  assert.equal(agent.resumeValidationStatus({ profile: { hasDefaultResume: true }, resume: { verified: false } }), 'failed');
-  assert.equal(agent.resumeValidationStatus({ profile: { hasDefaultResume: true }, resume: { verified: true } }), 'passed');
+  assert.equal(agent.resumeValidationStatus({ profile: { hasDefaultResume: true }, resume: { available: false } }), 'failed');
+  assert.equal(
+    agent.resumeValidationStatus({ profile: { hasDefaultResume: true }, resume: { available: true } }),
+    'available (exact bytes are verified during an active Apply run)',
+  );
 });
 
 test('resume preparation keeps CLI and MCP attribution distinct', () => {

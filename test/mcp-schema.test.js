@@ -10,7 +10,7 @@
  *
  * Source-of-truth citations (Codex can verify these against close-ai repo):
  *   - sort:       close-ai/src/routes/jobscout.ts:3053  (newest | match)
- *   - status:     public canonical pipeline states (legacy applying remains server-side compatibility only)
+ *   - status:     public canonical pipeline states (the retired applying state is excluded)
  *   - function:   close-ai/src/routes/jobscout-filter-utils.ts:17-21  (14 values incl. partnerships)
  *   - modality:   close-ai/src/routes/jobscout.ts:2870-2875  (full_time | internship | all)
  *   - arrangement: close-ai/src/routes/jobscout-filter-utils.ts (remote | hybrid | in_person | unspecified)
@@ -25,6 +25,7 @@ const SERVER_SRC = fs.readFileSync(
   path.join(__dirname, '..', 'mcp', 'server.js'),
   'utf8'
 );
+const AGENT_SRC = fs.readFileSync(path.join(__dirname, '..', 'lib', 'agent.js'), 'utf8');
 
 // Tiny extractor: pull the enum values as JSON-ish literals.
 // We don't import the file because Zod wants a connected server; we parse the
@@ -148,6 +149,27 @@ test('local MCP exposes a pre-attach resume integrity verifier', () => {
   assert.match(verifyRegion, /sizeBytes:\s*z\.number\(\)\.int\(\)\.min\(1\)/);
   assert.match(verifyRegion, /expiresAt:\s*z\.string\(\)\.datetime\(\)/);
   assert.match(verifyRegion, /verifyPreparedResume\(proof\)/);
+});
+
+test('local MCP prompt includes the complete contract-v2 resume proof gate', () => {
+  const promptRegion = SERVER_SRC.slice(
+    SERVER_SRC.indexOf("server.registerPrompt('trackly-apply'"),
+    SERVER_SRC.indexOf("server.registerResource('trackly-apply-protocol'"),
+  );
+  assert.match(promptRegion, /Prepare the run-bound resume locally/);
+  assert.match(promptRegion, /exact path, filename, size, SHA-256, run, and expiration/);
+  assert.match(promptRegion, /obtain my explicit confirmation/);
+  assert.match(promptRegion, /Immediately before attachment, use the local verifier/);
+  assert.match(promptRegion, /lock the file read-only/);
+});
+
+test('resume preparation requires backend confirmation for the exact active run', () => {
+  const prepareRegion = AGENT_SRC.slice(
+    AGENT_SRC.indexOf('async function prepareResume'),
+    AGENT_SRC.indexOf('async function doctorAgent'),
+  );
+  assert.match(prepareRegion, /default-resume\?runId=\$\{normalizedRunId\}/);
+  assert.match(prepareRegion, /Number\(download\.applyRunId\) !== normalizedRunId/);
 });
 
 test('CLI + MCP use new /jobscout/tracker/jobs/:id/stage endpoint (not removed /jobscout-tracker/status)', () => {
