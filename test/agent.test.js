@@ -277,6 +277,19 @@ test('agent doctor distinguishes missing resumes from failed validation', () => 
   assert.equal(agent.resumeValidationStatus({ profile: { hasDefaultResume: true }, resume: { verified: true } }), 'passed');
 });
 
+test('resume preparation keeps CLI and MCP attribution distinct', () => {
+  assert.match(agent.CLI_USER_AGENT, /^trackly-cli\//);
+  assert.match(agent.MCP_USER_AGENT, /^trackly-mcp\//);
+  assert.notEqual(agent.CLI_USER_AGENT, agent.MCP_USER_AGENT);
+});
+
+test('resume cache names remain unique within the same millisecond', () => {
+  const first = agent.resumeCacheName('resume.pdf', 'application/pdf', 1234, 'aaaaaaaa');
+  const second = agent.resumeCacheName('resume.pdf', 'application/pdf', 1234, 'bbbbbbbb');
+  assert.notEqual(first, second);
+  assert.match(first, /^1234-aaaaaaaa-resume\.pdf$/);
+});
+
 test('resume cache removes only expired files', () => {
   withTempAgentHome(() => {
     const dir = agent.cacheDir();
