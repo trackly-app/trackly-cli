@@ -60,3 +60,15 @@ test('local MCP has no uncontracted Trackly Apply tools', () => {
     .sort();
   assert.deepEqual(names, Object.keys(contract.tools).sort());
 });
+
+test('Apply contract makes maintenance resumable without duplicate runs or submission', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  assert.match(skill, /Treat maintenance as resumable, never retryable/);
+  assert.match(skill, /Do not call `trackly_start_apply_run` again/);
+  assert.match(skill, /refetch `trackly_get_apply_protocol` and the application profile/);
+  assert.match(skill, /Never click Submit/);
+
+  assert.match(source, /If maintenance interrupts an existing run, do not call this tool again/);
+  assert.match(source, /resume the existing agent_browser run/);
+  assert.match(source, /Never start a duplicate run, blindly retry a mutation, or click Submit/);
+});

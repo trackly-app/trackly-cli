@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-07-14
+
+### Fixed
+
+- Canonical `maintenance_mode` responses now retain HTTP/service status, retry time, ETA, and request ID across REST requests, OAuth refresh, resume downloads, human/JSON CLI output, and local MCP errors; `planned_maintenance` remains a compatibility alias only.
+- Maintenance no longer clears valid OAuth credentials or triggers a blind retry. Trackly Apply now waits, refetches protocol/profile state, and resumes the existing browser run without creating a duplicate or clicking Submit.
+- The bundled Trackly Apply skill is versioned `1.0.1`, so `agent doctor` marks pre-maintenance `1.0.0` installs stale and `agent setup` replaces them with the new recovery rules.
+
 ## [0.5.1] - 2026-07-13
 
 ### Fixed

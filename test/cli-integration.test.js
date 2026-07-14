@@ -17,7 +17,7 @@ const { createTempConfigDir, seedApiKey, startMockServer, runCli } = require('./
 
 // Spin up a temp config (seeded API key) + mock server, run the CLI, return the
 // captured requests and the child result. `respond(req)` may return {status, json}.
-async function runAgainstMock(t, args, respond) {
+async function runAgainstMock(t, args, respond, childEnv = {}) {
   const dir = createTempConfigDir();
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   seedApiKey(dir);
@@ -43,6 +43,7 @@ async function runAgainstMock(t, args, respond) {
   const result = await runCli(args, {
     TRACKLY_CONFIG_DIR: dir,
     TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    ...childEnv,
   });
   return { requests, result };
 }
@@ -143,6 +144,64 @@ test('--json mode emits parseable JSON on stdout', async (t) => {
   assert.equal(parsed[0].id, 1);
 });
 
+test('--json preserves canonical maintenance status, retry, ETA, and request ID', async (t) => {
+  const { result } = await runAgainstMock(t, ['jobs', '--json'], () => ({
+    status: 503,
+    headers: {
+      'Content-Type': 'application/json',
+      'Retry-After': '480',
+      'X-Request-Id': 'req-cli-json',
+      'X-Trackly-Maintenance': 'maintenance_mode',
+    },
+    body: JSON.stringify({
+      success: false,
+      status: 'maintenance',
+      code: 'maintenance_mode',
+      message: 'Trackly is migrating.',
+      estimatedReturn: '10:00 AM PT',
+      retryAfterSeconds: 480,
+    }),
+  }));
+
+  assert.notEqual(result.code, 0);
+  assert.equal(result.stderr, '');
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.status, 503);
+  assert.equal(parsed.serviceStatus, 'maintenance');
+  assert.equal(parsed.code, 'maintenance_mode');
+  assert.equal(parsed.retryAfterSeconds, 480);
+  assert.equal(parsed.estimatedReturn, '10:00 AM PT');
+  assert.equal(parsed.requestId, 'req-cli-json');
+  assert.equal(parsed.retryable, false);
+  assert.match(parsed.guidance, /resume the existing agent_browser run/);
+});
+
+test('Apply maintenance emits resume guidance and never retries the mutation', async (t) => {
+  let responseCount = 0;
+  const { requests, result } = await runAgainstMock(t, ['apply', '1234', '--json'], () => {
+    responseCount++;
+    return {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'maintenance',
+        code: 'maintenance_mode',
+        message: 'Tracker writes are paused.',
+        retryAfterSeconds: 120,
+      }),
+    };
+  });
+
+  assert.notEqual(result.code, 0);
+  assert.equal(requests.length, 1, 'maintenance must not repeat the Apply mutation');
+  assert.equal(responseCount, 1);
+  assert.equal(requests[0].method, 'POST');
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.code, 'maintenance_mode');
+  assert.equal(parsed.retryable, false);
+  assert.match(parsed.guidance, /Never create a duplicate run or click Submit/);
+});
+
 test('unknown flag is rejected with a did-you-mean suggestion', async (t) => {
   const { requests, result } = await runAgainstMock(t, ['jobs', '--regoin', 'us']);
   assert.notEqual(result.code, 0);
@@ -217,6 +276,71 @@ test('agent doctor validates the downloaded default resume before reporting read
   assert.equal(report.resume.verified, false);
   assert.match(report.resume.error, /Unsupported or invalid resume type/);
   assert.notEqual(result.code, 0);
+});
+
+test('agent doctor renders resume maintenance through the real human output path', async (t) => {
+  const { result } = await runAgainstMock(t, ['agent', 'doctor'], (req) => {
+    if (req.url === '/api/jobscout/apply/protocol') {
+      return { json: { protocol: { compatibleSkillMajor: 1 } } };
+    }
+    if (req.url === '/api/jobscout/application-profile') {
+      return { json: { profile: { revision: 1, completeness: { percent: 100, missingKeys: [] }, defaultResume: { id: 7 } } } };
+    }
+    if (req.url === '/api/jobscout/application-profile/default-resume') {
+      return {
+        status: 503,
+        headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'req-doctor-resume' },
+        body: JSON.stringify({
+          status: 'maintenance',
+          code: 'maintenance_mode',
+          message: 'Resume storage is paused.',
+          retryAfterSeconds: 120,
+        }),
+      };
+    }
+    return { status: 404, json: { error: 'not found' } };
+  }, {
+    NODE_OPTIONS: `--require=${path.join(__dirname, 'force-tty.js')}`,
+    NO_COLOR: '1',
+  });
+
+  assert.notEqual(result.code, 0);
+  assert.equal(result.stderr, '');
+  assert.match(result.stdout, /Resume: Trackly is upgrading Resume storage is paused/);
+  assert.match(result.stdout, /Code: maintenance_mode; HTTP status: 503; service status: maintenance/);
+  assert.match(result.stdout, /Request ID: req-doctor-resume/);
+  assert.match(result.stdout, /resume the existing agent_browser run/);
+});
+
+test('agent doctor renders API maintenance through the real human output path', async (t) => {
+  const { result } = await runAgainstMock(t, ['agent', 'doctor'], (req) => {
+    if (req.url === '/api/jobscout/apply/protocol') {
+      return {
+        status: 503,
+        headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'req-doctor-api' },
+        body: JSON.stringify({
+          status: 'maintenance',
+          code: 'maintenance_mode',
+          message: 'The Apply API is paused.',
+          estimatedReturn: '10:45 AM PT',
+        }),
+      };
+    }
+    if (req.url === '/api/jobscout/application-profile') {
+      return { json: { profile: { revision: 1, completeness: { percent: 100, missingKeys: [] }, defaultResume: null } } };
+    }
+    return { status: 404, json: { error: 'not found' } };
+  }, {
+    NODE_OPTIONS: `--require=${path.join(__dirname, 'force-tty.js')}`,
+    NO_COLOR: '1',
+  });
+
+  assert.notEqual(result.code, 0);
+  assert.equal(result.stderr, '');
+  assert.match(result.stdout, /API: Trackly is upgrading The Apply API is paused/);
+  assert.match(result.stdout, /Code: maintenance_mode; HTTP status: 503; service status: maintenance/);
+  assert.match(result.stdout, /Request ID: req-doctor-api/);
+  assert.match(result.stdout, /resume the existing agent_browser run/);
 });
 
 test('agent setup does not treat similarly named Codex MCP tables as registered', async (t) => {

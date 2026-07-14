@@ -10,6 +10,7 @@ const {
   getBaseUrl,
   getConfigPaths,
   hasAuth,
+  maintenanceOutput,
   loadConfig,
   saveConfig,
 } = require('../lib/client');
@@ -206,6 +207,31 @@ function failNow(message, exitCode = 1) {
 
 function setErrorExit(message, exitCode = 1) {
   outputError(message);
+  process.exitCode = exitCode;
+}
+
+function formatMaintenanceForHuman(maintenance) {
+  const context = [
+    maintenance.message,
+    `Code: ${maintenance.code}; HTTP status: ${maintenance.status}; service status: ${maintenance.serviceStatus}.`,
+  ];
+  if (maintenance.requestId) context.push(`Request ID: ${maintenance.requestId}.`);
+  context.push(maintenance.guidance);
+  return context.join('\n');
+}
+
+function setApiErrorExit(error, fallbackMessage, exitCode = 1) {
+  const maintenance = maintenanceOutput(error);
+  if (!maintenance) {
+    setErrorExit(error?.error || error?.message || fallbackMessage, exitCode);
+    return;
+  }
+
+  if (isJSON()) {
+    printJson(maintenance);
+  } else {
+    outputError(formatMaintenanceForHuman(maintenance));
+  }
   process.exitCode = exitCode;
 }
 
@@ -460,7 +486,7 @@ async function cmdWhoami() {
       setErrorExit(AUTH_HELP_TEXT);
     }
   } catch (e) {
-    setErrorExit(e.error || e.message || 'Failed to get user info');
+    setApiErrorExit(e, 'Failed to get user info');
   }
 }
 
@@ -500,7 +526,7 @@ async function cmdJobs(args) {
       console.log(color('dim', `Showing ${(result.jobs || result.data || []).length} of ${result.total} jobs`));
     }
   } catch (e) {
-    setErrorExit(e.error || e.message || 'Failed to fetch jobs');
+    setApiErrorExit(e, 'Failed to fetch jobs');
   }
 }
 
@@ -526,7 +552,7 @@ async function cmdJob(args) {
       if (job.description.length > 1000) console.log(color('dim', '... (truncated)'));
     }
   } catch (e) {
-    setErrorExit(e.error || e.message || 'Failed to fetch job');
+    setApiErrorExit(e, 'Failed to fetch job');
   }
 }
 
@@ -542,7 +568,7 @@ async function cmdCompanies(args) {
     const result = await apiRequest('GET', `/api/jobscout/companies${qs ? '?' + qs : ''}`);
     outputCompanies(result.companies || result.data || []);
   } catch (e) {
-    setErrorExit(e.error || e.message || 'Failed to fetch companies');
+    setApiErrorExit(e, 'Failed to fetch companies');
   }
 }
 
@@ -555,7 +581,7 @@ async function cmdSearch(args) {
     const result = await apiRequest('GET', `/api/jobscout/companies/search?q=${encodeURIComponent(query)}`);
     outputCompanies(result.companies || result.results || []);
   } catch (e) {
-    setErrorExit(e.error || e.message || 'Failed to search');
+    setApiErrorExit(e, 'Failed to search');
   }
 }
 
@@ -566,7 +592,7 @@ async function cmdStats() {
     const result = await apiRequest('GET', '/api/jobscout/me');
     outputStats(result);
   } catch (e) {
-    setErrorExit(e.error || e.message || 'Failed to fetch stats');
+    setApiErrorExit(e, 'Failed to fetch stats');
   }
 }
 
@@ -598,7 +624,7 @@ async function cmdUpdateStatus(id, action) {
     if (isJSON()) return printJson(result);
     console.log(color('green', `Job ${jobId} marked as ${STATUS_LABELS[action]}.`));
   } catch (e) {
-    setErrorExit(e.error || e.message || `Failed to ${action} job`);
+    setApiErrorExit(e, `Failed to ${action} job`);
   }
 }
 
@@ -634,7 +660,7 @@ async function cmdAsk(args) {
     }
   } catch (e) {
     if (e.status === 429) setErrorExit('Daily limit reached (20 natural language queries per day)');
-    else setErrorExit(e.error || e.message || 'Failed to process query');
+    else setApiErrorExit(e, 'Failed to process query');
   }
 }
 
@@ -653,7 +679,7 @@ async function cmdApiKey(args) {
       console.log(color('yellow', 'Save this key — it cannot be shown again.'));
       console.log(color('dim', 'Tip: run `trackly config --api-key <key>` or set TRACKLY_API_KEY to use it.'));
     } catch (e) {
-      setErrorExit(e.error || e.message || 'Failed to create API key');
+      setApiErrorExit(e, 'Failed to create API key');
     }
   } else if (subcommand === 'list') {
     try {
@@ -663,7 +689,7 @@ async function cmdApiKey(args) {
         console.log(`${color('bold', key.key_prefix + '...')} — ${key.name} (created ${key.created_at})`);
       }
     } catch (e) {
-      setErrorExit(e.error || e.message || 'Failed to list keys');
+      setApiErrorExit(e, 'Failed to list keys');
     }
   } else {
     failNow('Unknown api-key subcommand. Use: trackly api-key create | list');
@@ -687,7 +713,7 @@ async function cmdContacts(args) {
       console.log(color('dim', `Showing ${(result.contacts || result.people || result.data || []).length} of ${result.total} contacts`));
     }
   } catch (e) {
-    setErrorExit(e.error || e.message || 'Failed to fetch contacts');
+    setApiErrorExit(e, 'Failed to fetch contacts');
   }
 }
 
@@ -701,7 +727,7 @@ async function cmdReferralStart(args) {
     if (isJSON()) return printJson(result);
     outputReferralCampaign(result.campaign || result);
   } catch (e) {
-    setErrorExit(e.error || e.message || 'Failed to start referral campaign');
+    setApiErrorExit(e, 'Failed to start referral campaign');
   }
 }
 
@@ -715,7 +741,7 @@ async function cmdReferralStatus(args) {
     if (isJSON()) return printJson(result);
     outputReferralCampaign(result.campaign || result);
   } catch (e) {
-    setErrorExit(e.error || e.message || 'Failed to fetch referral campaign status');
+    setApiErrorExit(e, 'Failed to fetch referral campaign status');
   }
 }
 
@@ -729,7 +755,7 @@ async function cmdBrief(args) {
     if (isJSON()) return printJson(result);
     outputNetworkBrief(result.brief || result);
   } catch (e) {
-    setErrorExit(e.error || e.message || 'Failed to fetch network brief');
+    setApiErrorExit(e, 'Failed to fetch network brief');
   }
 }
 
@@ -755,7 +781,7 @@ async function cmdCompanyBrief(args) {
       }
     }
   } catch (e) {
-    setErrorExit(e.error || e.message || 'Failed to fetch company brief');
+    setApiErrorExit(e, 'Failed to fetch company brief');
   }
 }
 
@@ -769,7 +795,7 @@ async function cmdCompanyWorkspace(args) {
     if (isJSON()) return printJson(result);
     outputCompanyWorkspace(result.workspace || result);
   } catch (e) {
-    setErrorExit(e.error || e.message || 'Failed to fetch company workspace');
+    setApiErrorExit(e, 'Failed to fetch company workspace');
   }
 }
 
@@ -801,11 +827,11 @@ async function cmdRequestCompany(args) {
     // with a specific `error` message. Surface that message verbatim so the user knows
     // exactly which gate fired without having to enable --json.
     if (e.status === 429) {
-      setErrorExit(e.error || 'Maximum 5 pending requests allowed. Please wait for existing requests to be reviewed.');
+      setApiErrorExit(e, 'Maximum 5 pending requests allowed. Please wait for existing requests to be reviewed.');
     } else if (e.status === 409) {
-      setErrorExit(e.error || 'You already have a pending request for this company.');
+      setApiErrorExit(e, 'You already have a pending request for this company.');
     } else {
-      setErrorExit(e.error || e.message || 'Failed to request company');
+      setApiErrorExit(e, 'Failed to request company');
     }
   }
 }
@@ -940,8 +966,17 @@ async function cmdAgent(args) {
       }
     }
     console.log(`Resume validation: ${resumeValidationStatus(report)}`);
-    if (report.resume?.error) console.log(color('yellow', `Resume: ${report.resume.error}`));
-    if (report.apiError) console.log(color('yellow', `API: ${report.apiError}`));
+    if (report.resume?.maintenance) {
+      console.log(color('yellow', `Resume: ${formatMaintenanceForHuman(report.resume.maintenance)}`));
+    } else if (report.resume?.error) {
+      console.log(color('yellow', `Resume: ${report.resume.error}`));
+    }
+    if (report.apiError) {
+      const apiErrorMessage = typeof report.apiError === 'string'
+        ? report.apiError
+        : formatMaintenanceForHuman(report.apiError);
+      console.log(color('yellow', `API: ${apiErrorMessage}`));
+    }
     console.log(report.browserControl.note);
     return;
   }
@@ -1169,14 +1204,14 @@ async function main() {
 
 if (require.main === module) {
   main().catch((e) => {
-    outputError(e.message || String(e));
-    process.exit(1);
+    setApiErrorExit(e, 'Unexpected Trackly CLI failure');
   });
 }
 
 module.exports = {
   COMMAND_FLAGS,
   UNIVERSAL_FLAGS,
+  formatMaintenanceForHuman,
   getPublicConfig,
   hasJobListFilters,
   levenshtein,
