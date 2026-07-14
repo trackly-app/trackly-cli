@@ -10,7 +10,7 @@
  *
  * Source-of-truth citations (Codex can verify these against close-ai repo):
  *   - sort:       close-ai/src/routes/jobscout.ts:3053  (newest | match)
- *   - status:     close-ai/src/routes/jobscout.ts:2949  (new | applying | applied_confirmed | check_later | not_interested | all)
+ *   - status:     public canonical pipeline states (legacy applying remains server-side compatibility only)
  *   - function:   close-ai/src/routes/jobscout-filter-utils.ts:17-21  (14 values incl. partnerships)
  *   - modality:   close-ai/src/routes/jobscout.ts:2870-2875  (full_time | internship | all)
  *   - regions:    close-ai/src/services/region-classifier.ts:8  (10 values)
@@ -56,11 +56,11 @@ test('MCP JOB_MODALITIES matches backend is_internship column semantics', () => 
   assert.ok(!mods.includes('onsite'), 'onsite is not a supported jobModality value');
 });
 
-test('MCP STATUS_VALUES matches backend jobscout.ts:2949 allowlist', () => {
+test('MCP STATUS_VALUES exposes only canonical public pipeline states', () => {
   const statuses = extractArrayLiteral(SERVER_SRC, 'STATUS_VALUES');
   assert.deepEqual(
     statuses,
-    ['new', 'applying', 'applied_confirmed', 'check_later', 'not_interested', 'all']
+    ['new', 'applied_confirmed', 'check_later', 'not_interested', 'all']
   );
   // Guard against the pre-PR-14 values that the backend 400s on:
   for (const bad of ['saved', 'applied', 'dismissed']) {

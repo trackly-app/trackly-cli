@@ -31,8 +31,9 @@ const JOB_FUNCTIONS = [
   'finance', 'strategy', 'operations', 'people', 'legal', 'support', 'other',
 ];
 
-// `status` enum matches the backend allowlist at `jobscout.ts:2949`.
-const STATUS_VALUES = ['new', 'applying', 'applied_confirmed', 'check_later', 'not_interested', 'all'];
+// Public canonical states. The backend privately accepts retired aliases for
+// old clients, but new MCP clients must never emit them.
+const STATUS_VALUES = ['new', 'applied_confirmed', 'check_later', 'not_interested', 'all'];
 
 // `jobModality` enum matches `jobscout.ts:2870-2875`. Employment type, NOT work-location.
 const JOB_MODALITIES = ['full_time', 'internship', 'all'];
