@@ -2,12 +2,14 @@
 
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
+const { McpError } = require('@modelcontextprotocol/sdk/types.js');
 const { z } = require('zod');
-const { apiRequest, hasAuth } = require('../lib/client');
+const { apiRequest, hasAuth, maintenanceOutput } = require('../lib/client');
 const { prepareResume } = require('../lib/agent');
 const { version: PACKAGE_VERSION } = require('../package.json');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
+const MCP_MAINTENANCE_ERROR_CODE = -32002;
 const AUTH_HINT = 'Run `trackly login` or set TRACKLY_API_KEY. Get a key at https://usetrackly.app (sign in → Settings → API Keys).';
 
 // Mirrors `granola-followup-app/src/services/region-classifier.ts:8` REGION_TAGS.
@@ -49,10 +51,17 @@ const SORT_VALUES = ['newest', 'match'];
 const ACTION_TO_STAGE = { applied: 'applied', saved: 'backlog', dismissed: 'discarded' };
 
 function createErrorResult(error, fallbackMessage, extra = {}) {
-  const payload = {
-    error: error?.error || error?.message || fallbackMessage,
-    ...extra,
-  };
+  const normalizedMaintenance = maintenanceOutput(error);
+  const payload = normalizedMaintenance
+    ? {
+        ...normalizedMaintenance,
+        error: error?.error || error?.message || fallbackMessage,
+        ...extra,
+      }
+    : {
+        error: error?.error || error?.message || fallbackMessage,
+        ...extra,
+      };
 
   if (error?.status) {
     payload.status = error.status;
@@ -74,6 +83,18 @@ function createAuthErrorResult() {
     'Not authenticated',
     { hint: AUTH_HINT }
   );
+}
+
+function throwMcpResourceError(error) {
+  const normalizedMaintenance = maintenanceOutput(error);
+  if (normalizedMaintenance) {
+    throw new McpError(
+      MCP_MAINTENANCE_ERROR_CODE,
+      normalizedMaintenance.message,
+      normalizedMaintenance,
+    );
+  }
+  throw error;
 }
 
 function wrapTool(handler, fallbackMessage) {
@@ -396,14 +417,14 @@ function createServer() {
 
   server.tool(
     'trackly_start_apply_run',
-    'Start a manual-submit browser run for a job already in the approved queue.',
+    'Start a manual-submit browser run for a job already in the approved queue. If maintenance interrupts an existing run, do not call this tool again: wait, refetch protocol/profile state, and resume that same run.',
     { jobId: z.number().int().min(1), clientName: z.string().max(100).optional() },
     wrapTool(async (params) => apiRequest('POST', '/api/jobscout/apply/runs', params, false, false, MCP_USER_AGENT), 'Failed to start apply run')
   );
 
   server.tool(
     'trackly_get_apply_protocol',
-    'Get the current browser workflow, ATS support matrix, integrity rules, and compatible public-skill major version. Fetch at the start of every run.',
+    'Get the current browser workflow, ATS support matrix, integrity rules, and compatible public-skill major version. Fetch at the start of every run and again after maintenance before resuming the existing run.',
     {},
     wrapTool(async () => apiRequest('GET', '/api/jobscout/apply/protocol', null, false, false, MCP_USER_AGENT), 'Failed to fetch apply protocol')
   );
@@ -453,7 +474,7 @@ function createServer() {
       role: 'user',
       content: {
         type: 'text',
-        text: 'Fetch the Trackly Apply protocol and profile onboarding, resolve missing answers with me, start the next approved queue run, fill the form, verify every required field, and stop before Submit.',
+        text: 'Fetch the Trackly Apply protocol and profile onboarding, resolve missing answers with me, start the next approved queue run, fill the form, verify every required field, and stop before Submit. If maintenance interrupts the run, retain the run and browser context, wait for the advertised window, refetch protocol and profile state, and resume the existing agent_browser run. Never start a duplicate run, blindly retry a mutation, or click Submit.',
       },
     }],
   }));
@@ -463,8 +484,12 @@ function createServer() {
     description: 'Versioned browser mechanics and compatibility contract.',
     mimeType: 'application/json',
   }, async (uri) => {
-    const result = await apiRequest('GET', '/api/jobscout/apply/protocol', null, false, false, MCP_USER_AGENT);
-    return { contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(result) }] };
+    try {
+      const result = await apiRequest('GET', '/api/jobscout/apply/protocol', null, false, false, MCP_USER_AGENT);
+      return { contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(result) }] };
+    } catch (error) {
+      return throwMcpResourceError(error);
+    }
   });
 
   return server;
@@ -490,4 +515,5 @@ module.exports = {
   createErrorResult,
   createServer,
   startMcpServer,
+  throwMcpResourceError,
 };

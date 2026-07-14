@@ -143,6 +143,64 @@ test('--json mode emits parseable JSON on stdout', async (t) => {
   assert.equal(parsed[0].id, 1);
 });
 
+test('--json preserves canonical maintenance status, retry, ETA, and request ID', async (t) => {
+  const { result } = await runAgainstMock(t, ['jobs', '--json'], () => ({
+    status: 503,
+    headers: {
+      'Content-Type': 'application/json',
+      'Retry-After': '480',
+      'X-Request-Id': 'req-cli-json',
+      'X-Trackly-Maintenance': 'maintenance_mode',
+    },
+    body: JSON.stringify({
+      success: false,
+      status: 'maintenance',
+      code: 'maintenance_mode',
+      message: 'Trackly is migrating.',
+      estimatedReturn: '10:00 AM PT',
+      retryAfterSeconds: 480,
+    }),
+  }));
+
+  assert.notEqual(result.code, 0);
+  assert.equal(result.stderr, '');
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.status, 503);
+  assert.equal(parsed.serviceStatus, 'maintenance');
+  assert.equal(parsed.code, 'maintenance_mode');
+  assert.equal(parsed.retryAfterSeconds, 480);
+  assert.equal(parsed.estimatedReturn, '10:00 AM PT');
+  assert.equal(parsed.requestId, 'req-cli-json');
+  assert.equal(parsed.retryable, false);
+  assert.match(parsed.guidance, /resume the existing agent_browser run/);
+});
+
+test('Apply maintenance emits resume guidance and never retries the mutation', async (t) => {
+  let responseCount = 0;
+  const { requests, result } = await runAgainstMock(t, ['apply', '1234', '--json'], () => {
+    responseCount++;
+    return {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'maintenance',
+        code: 'maintenance_mode',
+        message: 'Tracker writes are paused.',
+        retryAfterSeconds: 120,
+      }),
+    };
+  });
+
+  assert.notEqual(result.code, 0);
+  assert.equal(requests.length, 1, 'maintenance must not repeat the Apply mutation');
+  assert.equal(responseCount, 1);
+  assert.equal(requests[0].method, 'POST');
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.code, 'maintenance_mode');
+  assert.equal(parsed.retryable, false);
+  assert.match(parsed.guidance, /Never create a duplicate run or click Submit/);
+});
+
 test('unknown flag is rejected with a did-you-mean suggestion', async (t) => {
   const { requests, result } = await runAgainstMock(t, ['jobs', '--regoin', 'us']);
   assert.notEqual(result.code, 0);

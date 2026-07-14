@@ -97,6 +97,10 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 - **trackly_record_application_outcome** — Record review readiness or a confirmed manual submission.
 - **trackly_prepare_resume** — Local MCP only: materialize the default resume in a private, expiring mode-0600 cache. Hosted MCP returns a manual/local-agent requirement.
 
+### Maintenance behavior
+
+REST, refresh, download, CLI, and local/hosted MCP surfaces use canonical `code: "maintenance_mode"`; older `planned_maintenance` responses are accepted only as a compatibility alias. Structured errors retain HTTP and service status, retry time, estimated return, and request ID without clearing valid credentials. Maintenance is resumable rather than retryable: wait for the advertised window, refetch the Apply protocol and profile, then resume the existing `agent_browser` run. Never create a duplicate run or click Submit.
+
 > **Why no `trackly_chat` here (intentional, not drift):** the hosted connector exposes one extra tool, `trackly_chat`, that runs a backend agent over these same primitives. The local MCP client is already an agent, so `trackly_chat` remains deliberately hosted-only.
 
 ### Example Prompts
