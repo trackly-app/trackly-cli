@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-13
+
+### Fixed
+
+- Claude agent setup now recovers when stale config metadata references Trackly but Claude's user-scoped MCP registry already removed it, while preserving every other removal failure.
+
 ## [0.5.0] - 2026-07-13
 
 ### Added
