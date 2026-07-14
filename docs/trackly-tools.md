@@ -99,6 +99,8 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 - **trackly_prepare_resume** — Local MCP only: materialize the default resume in a private, expiring mode-0600 cache and return filename, size, SHA-256, exact local path, and visual-confirmation metadata. Hosted MCP returns a manual/local-agent requirement.
 - **trackly_verify_prepared_resume** — Local MCP only: immediately before attachment, recompute the user-confirmed resume hash and size, validate the exact path/run/expiration, and lock the file read-only. Any mismatch requires a fresh preview and confirmation.
 
+Apply contract v2 intentionally gives this verifier different local and hosted schemas: local MCP receives the full proof needed to inspect the private file, while hosted MCP accepts only run and confirmation identifiers and returns the manual/local-agent requirement. Local paths and fingerprints are never sent to the hosted verifier.
+
 ### Maintenance behavior
 
 REST, refresh, download, CLI, and local/hosted MCP surfaces use canonical `code: "maintenance_mode"`; older `planned_maintenance` responses are accepted only as a compatibility alias. Structured errors retain HTTP and service status, retry time, estimated return, and request ID without clearing valid credentials. Maintenance is resumable rather than retryable: wait for the advertised window, refetch the Apply protocol and profile, then resume the existing `agent_browser` run. Never create a duplicate run or click Submit.

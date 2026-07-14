@@ -49,7 +49,8 @@ const normalizeSchema = (schema) => schema.replace(/\s+/g, '').replace(/,([}\]])
 test('local MCP Apply schemas match each complete versioned input schema', () => {
   assert.equal(contract.contractVersion, '2.0.0');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
-    assert.equal(normalizeSchema(toolArguments(name)[2]), expectedSchema, `${name} schema drifted`);
+    const localSchema = typeof expectedSchema === 'string' ? expectedSchema : expectedSchema.local;
+    assert.equal(normalizeSchema(toolArguments(name)[2]), localSchema, `${name} schema drifted`);
   }
 });
 

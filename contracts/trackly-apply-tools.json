@@ -10,6 +10,9 @@
     "trackly_report_apply_observation": "{runId:z.number().int().min(1).optional(),provider:z.string().min(1).max(100),fieldLabel:z.string().min(1).max(1000),observationType:z.string().min(1).max(100),resolutionCode:z.string().max(100).optional(),metadata:z.object({controlType:z.string().max(100).optional(),required:z.boolean().optional(),errorCode:z.string().max(100).optional(),committed:z.boolean().optional()}).optional()}",
     "trackly_record_application_outcome": "{runId:z.number().int().min(1),outcome:z.enum(['review_ready','submitted','failed','blocked']),confirmation:z.string().max(500).optional()}",
     "trackly_prepare_resume": "{runId:z.number().int().min(1)}",
-    "trackly_verify_prepared_resume": "{runId:z.number().int().min(1),confirmationId:z.string().min(1).max(200),exactLocalPath:z.string().min(1).max(4096),sha256:z.string().regex(/^[a-f0-9]{64}$/i),sizeBytes:z.number().int().min(1),expiresAt:z.string().datetime()}"
+    "trackly_verify_prepared_resume": {
+      "local": "{runId:z.number().int().min(1),confirmationId:z.string().min(1).max(200),exactLocalPath:z.string().min(1).max(4096),sha256:z.string().regex(/^[a-f0-9]{64}$/i),sizeBytes:z.number().int().min(1),expiresAt:z.string().datetime()}",
+      "hosted": "{runId:z.number().int().min(1),confirmationId:z.string().min(1).max(200)}"
+    }
   }
 }

@@ -395,6 +395,8 @@ test('resume materialization binds exact bytes, path, filename, permissions, and
     assert.deepEqual(fs.readFileSync(prepared.path), buffer);
     assert.equal(fs.statSync(prepared.path).mode & 0o777, 0o600);
     assert.equal(fs.statSync(path.dirname(prepared.path)).mode & 0o777, 0o700);
+    assert.equal(fs.statSync(path.join(path.dirname(prepared.path), '.trackly-resume-proof.json')).mode & 0o777, 0o400);
+    assert.equal(fs.statSync(path.join(process.env.TRACKLY_CONFIG_DIR, 'resume-proof.key')).mode & 0o777, 0o600);
     assert.equal(prepared.sha256, sha256);
     assert.equal(prepared.sizeBytes, buffer.length);
     assert.equal(prepared.confirmation.runId, 91);
@@ -452,11 +454,61 @@ test('pre-attach verification rejects changed or expired resume proof', () => {
       expiresAt: prepared.expiresAt,
     };
 
+    assert.throws(() => agent.verifyPreparedResume({ ...proof, runId: 92 }, now + 1000), /does not match the confirmed run/i);
+    assert.throws(() => agent.verifyPreparedResume({ ...proof, confirmationId: 'different-proof' }, now + 1000), /does not match the confirmed run/i);
+
     fs.writeFileSync(prepared.path, Buffer.from('%PDF-1.7\nchanged resume content'));
     assert.throws(() => agent.verifyPreparedResume(proof, now + 1000), /changed after confirmation/i);
 
     fs.writeFileSync(prepared.path, buffer);
     assert.throws(() => agent.verifyPreparedResume(proof, Date.parse(prepared.expiresAt)), /expired/i);
+  });
+});
+
+test('pre-attach verification rejects a modified signed proof manifest', () => {
+  withTempAgentHome(() => {
+    const now = Date.parse('2026-07-14T10:00:00.000Z');
+    const buffer = Buffer.from('%PDF-1.7\nconfirmed resume bytes');
+    const prepared = agent.materializeResume({
+      buffer,
+      contentType: 'application/pdf',
+      fileName: 'Resume - Candidate Name.pdf',
+      sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+    }, { runId: 91, now, nonce: 'aaaaaaaa', confirmationId: 'proof-123' });
+    const manifestPath = path.join(path.dirname(prepared.path), '.trackly-resume-proof.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.runId = 92;
+    fs.chmodSync(manifestPath, 0o600);
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+    fs.chmodSync(manifestPath, 0o400);
+
+    assert.throws(() => agent.verifyPreparedResume({
+      runId: 91,
+      confirmationId: 'proof-123',
+      exactLocalPath: prepared.path,
+      sha256: prepared.sha256,
+      sizeBytes: prepared.sizeBytes,
+      expiresAt: prepared.expiresAt,
+    }, now + 1000), /proof is invalid/i);
+  });
+});
+
+test('resume preparation rejects a symlinked proof-signing key', () => {
+  withTempAgentHome((root) => {
+    const externalKey = path.join(root, 'external-proof.key');
+    const keyPath = path.join(process.env.TRACKLY_CONFIG_DIR, 'resume-proof.key');
+    fs.mkdirSync(process.env.TRACKLY_CONFIG_DIR, { recursive: true });
+    fs.writeFileSync(externalKey, crypto.randomBytes(32), { mode: 0o600 });
+    fs.symlinkSync(externalKey, keyPath);
+    const buffer = Buffer.from('%PDF-1.7\nconfirmed resume bytes');
+
+    assert.throws(() => agent.materializeResume({
+      buffer,
+      contentType: 'application/pdf',
+      fileName: 'Resume - Candidate Name.pdf',
+      sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+    }, { runId: 91 }), /not a private regular file/i);
+    assert.deepEqual(fs.readdirSync(agent.cacheDir()), []);
   });
 });
 

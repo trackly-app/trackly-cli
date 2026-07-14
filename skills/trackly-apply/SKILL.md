@@ -40,7 +40,7 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
    - If an original local source path is known from the current session, identify it separately. Do not store original device paths in Trackly.
    - A generic profile page is not proof of the prepared file. Use an app or web deep link only when the current protocol supplies an authenticated exact-resume viewer tied to the same SHA-256.
    - If no exact preview method works, stop and ask the user to inspect the file manually.
-10. After the user confirms and immediately before attachment, call local `trackly_verify_prepared_resume` with the confirmed run ID, confirmation ID, exact path, SHA-256, size, and expiration. Continue only when it returns `verified: true` for exactly those values. The verifier recomputes the file hash and locks it read-only. If it is unavailable, expired, missing, or mismatched, stop; prepare and visually confirm a fresh copy or require manual upload.
+10. After the user confirms and immediately before attachment, call local `trackly_verify_prepared_resume` with the confirmed run ID, confirmation ID, exact path, SHA-256, size, and expiration. Continue only when it returns `verified: true` for exactly those values. The verifier validates the signed prepare-issued proof, recomputes the file hash, and locks it read-only. If it is unavailable, expired, missing, or mismatched, stop; prepare and visually confirm a fresh copy or require manual upload. Never send a local path or fingerprint to the hosted verifier.
 
 ## Resume after maintenance
 
