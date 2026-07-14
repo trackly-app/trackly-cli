@@ -22,10 +22,14 @@ endpoints, not this CLI repo.
 ## Directory Structure
 
 ```
-bin/trackly          # CLI entrypoint (shebang script). All 19 commands + arg parser + main()
+bin/trackly          # CLI entrypoint (shebang script). All 20 commands + arg parser + main()
+lib/agent.js         # Agent setup, doctor, private resume cache, and public skill installation
 lib/client.js        # HTTP client: config loading, token refresh, apiRequest()
 lib/formatters.js    # Terminal output: color(), outputJobs(), outputCompanies(), outputStats(), outputContacts(), outputReferralCampaign(), outputNetworkBrief()
 mcp/server.js        # MCP server: 20 tools, launched via `trackly mcp`
+contracts/           # Versioned hosted/local Trackly Apply MCP schema contract
+skills/trackly-apply/  # Sanitized public browser-mechanics skill bundled with the CLI
+scripts/             # Maintainer-only verification scripts; excluded from the public npm package
 docs/trackly-tools.md  # MCP tool reference (for embedding in AI contexts)
 server.json          # MCP Registry manifest (io.github.trackly-app/trackly)
 ```
