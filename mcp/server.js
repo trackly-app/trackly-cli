@@ -5,7 +5,7 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 const { McpError } = require('@modelcontextprotocol/sdk/types.js');
 const { z } = require('zod');
 const { apiRequest, hasAuth, maintenanceOutput } = require('../lib/client');
-const { prepareResume } = require('../lib/agent');
+const { prepareResume, verifyPreparedResume } = require('../lib/agent');
 const { version: PACKAGE_VERSION } = require('../package.json');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
@@ -472,6 +472,20 @@ function createServer() {
     'Download the authenticated default resume into a mode-0600 temporary Trackly cache and return exact-file proof for user confirmation before browser upload.',
     { runId: z.number().int().min(1) },
     wrapTool(async ({ runId }) => prepareResume(runId), 'Failed to prepare default resume')
+  );
+
+  server.tool(
+    'trackly_verify_prepared_resume',
+    'Immediately before attachment, recompute the prepared resume fingerprint, validate its run and expiration, and lock the confirmed file read-only.',
+    {
+      runId: z.number().int().min(1),
+      confirmationId: z.string().min(1).max(200),
+      exactLocalPath: z.string().min(1).max(4096),
+      sha256: z.string().regex(/^[a-f0-9]{64}$/i),
+      sizeBytes: z.number().int().min(1),
+      expiresAt: z.string().datetime(),
+    },
+    wrapTool(async (proof) => verifyPreparedResume(proof), 'Prepared resume integrity verification failed')
   );
 
   server.registerPrompt('trackly-apply', {

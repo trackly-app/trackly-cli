@@ -136,6 +136,20 @@ test('CLI help exposes no retired Applying pipeline state', () => {
   assert.match(binSrc, /--status[^\n]*new, applied_confirmed, check_later, not_interested, all/i);
 });
 
+test('local MCP exposes a pre-attach resume integrity verifier', () => {
+  const verifyRegion = SERVER_SRC.slice(
+    SERVER_SRC.indexOf("'trackly_verify_prepared_resume'"),
+    SERVER_SRC.indexOf("server.registerPrompt('trackly-apply'"),
+  );
+  assert.match(verifyRegion, /runId:\s*z\.number\(\)\.int\(\)\.min\(1\)/);
+  assert.match(verifyRegion, /confirmationId:\s*z\.string\(\)\.min\(1\)/);
+  assert.match(verifyRegion, /exactLocalPath:\s*z\.string\(\)\.min\(1\)/);
+  assert.match(verifyRegion, /sha256:\s*z\.string\(\)\.regex/);
+  assert.match(verifyRegion, /sizeBytes:\s*z\.number\(\)\.int\(\)\.min\(1\)/);
+  assert.match(verifyRegion, /expiresAt:\s*z\.string\(\)\.datetime\(\)/);
+  assert.match(verifyRegion, /verifyPreparedResume\(proof\)/);
+});
+
 test('CLI + MCP use new /jobscout/tracker/jobs/:id/stage endpoint (not removed /jobscout-tracker/status)', () => {
   const binSrc = fs.readFileSync(path.join(__dirname, '..', 'bin', 'trackly'), 'utf8');
   const mcpSrc = fs.readFileSync(path.join(__dirname, '..', 'mcp', 'server.js'), 'utf8');

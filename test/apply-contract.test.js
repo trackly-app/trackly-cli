@@ -56,7 +56,7 @@ test('local MCP Apply schemas match each complete versioned input schema', () =>
 test('local MCP has no uncontracted Trackly Apply tools', () => {
   const names = [...source.matchAll(/server\.tool\(\s*['"]([^'"]+)['"]/g)]
     .map((match) => match[1])
-    .filter((name) => name.includes('apply') || name.includes('application_profile') || name.includes('application_outcome') || name.includes('profile_onboarding') || name === 'trackly_prepare_resume')
+    .filter((name) => name.includes('apply') || name.includes('application_profile') || name.includes('application_outcome') || name.includes('profile_onboarding') || name === 'trackly_prepare_resume' || name === 'trackly_verify_prepared_resume')
     .sort();
   assert.deepEqual(names, Object.keys(contract.tools).sort());
 });

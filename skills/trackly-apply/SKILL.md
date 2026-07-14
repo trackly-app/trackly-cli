@@ -40,6 +40,7 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
    - If an original local source path is known from the current session, identify it separately. Do not store original device paths in Trackly.
    - A generic profile page is not proof of the prepared file. Use an app or web deep link only when the current protocol supplies an authenticated exact-resume viewer tied to the same SHA-256.
    - If no exact preview method works, stop and ask the user to inspect the file manually.
+10. After the user confirms and immediately before attachment, call local `trackly_verify_prepared_resume` with the confirmed run ID, confirmation ID, exact path, SHA-256, size, and expiration. Continue only when it returns `verified: true` for exactly those values. The verifier recomputes the file hash and locks it read-only. If it is unavailable, expired, missing, or mismatched, stop; prepare and visually confirm a fresh copy or require manual upload.
 
 ## Resume after maintenance
 
@@ -59,7 +60,7 @@ Follow this order:
 
 1. Open the application in the controlled browser context and confirm the employer, role, ATS host, and HTTPS URL.
 2. Inspect the whole form and identify required fields, semantic controls, consent controls, document inputs, and multi-step sections.
-3. Only after the exact-hash visual confirmation, upload the prepared resume before autofill when parsing may overwrite contact fields. Verify that the filename chip exactly matches the prepared resume’s user-facing filename and contains no internal cache identifier. Stop and replace the attachment if it does not.
+3. Only after the exact-hash visual confirmation and a successful immediate pre-attach `trackly_verify_prepared_resume` check, upload the prepared resume before autofill when parsing may overwrite contact fields. Do not change the file between verification and attachment. Verify that the filename chip exactly matches the prepared resume’s user-facing filename and contains no internal cache identifier. Stop and replace the attachment if it does not.
 4. Fill typed fields from the resolved Trackly profile. Clear parser-filled data when the canonical state is intentionally blank.
 5. Use real UI clicks for React/native selects, radios, and checkboxes. After every selection, verify the committed value and disappearance of the required-field error.
 6. Recheck email and phone through both browser DOM state and macOS accessibility state. Require exact values and reject duplicate/concatenated values.

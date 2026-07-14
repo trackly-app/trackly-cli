@@ -405,6 +405,84 @@ test('resume materialization binds exact bytes, path, filename, permissions, and
   });
 });
 
+test('pre-attach verification rehashes the confirmed file and locks it read-only', () => {
+  withTempAgentHome(() => {
+    const now = Date.parse('2026-07-14T10:00:00.000Z');
+    const buffer = Buffer.from('%PDF-1.7\nconfirmed resume bytes');
+    const prepared = agent.materializeResume({
+      buffer,
+      contentType: 'application/pdf',
+      fileName: 'Resume - Candidate Name.pdf',
+      sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+    }, { runId: 91, now, nonce: 'aaaaaaaa', confirmationId: 'proof-123' });
+
+    const result = agent.verifyPreparedResume({
+      runId: prepared.confirmation.runId,
+      confirmationId: prepared.confirmation.confirmationId,
+      exactLocalPath: prepared.path,
+      sha256: prepared.sha256,
+      sizeBytes: prepared.sizeBytes,
+      expiresAt: prepared.expiresAt,
+    }, now + 1000);
+
+    assert.equal(result.verified, true);
+    assert.equal(result.sha256, prepared.sha256);
+    assert.equal(result.exactLocalPath, prepared.path);
+    assert.equal(result.permissions, '400');
+    assert.equal(fs.statSync(prepared.path).mode & 0o777, 0o400);
+  });
+});
+
+test('pre-attach verification rejects changed or expired resume proof', () => {
+  withTempAgentHome(() => {
+    const now = Date.parse('2026-07-14T10:00:00.000Z');
+    const buffer = Buffer.from('%PDF-1.7\nconfirmed resume bytes');
+    const prepared = agent.materializeResume({
+      buffer,
+      contentType: 'application/pdf',
+      fileName: 'Resume - Candidate Name.pdf',
+      sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+    }, { runId: 91, now, nonce: 'aaaaaaaa', confirmationId: 'proof-123' });
+    const proof = {
+      runId: 91,
+      confirmationId: 'proof-123',
+      exactLocalPath: prepared.path,
+      sha256: prepared.sha256,
+      sizeBytes: prepared.sizeBytes,
+      expiresAt: prepared.expiresAt,
+    };
+
+    fs.writeFileSync(prepared.path, Buffer.from('%PDF-1.7\nchanged resume content'));
+    assert.throws(() => agent.verifyPreparedResume(proof, now + 1000), /changed after confirmation/i);
+
+    fs.writeFileSync(prepared.path, buffer);
+    assert.throws(() => agent.verifyPreparedResume(proof, Date.parse(prepared.expiresAt)), /expired/i);
+  });
+});
+
+test('pre-attach verification rejects a cache path redirected through a symlink', () => {
+  withTempAgentHome((root) => {
+    const dir = agent.cacheDir();
+    const externalDir = path.join(root, 'external');
+    const cacheAlias = path.join(dir, '1700000000000-aaaaaaaa');
+    const fileName = 'Resume - Candidate Name.pdf';
+    const buffer = Buffer.from('%PDF-1.7\nexternal bytes');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(externalDir, { recursive: true });
+    fs.writeFileSync(path.join(externalDir, fileName), buffer, { mode: 0o600 });
+    fs.symlinkSync(externalDir, cacheAlias);
+
+    assert.throws(() => agent.verifyPreparedResume({
+      runId: 91,
+      confirmationId: 'proof-123',
+      exactLocalPath: path.join(cacheAlias, fileName),
+      sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+      sizeBytes: buffer.length,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    }), /resolves outside/i);
+  });
+});
+
 test('resume cache removes only expired files', () => {
   withTempAgentHome(() => {
     const dir = agent.cacheDir();
@@ -454,6 +532,60 @@ test('resume cache cleanup leaves fresh empty download directories in place', ()
 
     assert.doesNotThrow(() => agent.cleanResumeCache(Date.now()));
     assert.equal(fs.existsSync(freshEmpty), true);
+  });
+});
+
+test('resume cache cleanup tolerates entries removed by another process', () => {
+  withTempAgentHome(() => {
+    const dir = agent.cacheDir();
+    const oldDir = path.join(dir, '1700000000000-aaaaaaaa');
+    const oldFile = path.join(oldDir, 'Resume - Candidate Name.pdf');
+    fs.mkdirSync(oldDir, { recursive: true });
+    fs.writeFileSync(oldFile, '%PDF-old');
+    const now = Date.now();
+    fs.utimesSync(oldFile, new Date(now - agent.CACHE_TTL_MS - 1000), new Date(now - agent.CACHE_TTL_MS - 1000));
+    fs.utimesSync(oldDir, new Date(now - agent.CACHE_TTL_MS - 1000), new Date(now - agent.CACHE_TTL_MS - 1000));
+
+    const originalLstat = fs.lstatSync;
+    let removedConcurrently = false;
+    fs.lstatSync = (target, ...args) => {
+      if (target === oldFile && !removedConcurrently) {
+        removedConcurrently = true;
+        fs.rmSync(oldFile, { force: true });
+      }
+      return originalLstat(target, ...args);
+    };
+    try {
+      assert.doesNotThrow(() => agent.cleanResumeCache(now));
+      assert.equal(removedConcurrently, true);
+    } finally {
+      fs.lstatSync = originalLstat;
+    }
+  });
+});
+
+test('resume cache cleanup tolerates a directory becoming non-empty before removal', () => {
+  withTempAgentHome(() => {
+    const dir = agent.cacheDir();
+    const oldDir = path.join(dir, '1700000000000-aaaaaaaa');
+    fs.mkdirSync(oldDir, { recursive: true });
+    const now = Date.now();
+    fs.utimesSync(oldDir, new Date(now - agent.CACHE_TTL_MS - 1000), new Date(now - agent.CACHE_TTL_MS - 1000));
+
+    const originalRmdir = fs.rmdirSync;
+    fs.rmdirSync = (target, ...args) => {
+      if (target === oldDir) {
+        const error = new Error('directory is no longer empty');
+        error.code = 'ENOTEMPTY';
+        throw error;
+      }
+      return originalRmdir(target, ...args);
+    };
+    try {
+      assert.doesNotThrow(() => agent.cleanResumeCache(now));
+    } finally {
+      fs.rmdirSync = originalRmdir;
+    }
   });
 });
 
