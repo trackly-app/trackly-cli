@@ -18,7 +18,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { version: VERSION } = require('../package.json');
-const { doctorAgent, setupAgent } = require('../lib/agent');
+const { doctorAgent, resumeValidationStatus, setupAgent } = require('../lib/agent');
 
 const BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'version', 'v', 'clear-api-key', 'clear-base-url', 'refresh', 'remote']);
 const VALUE_FLAGS = new Set([
@@ -913,7 +913,12 @@ async function cmdAgent(args) {
       }
       return;
     } catch (error) {
-      setErrorExit(error.message || String(error));
+      const message = error.message || String(error);
+      if (isJSON()) {
+        process.exitCode = 1;
+        return printJson({ error: message });
+      }
+      setErrorExit(message);
       return;
     }
   }
@@ -934,7 +939,7 @@ async function cmdAgent(args) {
         console.log(`Missing: ${report.profile.completeness.missingKeys.join(', ')}`);
       }
     }
-    console.log(`Resume validation: ${report.resume?.verified ? 'passed' : 'failed'}`);
+    console.log(`Resume validation: ${resumeValidationStatus(report)}`);
     if (report.resume?.error) console.log(color('yellow', `Resume: ${report.resume.error}`));
     if (report.apiError) console.log(color('yellow', `API: ${report.apiError}`));
     console.log(report.browserControl.note);

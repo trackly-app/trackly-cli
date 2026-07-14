@@ -171,6 +171,13 @@ test('agent setup rejects --client without a value', async () => {
   assert.match(result.stderr, /Missing value for --client/);
 });
 
+test('agent setup returns structured errors in JSON mode', async () => {
+  const result = await runCli(['agent', 'setup', '--client', 'unsupported', '--json']);
+  assert.notEqual(result.code, 0);
+  assert.deepEqual(JSON.parse(result.stdout), { error: 'Use --client codex, claude, or both.' });
+  assert.equal(result.stderr, '');
+});
+
 test('agent setup exits non-zero when the requested client is not installed', async (t) => {
   const root = createTempConfigDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

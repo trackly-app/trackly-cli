@@ -16,7 +16,6 @@
     "mcp/",
     "skills/",
     "contracts/",
-    "scripts/verify-hosted-contract.js",
     "docs/",
     "server.json",
     "README.md",

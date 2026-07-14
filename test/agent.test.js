@@ -191,6 +191,28 @@ test('agent setup never exposes a partial skill when fallback copying fails', ()
   });
 });
 
+test('agent setup removes canonical staging when the bundled skill copy fails', () => {
+  withTempAgentHome(() => {
+    const originalCopyFile = fs.copyFileSync;
+    fs.copyFileSync = (source, destination, ...rest) => {
+      if (destination.includes(`${path.sep}.trackly${path.sep}skills${path.sep}trackly-apply.staging.`)) {
+        throw new Error('simulated canonical copy failure');
+      }
+      return originalCopyFile(source, destination, ...rest);
+    };
+    try {
+      assert.throws(() => agent.setupAgent('codex'), /simulated canonical copy failure/);
+      const parent = path.join(process.env.TRACKLY_CONFIG_DIR, 'skills');
+      const leftovers = fs.existsSync(parent)
+        ? fs.readdirSync(parent).filter((entry) => entry.startsWith('trackly-apply.staging.'))
+        : [];
+      assert.deepEqual(leftovers, []);
+    } finally {
+      fs.copyFileSync = originalCopyFile;
+    }
+  });
+});
+
 test('agent setup restores the previous managed copy when replacement copying fails', () => {
   withTempAgentHome(() => {
     const originalSymlink = fs.symlinkSync;
@@ -247,6 +269,12 @@ test('resume validation normalizes generic MIME types from file signatures', () 
     () => agent.validateResumeFile({ buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04]), contentType: 'application/zip' }),
     /Unsupported or invalid resume type/,
   );
+});
+
+test('agent doctor distinguishes missing resumes from failed validation', () => {
+  assert.equal(agent.resumeValidationStatus({ profile: { hasDefaultResume: false } }), 'not applicable (no default resume set)');
+  assert.equal(agent.resumeValidationStatus({ profile: { hasDefaultResume: true }, resume: { verified: false } }), 'failed');
+  assert.equal(agent.resumeValidationStatus({ profile: { hasDefaultResume: true }, resume: { verified: true } }), 'passed');
 });
 
 test('resume cache removes only expired files', () => {
