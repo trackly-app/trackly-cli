@@ -46,6 +46,44 @@ test('agent setup installs one canonical skill and links both clients', () => {
   });
 });
 
+test('agent doctor inspection rejects stale Codex and Claude MCP commands', () => {
+  withTempAgentHome(() => {
+    fs.mkdirSync(process.env.CODEX_HOME, { recursive: true });
+    fs.writeFileSync(
+      path.join(process.env.CODEX_HOME, 'config.toml'),
+      '[mcp_servers.trackly]\ncommand = "node"\nargs = ["old-server.js"]\n',
+    );
+    fs.mkdirSync(process.env.CLAUDE_CONFIG_DIR, { recursive: true });
+    fs.writeFileSync(
+      path.join(process.env.CLAUDE_CONFIG_DIR, 'settings.json'),
+      JSON.stringify({ mcpServers: { trackly: { command: 'node', args: ['old-server.js'] } } }),
+    );
+
+    assert.equal(agent.inspectClient('codex').mcpRegistration, 'stale');
+    assert.equal(agent.inspectClient('codex').mcpRegistered, false);
+    assert.equal(agent.inspectClient('claude').mcpRegistration, 'stale');
+    assert.equal(agent.inspectClient('claude').mcpRegistered, false);
+  });
+});
+
+test('agent doctor inspection accepts only the exact Trackly MCP command', () => {
+  withTempAgentHome(() => {
+    fs.mkdirSync(process.env.CODEX_HOME, { recursive: true });
+    fs.writeFileSync(
+      path.join(process.env.CODEX_HOME, 'config.toml'),
+      '[mcp_servers.trackly]\ncommand = "trackly"\nargs = ["mcp"]\n',
+    );
+    fs.mkdirSync(process.env.CLAUDE_CONFIG_DIR, { recursive: true });
+    fs.writeFileSync(
+      path.join(process.env.CLAUDE_CONFIG_DIR, 'settings.json'),
+      JSON.stringify({ mcpServers: { trackly: { command: 'trackly', args: ['mcp'] } } }),
+    );
+
+    assert.equal(agent.inspectClient('codex').mcpRegistration, 'current');
+    assert.equal(agent.inspectClient('claude').mcpRegistration, 'current');
+  });
+});
+
 test('agent setup resolves a relative Trackly config directory before symlinking', () => {
   withTempAgentHome((root) => {
     const previousCwd = process.cwd();

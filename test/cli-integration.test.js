@@ -231,6 +231,36 @@ test('agent setup does not treat similarly named Codex MCP tables as registered'
   assert.equal(JSON.parse(result.stdout).clients[0].mcp.status, 'failed');
 });
 
+test('agent setup replaces a stale exact Codex MCP registration', async (t) => {
+  const root = createTempConfigDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'bin');
+  const codexHome = path.join(root, '.codex');
+  const log = path.join(root, 'codex-args.log');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.writeFileSync(
+    path.join(codexHome, 'config.toml'),
+    '[mcp_servers.trackly]\ncommand = "node"\nargs = ["old-server.js"]\n',
+  );
+  const codex = path.join(bin, 'codex');
+  fs.writeFileSync(codex, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TRACKLY_TEST_LOG"\nexit 0\n', { mode: 0o755 });
+
+  const result = await runCli(['agent', 'setup', '--client', 'codex', '--json'], {
+    TRACKLY_CONFIG_DIR: path.join(root, '.trackly'),
+    TRACKLY_TEST_LOG: log,
+    CODEX_HOME: codexHome,
+    PATH: `${bin}:${process.env.PATH}`,
+  });
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).clients[0].mcp.status, 'installed');
+  assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n'), [
+    'mcp remove trackly',
+    'mcp add trackly -- trackly mcp',
+  ]);
+});
+
 test('agent doctor rejects an installed skill with stale managed metadata', async (t) => {
   const root = createTempConfigDir();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
