@@ -7,14 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-14
+
+### Fixed
+
+- Prepared resumes preserve the exact user-facing filename supplied by Trackly, while unique cache identifiers remain private parent-directory names and never appear in employer upload chips.
+- Prepared-resume results require visual confirmation bound to the exact SHA-256, application run, and expiring local file before upload. The bundled skill directs agents to preview the exact bytes and reveal the cache path only when requested.
+- Expired-resume cleanup supports the nested private cache layout safely.
+- Removed the retired `applying` status from the final CLI help surface.
+
+## [0.6.0] - 2026-07-14
+
+### Added
+
+- `trackly jobs --work-arrangement remote,hybrid` filters by the first-class work-arrangement dimension independently from region and employment type. Canonical values are `remote`, `hybrid`, `in_person`, and `unspecified`.
+- Local MCP `trackly_search_jobs` accepts the typed `workArrangements` array with the same independent, multi-select semantics as Trackly Web, iOS, and macOS. Natural-language `trackly_ask` uses the backend's matching work-arrangement mapping.
+
 ## [0.5.2] - 2026-07-14
 
 ### Fixed
 
-- Prepared resumes now preserve the user-facing filename supplied by Trackly, while per-download cache identifiers live only in private parent directories and never appear in employer upload chips.
-- Prepared-resume results now require a visual, explicit confirmation bound to the exact file hash and current application run before an agent may upload the document. The confirmation includes the exact local file, size, and provenance so users can open or reveal the actual bytes instead of trusting an agent summary.
-- Expired-resume cleanup now handles the nested private cache layout without leaving empty download directories behind.
-- The bundled Trackly Apply skill now rejects an attachment whose visible filename differs from the prepared resume or exposes an internal cache identifier.
+- Canonical `maintenance_mode` responses now retain HTTP/service status, retry time, ETA, and request ID across REST requests, OAuth refresh, resume downloads, human/JSON CLI output, and local MCP errors; `planned_maintenance` remains a compatibility alias only.
+- Maintenance no longer clears valid OAuth credentials or triggers a blind retry. Trackly Apply now waits, refetches protocol/profile state, and resumes the existing browser run without creating a duplicate or clicking Submit.
+- The bundled Trackly Apply skill is versioned `1.0.1`, so `agent doctor` marks pre-maintenance `1.0.0` installs stale and `agent setup` replaces them with the new recovery rules.
 
 ## [0.5.1] - 2026-07-13
 

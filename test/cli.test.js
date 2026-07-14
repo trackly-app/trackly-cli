@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('path');
 const { spawnSync } = require('node:child_process');
 
@@ -55,6 +56,7 @@ test('COMMAND_FLAGS keeps deprecated jobs flags so they reach the migration mess
   assert.ok(cli.COMMAND_FLAGS.jobs.includes('location'));
   assert.ok(cli.COMMAND_FLAGS.jobs.includes('modality'));
   assert.ok(cli.COMMAND_FLAGS.jobs.includes('region'));
+  assert.ok(cli.COMMAND_FLAGS.jobs.includes('work-arrangement'));
   assert.deepEqual(cli.COMMAND_FLAGS.job, [], 'job detail accepts no filter flags');
 });
 
@@ -65,4 +67,27 @@ test('trackly --version prints the package version', () => {
 
   assert.equal(result.status, 0);
   assert.equal(result.stdout.trim(), pkg.version);
+});
+
+test('human maintenance output retains code, statuses, request ID, and resume guidance', () => {
+  const rendered = cli.formatMaintenanceForHuman({
+    message: 'Trackly is migrating. Retry in about 5 minutes.',
+    code: 'maintenance_mode',
+    status: 503,
+    serviceStatus: 'maintenance',
+    requestId: 'req-human-cli',
+    guidance: 'Wait, refetch state, and resume the existing run without clicking Submit.',
+  });
+
+  assert.match(rendered, /Trackly is migrating/);
+  assert.match(rendered, /Code: maintenance_mode/);
+  assert.match(rendered, /HTTP status: 503/);
+  assert.match(rendered, /service status: maintenance/);
+  assert.match(rendered, /Request ID: req-human-cli/);
+  assert.match(rendered, /resume the existing run without clicking Submit/);
+
+  const source = fs.readFileSync(BIN_PATH, 'utf8');
+  assert.match(source, /report\.resume\?\.maintenance/);
+  assert.match(source, /formatMaintenanceForHuman\(report\.resume\.maintenance\)/);
+  assert.match(source, /formatMaintenanceForHuman\(report\.apiError\)/);
 });

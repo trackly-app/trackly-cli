@@ -2,12 +2,14 @@
 
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
+const { McpError } = require('@modelcontextprotocol/sdk/types.js');
 const { z } = require('zod');
-const { apiRequest, hasAuth } = require('../lib/client');
+const { apiRequest, hasAuth, maintenanceOutput } = require('../lib/client');
 const { prepareResume } = require('../lib/agent');
 const { version: PACKAGE_VERSION } = require('../package.json');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
+const MCP_MAINTENANCE_ERROR_CODE = -32002;
 const AUTH_HINT = 'Run `trackly login` or set TRACKLY_API_KEY. Get a key at https://usetrackly.app (sign in → Settings → API Keys).';
 
 // Mirrors `granola-followup-app/src/services/region-classifier.ts:8` REGION_TAGS.
@@ -31,11 +33,16 @@ const JOB_FUNCTIONS = [
   'finance', 'strategy', 'operations', 'people', 'legal', 'support', 'other',
 ];
 
-// `status` enum matches the backend allowlist at `jobscout.ts:2949`.
-const STATUS_VALUES = ['new', 'applying', 'applied_confirmed', 'check_later', 'not_interested', 'all'];
+// Public canonical states. The backend privately accepts retired aliases for
+// old clients, but new MCP clients must never emit them.
+const STATUS_VALUES = ['new', 'applied_confirmed', 'check_later', 'not_interested', 'all'];
 
 // `jobModality` enum matches `jobscout.ts:2870-2875`. Employment type, NOT work-location.
 const JOB_MODALITIES = ['full_time', 'internship', 'all'];
+
+// Independent from geography and employment type. Matches the backend's
+// workArrangements query contract and job_postings constraint.
+const WORK_ARRANGEMENTS = ['remote', 'hybrid', 'in_person', 'unspecified'];
 
 // `sort` enum matches backend handler at `jobscout.ts:3053` — NOT the pre-fix
 // `newest|oldest|company` (backend rejects oldest/company with HTTP 400).
@@ -48,10 +55,17 @@ const SORT_VALUES = ['newest', 'match'];
 const ACTION_TO_STAGE = { applied: 'applied', saved: 'backlog', dismissed: 'discarded' };
 
 function createErrorResult(error, fallbackMessage, extra = {}) {
-  const payload = {
-    error: error?.error || error?.message || fallbackMessage,
-    ...extra,
-  };
+  const normalizedMaintenance = maintenanceOutput(error);
+  const payload = normalizedMaintenance
+    ? {
+        ...normalizedMaintenance,
+        error: error?.error || error?.message || fallbackMessage,
+        ...extra,
+      }
+    : {
+        error: error?.error || error?.message || fallbackMessage,
+        ...extra,
+      };
 
   if (error?.status) {
     payload.status = error.status;
@@ -73,6 +87,18 @@ function createAuthErrorResult() {
     'Not authenticated',
     { hint: AUTH_HINT }
   );
+}
+
+function throwMcpResourceError(error) {
+  const normalizedMaintenance = maintenanceOutput(error);
+  if (normalizedMaintenance) {
+    throw new McpError(
+      MCP_MAINTENANCE_ERROR_CODE,
+      normalizedMaintenance.message,
+      normalizedMaintenance,
+    );
+  }
+  throw error;
 }
 
 function wrapTool(handler, fallbackMessage) {
@@ -104,7 +130,7 @@ function createServer() {
 
   server.tool(
     'trackly_search_jobs',
-    'Search and filter job postings. Returns matching jobs with title, company, location, and structured fields. Use companyId to filter jobs at a specific company (get companyId from trackly_search_companies first). Pass `remote: true` for remote-only jobs.',
+    'Search and filter job postings. Returns matching jobs with title, company, location, and structured fields. Use companyId to filter jobs at a specific company (get companyId from trackly_search_companies first). Work arrangement is independent from region and employment type: use workArrangements for remote, hybrid, in-person, or unspecified classifications.',
     {
       function: z.enum(JOB_FUNCTIONS).optional().describe('Job function filter. One of: ' + JOB_FUNCTIONS.join(', ')),
       companyId: z.number().optional().describe('Filter jobs by company ID (get from trackly_search_companies)'),
@@ -116,7 +142,10 @@ function createServer() {
         "Region tag filter. Pass ONE of: (a) a single scalar from 'us', 'non_us', 'all', or a REGION_TAGS value ('europe', 'latam', 'middle_east', 'asia', 'africa', 'canada', 'oceania', 'remote', 'unknown'); or (b) an array of region tags for multi-region (e.g. ['europe', 'canada']). The array form excludes 'us' — combining 'us' with other tags causes the backend to silently drop the others. For 'not US' use the scalar 'non_us' alone."
       ),
       jobModality: z.enum(JOB_MODALITIES).optional().describe(
-        "Employment type (NOT work-location style). full_time = full-time roles, internship = internships, all = both. For remote filtering, use the `remote` boolean or locationFilter='remote'. Hybrid and onsite are not exposed as filters."
+        'Employment type (NOT work arrangement). full_time = full-time roles, internship = internships, all = both. Use workArrangements for remote, hybrid, or in-person classification.'
+      ),
+      workArrangements: z.array(z.enum(WORK_ARRANGEMENTS)).min(1).max(4).optional().describe(
+        'Work arrangement filter, independent from geography and employment type. Values: remote, hybrid, in_person, unspecified. Multiple values use OR semantics.'
       ),
       remote: z.boolean().optional().describe('Filter to remote jobs only (maps to usStates=REMOTE).'),
       status: z.enum(STATUS_VALUES).optional().describe(
@@ -146,6 +175,7 @@ function createServer() {
         qs.set('locationFilter', value);
       }
       if (params.jobModality !== undefined) qs.set('jobModality', params.jobModality);
+      if (params.workArrangements !== undefined) qs.set('workArrangements', params.workArrangements.join(','));
       if (params.remote === true) qs.set('usStates', 'REMOTE');
       if (params.status !== undefined) qs.set('status', params.status);
       if (params.sort !== undefined) qs.set('sort', params.sort);
@@ -395,14 +425,14 @@ function createServer() {
 
   server.tool(
     'trackly_start_apply_run',
-    'Start a manual-submit browser run for a job already in the approved queue.',
+    'Start a manual-submit browser run for a job already in the approved queue. If maintenance interrupts an existing run, do not call this tool again: wait, refetch protocol/profile state, and resume that same run.',
     { jobId: z.number().int().min(1), clientName: z.string().max(100).optional() },
     wrapTool(async (params) => apiRequest('POST', '/api/jobscout/apply/runs', params, false, false, MCP_USER_AGENT), 'Failed to start apply run')
   );
 
   server.tool(
     'trackly_get_apply_protocol',
-    'Get the current browser workflow, ATS support matrix, integrity rules, and compatible public-skill major version. Fetch at the start of every run.',
+    'Get the current browser workflow, ATS support matrix, integrity rules, and compatible public-skill major version. Fetch at the start of every run and again after maintenance before resuming the existing run.',
     {},
     wrapTool(async () => apiRequest('GET', '/api/jobscout/apply/protocol', null, false, false, MCP_USER_AGENT), 'Failed to fetch apply protocol')
   );
@@ -452,7 +482,7 @@ function createServer() {
       role: 'user',
       content: {
         type: 'text',
-        text: 'Fetch the Trackly Apply protocol and profile onboarding, resolve missing answers with me, start the next approved queue run, fill the form, verify every required field, and stop before Submit.',
+        text: 'Fetch the Trackly Apply protocol and profile onboarding, resolve missing answers with me, start the next approved queue run, fill the form, verify every required field, and stop before Submit. If maintenance interrupts the run, retain the run and browser context, wait for the advertised window, refetch protocol and profile state, and resume the existing agent_browser run. Never start a duplicate run, blindly retry a mutation, or click Submit.',
       },
     }],
   }));
@@ -462,8 +492,12 @@ function createServer() {
     description: 'Versioned browser mechanics and compatibility contract.',
     mimeType: 'application/json',
   }, async (uri) => {
-    const result = await apiRequest('GET', '/api/jobscout/apply/protocol', null, false, false, MCP_USER_AGENT);
-    return { contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(result) }] };
+    try {
+      const result = await apiRequest('GET', '/api/jobscout/apply/protocol', null, false, false, MCP_USER_AGENT);
+      return { contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(result) }] };
+    } catch (error) {
+      return throwMcpResourceError(error);
+    }
   });
 
   return server;
@@ -489,4 +523,5 @@ module.exports = {
   createErrorResult,
   createServer,
   startMcpServer,
+  throwMcpResourceError,
 };

@@ -44,6 +44,7 @@ trackly jobs                          # List jobs
 trackly jobs --remote                 # Filter remote jobs (sets usStates=REMOTE)
 trackly jobs --region us              # Filter by region (us, non_us, all, or a region tag: europe, canada, remote, ...)
 trackly jobs --job-type internship    # Filter by employment type (full_time, internship, all)
+trackly jobs --work-arrangement hybrid,remote  # Filter by work arrangement independently
 trackly jobs --function product       # Filter by function
 trackly jobs --company 243            # Filter by company ID
 trackly job 1234                      # Get job details
@@ -152,7 +153,7 @@ Then use natural language in any of these clients:
 
 | Tool | Description |
 |------|-------------|
-| trackly_search_jobs | Search and filter jobs by function, company, location, modality, status |
+| trackly_search_jobs | Search and filter jobs by function, company, region, employment type, work arrangement, and status |
 | trackly_get_job | Get full details for a specific job |
 | trackly_search_companies | Semantic company search |
 | trackly_list_companies | List all tracked companies |

@@ -46,6 +46,32 @@ test('agent setup installs one canonical skill and links both clients', () => {
   });
 });
 
+test('maintenance rules make managed skill 1.0.0 stale and setup installs 1.0.1', () => {
+  withTempAgentHome(() => {
+    const target = agent.clientSkillDir('codex');
+    fs.mkdirSync(target, { recursive: true });
+    fs.writeFileSync(path.join(target, 'SKILL.md'), 'old managed skill');
+    fs.writeFileSync(path.join(target, '.trackly-managed.json'), JSON.stringify({
+      managedBy: 'trackly-cli',
+      skill: 'trackly-apply',
+      skillVersion: '1.0.0',
+    }));
+
+    const before = agent.inspectClient('codex');
+    assert.equal(before.installed, false);
+    assert.equal(before.installedSkillVersion, '1.0.0');
+
+    const setup = agent.setupAgent('codex');
+    assert.equal(setup.skillVersion, '1.0.1');
+    const after = agent.inspectClient('codex');
+    assert.equal(after.installed, true);
+    assert.equal(after.installedSkillVersion, '1.0.1');
+    const installedSkill = fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8');
+    assert.match(installedSkill, /Resume after maintenance/);
+    assert.match(installedSkill, /Do not call `trackly_start_apply_run` again/);
+  });
+});
+
 test('agent doctor inspection rejects stale Codex and Claude MCP commands', () => {
   withTempAgentHome(() => {
     fs.mkdirSync(process.env.CODEX_HOME, { recursive: true });

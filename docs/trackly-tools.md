@@ -72,9 +72,10 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
   - `locationFilter`: pass ONE of
     - a single scalar: `us`, `non_us`, `all`, or a region tag (`europe`, `latam`, `middle_east`, `asia`, `africa`, `canada`, `oceania`, `remote`, `unknown`), OR
     - an array of region tags for multi-region (e.g. `["europe", "canada"]`). The array form excludes `us` — combining `us` with other tags in an array causes the backend to silently drop the others. To get "not US" use the scalar `non_us` alone.
-  - `jobModality`: `full_time`, `internship`, `all` — employment type, NOT work-location style. For remote filtering, use the `remote` boolean or `locationFilter: "remote"`. Hybrid and onsite are not exposed as filters.
+  - `jobModality`: `full_time`, `internship`, `all` — employment type, NOT work arrangement.
+  - `workArrangements`: one or more of `remote`, `hybrid`, `in_person`, `unspecified`. This is an independent axis and combines with region, employment type, and function filters.
   - `remote` (boolean): filter to remote jobs only. Maps to `usStates=REMOTE`.
-  - `status`: your application pipeline state. Values: `new`, `applying`, `applied_confirmed`, `check_later`, `not_interested`, `all`.
+  - `status`: your application pipeline state. Values: `new`, `applied_confirmed`, `check_later`, `not_interested`, `all`. Older `applying` requests are accepted by the backend as a private compatibility alias for `check_later`, but new clients must not emit it.
   - `sort`: `newest` (default) or `match` (highest match score first; requires a resume on file). Backend rejects the deprecated values `oldest` and `company` with HTTP 400.
   - `keywords`, `companyId`, `limit`, `offset`.
 - **trackly_get_job** — Get full job details by ID
@@ -96,6 +97,10 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 - **trackly_report_apply_observation** — Report redacted ATS mechanics without answer values.
 - **trackly_record_application_outcome** — Record review readiness or a confirmed manual submission.
 - **trackly_prepare_resume** — Local MCP only: materialize the default resume in a private, expiring mode-0600 cache and return filename, size, SHA-256, exact local path, and visual-confirmation metadata. Hosted MCP returns a manual/local-agent requirement.
+
+### Maintenance behavior
+
+REST, refresh, download, CLI, and local/hosted MCP surfaces use canonical `code: "maintenance_mode"`; older `planned_maintenance` responses are accepted only as a compatibility alias. Structured errors retain HTTP and service status, retry time, estimated return, and request ID without clearing valid credentials. Maintenance is resumable rather than retryable: wait for the advertised window, refetch the Apply protocol and profile, then resume the existing `agent_browser` run. Never create a duplicate run or click Submit.
 
 > **Why no `trackly_chat` here (intentional, not drift):** the hosted connector exposes one extra tool, `trackly_chat`, that runs a backend agent over these same primitives. The local MCP client is already an agent, so `trackly_chat` remains deliberately hosted-only.
 
