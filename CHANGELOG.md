@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Prepared-resume results require visual confirmation bound to the exact SHA-256, application run, and expiring local file before upload. The bundled skill directs agents to preview the exact bytes and reveal the cache path only when requested.
 - Expired-resume cleanup supports the nested private cache layout safely.
 - Removed the retired `applying` status from the final CLI help surface.
+- Bundled Trackly Apply skill 1.1.0 requires the exact-file confirmation gate before upload.
 
 ## [0.6.0] - 2026-07-14
 

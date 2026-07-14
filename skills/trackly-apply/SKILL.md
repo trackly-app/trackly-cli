@@ -30,13 +30,13 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
 4. Require the one-time profile confirmation, complete education entries, and a default resume before browser work.
 5. Call `trackly_get_apply_queue`. Select deterministically unless the user names a job. Do not replace the queue call with a fresh job search.
 6. Call `trackly_start_apply_run` for the selected job.
-7. Call `trackly_prepare_resume`. If hosted MCP reports it unavailable, tell the user that local Trackly MCP or manual upload is required.
+7. Call `trackly_prepare_resume` with the active application run ID. If hosted MCP reports it unavailable, tell the user that local Trackly MCP or manual upload is required.
 8. Preserve the user’s filename returned by `trackly_prepare_resume`. Internal cache identifiers belong only in private parent directories and must never appear in the employer-facing upload filename.
 9. Before any upload, let the user inspect the exact prepared file returned by `trackly_prepare_resume`:
    - Prefer an inline visual preview. Otherwise open the exact local file in Quick Look or Preview.app.
-   - Show a compact proof block with source (`Trackly default resume`), user-facing filename, file size, and SHA-256 fingerprint.
+   - Show a compact proof block with source (`Trackly default resume`), exact local path, user-facing filename, file size, SHA-256 fingerprint, application run, and expiration.
    - Ask for explicit confirmation to use that resume. Bind confirmation to the exact SHA-256 and current application run; a different hash or run requires new confirmation.
-   - Do not print an absolute cache path unprompted. If the user asks for the exact path or independent verification, provide `confirmation.verification.exactLocalPath` or reveal that file in Finder. Never describe the prepared cache path as the original upload source.
+   - Always provide `confirmation.verification.exactLocalPath` so the user can independently verify the file. Never describe the prepared cache path as the original upload source.
    - If an original local source path is known from the current session, identify it separately. Do not store original device paths in Trackly.
    - A generic profile page is not proof of the prepared file. Use an app or web deep link only when the current protocol supplies an authenticated exact-resume viewer tied to the same SHA-256.
    - If no exact preview method works, stop and ask the user to inspect the file manually.

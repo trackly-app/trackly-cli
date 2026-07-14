@@ -470,8 +470,8 @@ function createServer() {
   server.tool(
     'trackly_prepare_resume',
     'Download the authenticated default resume into a mode-0600 temporary Trackly cache and return exact-file proof for user confirmation before browser upload.',
-    {},
-    wrapTool(async () => prepareResume(), 'Failed to prepare default resume')
+    { runId: z.number().int().min(1) },
+    wrapTool(async ({ runId }) => prepareResume(runId), 'Failed to prepare default resume')
   );
 
   server.registerPrompt('trackly-apply', {

@@ -9,6 +9,20 @@ const http = require('node:http');
 const client = require('../lib/client');
 const { withEnv, createTempConfigDir } = require('./helpers');
 
+test('content-disposition filenames prefer RFC 5987 Unicode without lossy rewriting', () => {
+  assert.equal(
+    client.contentDispositionFileName(
+      "attachment; filename=resume.pdf; filename*=UTF-8''Candidate%20R%C3%A9sum%C3%A9%20%282026%29.pdf",
+    ),
+    'Candidate Résumé (2026).pdf',
+  );
+  assert.equal(
+    client.contentDispositionFileName('attachment; filename="Resume - Candidate.pdf"'),
+    'Resume - Candidate.pdf',
+  );
+  assert.equal(client.contentDispositionFileName('inline'), null);
+});
+
 test('API keys take precedence over stored OAuth tokens', async (t) => {
   const configDir = createTempConfigDir();
   t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));

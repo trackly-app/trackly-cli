@@ -130,6 +130,12 @@ test('CLI --sort help text is [newest, match] in bin/trackly', () => {
   assert.ok(!sortLine.match(/\bcompany\b/), `--sort help must NOT mention company as a sort value: ${sortLine}`);
 });
 
+test('CLI help exposes no retired Applying pipeline state', () => {
+  const binSrc = fs.readFileSync(path.join(__dirname, '..', 'bin', 'trackly'), 'utf8');
+  assert.doesNotMatch(binSrc, /--status[^\n]*\bapplying\b/i);
+  assert.match(binSrc, /--status[^\n]*new, applied_confirmed, check_later, not_interested, all/i);
+});
+
 test('CLI + MCP use new /jobscout/tracker/jobs/:id/stage endpoint (not removed /jobscout-tracker/status)', () => {
   const binSrc = fs.readFileSync(path.join(__dirname, '..', 'bin', 'trackly'), 'utf8');
   const mcpSrc = fs.readFileSync(path.join(__dirname, '..', 'mcp', 'server.js'), 'utf8');

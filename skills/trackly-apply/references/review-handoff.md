@@ -9,7 +9,9 @@ Company / role:
 ATS / URL:
 Resume:
 Resume visual confirmation: yes/no
+Resume exact local path:
 Resume fingerprint / size:
+Resume confirmation run / expiration:
 Critical contact values verified: yes/no
 Authorization / sponsorship:
 Compensation answer:

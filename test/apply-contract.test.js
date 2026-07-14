@@ -47,7 +47,7 @@ function toolArguments(name) {
 const normalizeSchema = (schema) => schema.replace(/\s+/g, '').replace(/,([}\]])/g, '$1');
 
 test('local MCP Apply schemas match each complete versioned input schema', () => {
-  assert.equal(contract.contractVersion, '1.0.0');
+  assert.equal(contract.contractVersion, '1.1.0');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
     assert.equal(normalizeSchema(toolArguments(name)[2]), expectedSchema, `${name} schema drifted`);
   }

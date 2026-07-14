@@ -75,7 +75,7 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
   - `jobModality`: `full_time`, `internship`, `all` — employment type, NOT work arrangement.
   - `workArrangements`: one or more of `remote`, `hybrid`, `in_person`, `unspecified`. This is an independent axis and combines with region, employment type, and function filters.
   - `remote` (boolean): filter to remote jobs only. Maps to `usStates=REMOTE`.
-  - `status`: your application pipeline state. Values: `new`, `applied_confirmed`, `check_later`, `not_interested`, `all`. Older `applying` requests are accepted by the backend as a private compatibility alias for `check_later`, but new clients must not emit it.
+  - `status`: your application pipeline state. Values: `new`, `applied_confirmed`, `check_later`, `not_interested`, `all`.
   - `sort`: `newest` (default) or `match` (highest match score first; requires a resume on file). Backend rejects the deprecated values `oldest` and `company` with HTTP 400.
   - `keywords`, `companyId`, `limit`, `offset`.
 - **trackly_get_job** — Get full job details by ID
