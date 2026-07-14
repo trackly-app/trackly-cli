@@ -84,6 +84,21 @@ test('agent doctor inspection accepts only the exact Trackly MCP command', () =>
   });
 });
 
+test('agent setup rejects a current MCP registration when the client executable is missing', () => {
+  withTempAgentHome(() => {
+    fs.mkdirSync(process.env.CODEX_HOME, { recursive: true });
+    fs.writeFileSync(
+      path.join(process.env.CODEX_HOME, 'config.toml'),
+      '[mcp_servers.trackly]\ncommand = "trackly"\nargs = ["mcp"]\n',
+    );
+
+    const result = agent.setupAgent('codex');
+
+    assert.equal(result.clients[0].mcp.status, 'missing_client');
+    assert.match(result.clients[0].mcp.error, /codex is not installed/);
+  });
+});
+
 test('agent setup resolves a relative Trackly config directory before symlinking', () => {
   withTempAgentHome((root) => {
     const previousCwd = process.cwd();
@@ -92,6 +107,8 @@ test('agent setup resolves a relative Trackly config directory before symlinking
     try {
       const result = agent.setupAgent('codex');
       assert.equal(path.isAbsolute(result.canonical), true);
+      assert.equal(path.isAbsolute(agent.cacheDir()), true);
+      assert.equal(agent.cacheDir(), path.resolve('.trackly', 'cache', 'resumes'));
       assert.ok(fs.existsSync(path.join(result.clients[0].target, 'SKILL.md')));
     } finally {
       process.chdir(previousCwd);
