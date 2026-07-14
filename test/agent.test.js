@@ -36,7 +36,7 @@ function withTempAgentHome(run) {
 test('agent setup installs one canonical skill and links both clients', () => {
   withTempAgentHome(() => {
     const result = agent.setupAgent('both');
-    assert.equal(result.skillVersion, '1.0.0');
+    assert.equal(result.skillVersion, '1.0.1');
     assert.ok(fs.existsSync(path.join(result.canonical, 'SKILL.md')));
     assert.equal(result.clients.length, 2);
     for (const client of result.clients) {
@@ -283,11 +283,31 @@ test('resume preparation keeps CLI and MCP attribution distinct', () => {
   assert.notEqual(agent.CLI_USER_AGENT, agent.MCP_USER_AGENT);
 });
 
-test('resume cache names remain unique within the same millisecond', () => {
-  const first = agent.resumeCacheName('resume.pdf', 'application/pdf', 1234, 'aaaaaaaa');
-  const second = agent.resumeCacheName('resume.pdf', 'application/pdf', 1234, 'bbbbbbbb');
+test('resume cache keeps the user-facing filename exact while isolating internal uniqueness', () => {
+  const fileName = 'Resume - Candidate Name.pdf';
+  const first = agent.resumeCacheName(fileName, 'application/pdf', 1234, 'aaaaaaaa');
+  const second = agent.resumeCacheName(fileName, 'application/pdf', 1234, 'bbbbbbbb');
   assert.notEqual(first, second);
-  assert.match(first, /^1234-aaaaaaaa-resume\.pdf$/);
+  assert.equal(path.dirname(first), '1234-aaaaaaaa');
+  assert.equal(path.basename(first), fileName);
+  assert.equal(path.basename(second), fileName);
+});
+
+test('resume confirmation identifies the exact local bytes the user can inspect', () => {
+  const sha256 = 'a'.repeat(64);
+  const localPath = path.join('/private', 'trackly-cache', 'Resume - Candidate Name.pdf');
+  assert.deepEqual(agent.resumeConfirmation('Resume - Candidate Name.pdf', sha256, 132123, localPath), {
+    required: true,
+    source: 'trackly_default_resume',
+    fileName: 'Resume - Candidate Name.pdf',
+    sha256,
+    sizeBytes: 132123,
+    verification: {
+      preferred: 'local_preview',
+      exactLocalPath: localPath,
+      revealPathOnRequest: true,
+    },
+  });
 });
 
 test('resume cache removes only expired files', () => {
@@ -307,6 +327,29 @@ test('resume cache removes only expired files', () => {
   });
 });
 
+test('resume cache cleanup handles private per-download directories', () => {
+  withTempAgentHome(() => {
+    const dir = agent.cacheDir();
+    const oldDir = path.join(dir, '1234-aaaaaaaa');
+    const freshDir = path.join(dir, '1234-bbbbbbbb');
+    fs.mkdirSync(oldDir, { recursive: true });
+    fs.mkdirSync(freshDir, { recursive: true });
+    const oldFile = path.join(oldDir, 'Resume - Candidate Name.pdf');
+    const freshFile = path.join(freshDir, 'Resume - Candidate Name.pdf');
+    fs.writeFileSync(oldFile, '%PDF-old');
+    fs.writeFileSync(freshFile, '%PDF-fresh');
+    const now = Date.now();
+    fs.utimesSync(oldFile, new Date(now - agent.CACHE_TTL_MS - 1000), new Date(now - agent.CACHE_TTL_MS - 1000));
+
+    const result = agent.cleanResumeCache(now);
+
+    assert.equal(result.removed, 1);
+    assert.equal(fs.existsSync(oldFile), false);
+    assert.equal(fs.existsSync(oldDir), false);
+    assert.equal(fs.existsSync(freshFile), true);
+  });
+});
+
 test('public skill contains no personal profile data or absolute user paths', () => {
   const root = agent.bundledSkillDir();
   const files = [];
@@ -321,4 +364,13 @@ test('public skill contains no personal profile data or absolute user paths', ()
   const text = files.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
   assert.doesNotMatch(text, /Kevin|Astuhuaman|berkeley\.edu|2710 Bancroft|\/Users\//i);
   assert.match(text, /Stop before Submit/);
+  assert.match(text, /preserve.*user.*filename/i);
+  assert.match(text, /internal.*cache.*identifier/i);
+  assert.match(text, /visual.*preview/i);
+  assert.match(text, /explicit.*confirmation/i);
+  assert.match(text, /exact.*SHA-256/i);
+  assert.match(text, /exact.*prepared.*file/i);
+  assert.match(text, /path.*user.*asks/i);
+  assert.match(text, /Quick Look|Preview\.app/i);
+  assert.match(text, /generic.*profile.*not.*proof/i);
 });

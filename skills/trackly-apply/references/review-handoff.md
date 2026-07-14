@@ -8,6 +8,8 @@ Ready for your review — not submitted
 Company / role:
 ATS / URL:
 Resume:
+Resume visual confirmation: yes/no
+Resume fingerprint / size:
 Critical contact values verified: yes/no
 Authorization / sponsorship:
 Compensation answer:

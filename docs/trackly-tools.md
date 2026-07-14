@@ -95,7 +95,7 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 - **trackly_get_apply_protocol** — Get the current ATS support, browser integrity rules, and compatible skill version.
 - **trackly_report_apply_observation** — Report redacted ATS mechanics without answer values.
 - **trackly_record_application_outcome** — Record review readiness or a confirmed manual submission.
-- **trackly_prepare_resume** — Local MCP only: materialize the default resume in a private, expiring mode-0600 cache. Hosted MCP returns a manual/local-agent requirement.
+- **trackly_prepare_resume** — Local MCP only: materialize the default resume in a private, expiring mode-0600 cache and return filename, size, SHA-256, exact local path, and visual-confirmation metadata. Hosted MCP returns a manual/local-agent requirement.
 
 > **Why no `trackly_chat` here (intentional, not drift):** the hosted connector exposes one extra tool, `trackly_chat`, that runs a backend agent over these same primitives. The local MCP client is already an agent, so `trackly_chat` remains deliberately hosted-only.
 

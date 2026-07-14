@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-07-14
+
+### Fixed
+
+- Prepared resumes now preserve the user-facing filename supplied by Trackly, while per-download cache identifiers live only in private parent directories and never appear in employer upload chips.
+- Prepared-resume results now require a visual, explicit confirmation bound to the exact file hash and current application run before an agent may upload the document. The confirmation includes the exact local file, size, and provenance so users can open or reveal the actual bytes instead of trusting an agent summary.
+- Expired-resume cleanup now handles the nested private cache layout without leaving empty download directories behind.
+- The bundled Trackly Apply skill now rejects an attachment whose visible filename differs from the prepared resume or exposes an internal cache identifier.
+
 ## [0.5.1] - 2026-07-13
 
 ### Fixed
