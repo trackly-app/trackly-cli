@@ -261,11 +261,88 @@ test('agent setup replaces a stale exact Codex MCP registration', async (t) => {
   });
 
   assert.equal(result.code, 0, result.stderr);
-  assert.equal(JSON.parse(result.stdout).clients[0].mcp.status, 'installed');
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.clients[0].mcp.status, 'installed');
   assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n'), [
     'mcp remove trackly',
     'mcp add trackly -- trackly mcp',
   ]);
+});
+
+test('agent setup repairs stale Claude metadata when no registered server exists', async (t) => {
+  const root = createTempConfigDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'bin');
+  const claudeHome = path.join(root, '.claude');
+  const log = path.join(root, 'claude-args.log');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(claudeHome, { recursive: true });
+  fs.writeFileSync(
+    path.join(claudeHome, 'settings.json'),
+    JSON.stringify({ mcpServers: { trackly: { command: 'node', args: ['old-server.js'] } } }),
+  );
+  const claude = path.join(bin, 'claude');
+  fs.writeFileSync(claude, `#!/bin/sh
+printf "%s\\n" "$*" >> "$TRACKLY_TEST_LOG"
+if [ "$*" = "mcp remove --scope user trackly" ]; then
+  printf "%s\\n" 'No MCP server named "trackly" in user scope' >&2
+  exit 1
+fi
+exit 0
+`, { mode: 0o755 });
+
+  const result = await runCli(['agent', 'setup', '--client', 'claude', '--json'], {
+    TRACKLY_CONFIG_DIR: path.join(root, '.trackly'),
+    TRACKLY_TEST_LOG: log,
+    CLAUDE_CONFIG_DIR: claudeHome,
+    PATH: `${bin}:${process.env.PATH}`,
+  });
+
+  assert.equal(result.code, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.clients[0].mcp.status, 'installed');
+  assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n'), [
+    'mcp remove --scope user trackly',
+    'mcp add --scope user trackly -- trackly mcp',
+  ]);
+});
+
+for (const removalError of [
+  'permission denied',
+  'Permission denied: No MCP server named "trackly" in user scope',
+  'No MCP server named "trackly-old" in user scope',
+  'No MCP server named "trackly" in user scope\npermission denied',
+]) test(`agent setup does not ignore Claude MCP removal failure: ${removalError}`, async (t) => {
+  const root = createTempConfigDir();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'bin');
+  const claudeHome = path.join(root, '.claude');
+  const log = path.join(root, 'claude-args.log');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(claudeHome, { recursive: true });
+  fs.writeFileSync(
+    path.join(claudeHome, 'settings.json'),
+    JSON.stringify({ mcpServers: { trackly: { command: 'node', args: ['old-server.js'] } } }),
+  );
+  const claude = path.join(bin, 'claude');
+  fs.writeFileSync(claude, `#!/bin/sh
+printf "%s\\n" "$*" >> "$TRACKLY_TEST_LOG"
+printf "%s\\n" '${removalError}' >&2
+exit 1
+`, { mode: 0o755 });
+
+  const result = await runCli(['agent', 'setup', '--client', 'claude', '--json'], {
+    TRACKLY_CONFIG_DIR: path.join(root, '.trackly'),
+    TRACKLY_TEST_LOG: log,
+    CLAUDE_CONFIG_DIR: claudeHome,
+    PATH: `${bin}:${process.env.PATH}`,
+  });
+
+  assert.notEqual(result.code, 0);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.clients[0].mcp.status, 'failed');
+  assert.match(report.clients[0].mcp.error, new RegExp(removalError.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.equal(fs.readFileSync(log, 'utf8').trim(), 'mcp remove --scope user trackly');
 });
 
 test('agent doctor rejects an installed skill with stale managed metadata', async (t) => {
