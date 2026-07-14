@@ -630,6 +630,20 @@ test('shared normalizer preserves hosted MCP JSON-RPC -32002 maintenance context
   assert.match(normalized.message, /Please wait for the migration to finish/);
 });
 
+test('shared normalizer preserves a legacy code nested in the maintenance envelope', () => {
+  const normalized = client.createMaintenanceError({
+    maintenance: {
+      code: 'planned_maintenance',
+      status: 'maintenance',
+      message: 'A legacy maintenance envelope is active.',
+    },
+  }, { status: 503 });
+
+  assert.ok(normalized);
+  assert.equal(normalized.code, 'maintenance_mode');
+  assert.equal(normalized.sourceCode, 'planned_maintenance');
+});
+
 test('downloadFile surfaces canonical maintenance instead of a generic file error', async (t) => {
   const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
     res.statusCode = 503;
