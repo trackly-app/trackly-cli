@@ -79,6 +79,17 @@ test('jobs rejects invalid work-arrangement values before making a request', asy
   assert.equal(requests.length, 0, 'must fail before any API call');
 });
 
+test('jobs ID alias with work-arrangement stays on the filtered list route', async (t) => {
+  const { requests, result } = await runAgainstMock(
+    t,
+    ['jobs', '123', '--work-arrangement', 'remote'],
+    () => ({ status: 200, json: { jobs: [] } })
+  );
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(requests[0].url.split('?')[0], '/api/jobscout/jobs');
+  assert.equal(query(requests).get('workArrangements'), 'remote');
+});
+
 test('jobs --remote maps to usStates=REMOTE', async (t) => {
   const { requests, result } = await runAgainstMock(t, ['jobs', '--remote'], () => ({ status: 200, json: { jobs: [] } }));
   assert.equal(result.code, 0, result.stderr);

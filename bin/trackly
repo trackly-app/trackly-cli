@@ -263,7 +263,7 @@ function hasJobListFilters(args) {
   // (which then raises the migration error) instead of cmdJob(42) silently ignoring
   // the filter. See PR #13 Cursor Bugbot finding.
   const deprecated = Object.keys(DEPRECATED_JOB_FLAGS);
-  const active = ['function', 'company', 'keywords', 'limit', 'region', 'job-type', 'remote', 'offset', 'sort', 'status'];
+  const active = ['function', 'company', 'keywords', 'limit', 'region', 'job-type', 'work-arrangement', 'remote', 'offset', 'sort', 'status'];
   return [...active, ...deprecated].some((key) => args[key] !== undefined);
 }
 
