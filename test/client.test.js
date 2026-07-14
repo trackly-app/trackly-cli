@@ -20,6 +20,14 @@ test('content-disposition filenames prefer RFC 5987 Unicode without lossy rewrit
     client.contentDispositionFileName('attachment; filename="Resume - Candidate.pdf"'),
     'Resume - Candidate.pdf',
   );
+  assert.equal(
+    client.contentDispositionFileName("attachment; filename*=UTF-8'en'Candidate.pdf"),
+    'Candidate.pdf',
+  );
+  assert.equal(
+    client.contentDispositionFileName('attachment; filename=" Resume - Candidate.pdf "'),
+    ' Resume - Candidate.pdf ',
+  );
   assert.equal(client.contentDispositionFileName('inline'), null);
 });
 

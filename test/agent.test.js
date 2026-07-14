@@ -36,7 +36,7 @@ function withTempAgentHome(run) {
 test('agent setup installs one canonical skill and links both clients', () => {
   withTempAgentHome(() => {
     const result = agent.setupAgent('both');
-    assert.equal(result.skillVersion, '1.1.0');
+    assert.equal(result.skillVersion, '2.0.0');
     assert.ok(fs.existsSync(path.join(result.canonical, 'SKILL.md')));
     assert.equal(result.clients.length, 2);
     for (const client of result.clients) {
@@ -59,7 +59,7 @@ test('clean temporary homes install Codex, Claude, and both client targets', () 
   }
 });
 
-test('resume confirmation rules make managed skill 1.0.0 stale and setup installs 1.1.0', () => {
+test('resume confirmation rules make managed skill 1.0.0 stale and setup installs 2.0.0', () => {
   withTempAgentHome(() => {
     const target = agent.clientSkillDir('codex');
     fs.mkdirSync(target, { recursive: true });
@@ -75,10 +75,10 @@ test('resume confirmation rules make managed skill 1.0.0 stale and setup install
     assert.equal(before.installedSkillVersion, '1.0.0');
 
     const setup = agent.setupAgent('codex');
-    assert.equal(setup.skillVersion, '1.1.0');
+    assert.equal(setup.skillVersion, '2.0.0');
     const after = agent.inspectClient('codex');
     assert.equal(after.installed, true);
-    assert.equal(after.installedSkillVersion, '1.1.0');
+    assert.equal(after.installedSkillVersion, '2.0.0');
     const installedSkill = fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8');
     assert.match(installedSkill, /Resume after maintenance/);
     assert.match(installedSkill, /Do not call `trackly_start_apply_run` again/);
@@ -365,7 +365,7 @@ test('resume confirmation identifies the exact local bytes the user can inspect'
     verification: {
       preferred: 'local_preview',
       exactLocalPath: localPath,
-      revealPathOnRequest: true,
+      displayExactPathRequired: true,
     },
   });
 });

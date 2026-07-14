@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.1.0",
+  "contractVersion": "2.0.0",
   "tools": {
     "trackly_get_apply_queue": "{limit:z.number().int().min(1).max(100).optional()}",
     "trackly_get_application_profile": "{includeSensitive:z.boolean().optional(),provider:z.string().max(100).optional(),companyId:z.string().max(100).optional()}",
