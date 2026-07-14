@@ -317,6 +317,7 @@ for (const removalError of [
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const bin = path.join(root, 'bin');
   const claudeHome = path.join(root, '.claude');
+  const log = path.join(root, 'claude-args.log');
   fs.mkdirSync(bin, { recursive: true });
   fs.mkdirSync(claudeHome, { recursive: true });
   fs.writeFileSync(
@@ -324,10 +325,15 @@ for (const removalError of [
     JSON.stringify({ mcpServers: { trackly: { command: 'node', args: ['old-server.js'] } } }),
   );
   const claude = path.join(bin, 'claude');
-  fs.writeFileSync(claude, `#!/bin/sh\nprintf "%s\\n" '${removalError}' >&2\nexit 1\n`, { mode: 0o755 });
+  fs.writeFileSync(claude, `#!/bin/sh
+printf "%s\\n" "$*" >> "$TRACKLY_TEST_LOG"
+printf "%s\\n" '${removalError}' >&2
+exit 1
+`, { mode: 0o755 });
 
   const result = await runCli(['agent', 'setup', '--client', 'claude', '--json'], {
     TRACKLY_CONFIG_DIR: path.join(root, '.trackly'),
+    TRACKLY_TEST_LOG: log,
     CLAUDE_CONFIG_DIR: claudeHome,
     PATH: `${bin}:${process.env.PATH}`,
   });
@@ -336,6 +342,7 @@ for (const removalError of [
   const report = JSON.parse(result.stdout);
   assert.equal(report.clients[0].mcp.status, 'failed');
   assert.match(report.clients[0].mcp.error, new RegExp(removalError.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.equal(fs.readFileSync(log, 'utf8').trim(), 'mcp remove --scope user trackly');
 });
 
 test('agent doctor rejects an installed skill with stale managed metadata', async (t) => {
