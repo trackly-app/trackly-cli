@@ -40,6 +40,10 @@ const STATUS_VALUES = ['new', 'applied_confirmed', 'check_later', 'not_intereste
 // `jobModality` enum matches `jobscout.ts:2870-2875`. Employment type, NOT work-location.
 const JOB_MODALITIES = ['full_time', 'internship', 'all'];
 
+// Independent from geography and employment type. Matches the backend's
+// workArrangements query contract and job_postings constraint.
+const WORK_ARRANGEMENTS = ['remote', 'hybrid', 'in_person', 'unspecified'];
+
 // `sort` enum matches backend handler at `jobscout.ts:3053` — NOT the pre-fix
 // `newest|oldest|company` (backend rejects oldest/company with HTTP 400).
 const SORT_VALUES = ['newest', 'match'];
@@ -126,7 +130,7 @@ function createServer() {
 
   server.tool(
     'trackly_search_jobs',
-    'Search and filter job postings. Returns matching jobs with title, company, location, and structured fields. Use companyId to filter jobs at a specific company (get companyId from trackly_search_companies first). Pass `remote: true` for remote-only jobs.',
+    'Search and filter job postings. Returns matching jobs with title, company, location, and structured fields. Use companyId to filter jobs at a specific company (get companyId from trackly_search_companies first). Work arrangement is independent from region and employment type: use workArrangements for remote, hybrid, in-person, or unspecified classifications.',
     {
       function: z.enum(JOB_FUNCTIONS).optional().describe('Job function filter. One of: ' + JOB_FUNCTIONS.join(', ')),
       companyId: z.number().optional().describe('Filter jobs by company ID (get from trackly_search_companies)'),
@@ -138,7 +142,10 @@ function createServer() {
         "Region tag filter. Pass ONE of: (a) a single scalar from 'us', 'non_us', 'all', or a REGION_TAGS value ('europe', 'latam', 'middle_east', 'asia', 'africa', 'canada', 'oceania', 'remote', 'unknown'); or (b) an array of region tags for multi-region (e.g. ['europe', 'canada']). The array form excludes 'us' — combining 'us' with other tags causes the backend to silently drop the others. For 'not US' use the scalar 'non_us' alone."
       ),
       jobModality: z.enum(JOB_MODALITIES).optional().describe(
-        "Employment type (NOT work-location style). full_time = full-time roles, internship = internships, all = both. For remote filtering, use the `remote` boolean or locationFilter='remote'. Hybrid and onsite are not exposed as filters."
+        'Employment type (NOT work arrangement). full_time = full-time roles, internship = internships, all = both. Use workArrangements for remote, hybrid, or in-person classification.'
+      ),
+      workArrangements: z.array(z.enum(WORK_ARRANGEMENTS)).min(1).max(4).optional().describe(
+        'Work arrangement filter, independent from geography and employment type. Values: remote, hybrid, in_person, unspecified. Multiple values use OR semantics.'
       ),
       remote: z.boolean().optional().describe('Filter to remote jobs only (maps to usStates=REMOTE).'),
       status: z.enum(STATUS_VALUES).optional().describe(
@@ -168,6 +175,7 @@ function createServer() {
         qs.set('locationFilter', value);
       }
       if (params.jobModality !== undefined) qs.set('jobModality', params.jobModality);
+      if (params.workArrangements !== undefined) qs.set('workArrangements', params.workArrangements.join(','));
       if (params.remote === true) qs.set('usStates', 'REMOTE');
       if (params.status !== undefined) qs.set('status', params.status);
       if (params.sort !== undefined) qs.set('sort', params.sort);

@@ -13,6 +13,7 @@
  *   - status:     public canonical pipeline states (legacy applying remains server-side compatibility only)
  *   - function:   close-ai/src/routes/jobscout-filter-utils.ts:17-21  (14 values incl. partnerships)
  *   - modality:   close-ai/src/routes/jobscout.ts:2870-2875  (full_time | internship | all)
+ *   - arrangement: close-ai/src/routes/jobscout-filter-utils.ts (remote | hybrid | in_person | unspecified)
  *   - regions:    close-ai/src/services/region-classifier.ts:8  (10 values)
  */
 const test = require('node:test');
@@ -54,6 +55,26 @@ test('MCP JOB_MODALITIES matches backend is_internship column semantics', () => 
   assert.ok(!mods.includes('remote'), 'jobModality must NOT include remote — remote is a work-location filter, not employment type');
   assert.ok(!mods.includes('hybrid'), 'hybrid is not a supported jobModality value');
   assert.ok(!mods.includes('onsite'), 'onsite is not a supported jobModality value');
+});
+
+test('MCP WORK_ARRANGEMENTS matches the backend filter contract', () => {
+  const arrangements = extractArrayLiteral(SERVER_SRC, 'WORK_ARRANGEMENTS');
+  assert.deepEqual(arrangements, ['remote', 'hybrid', 'in_person', 'unspecified']);
+
+  const searchJobsRegion = SERVER_SRC.slice(
+    SERVER_SRC.indexOf("'trackly_search_jobs'"),
+    SERVER_SRC.indexOf("'trackly_get_job'"),
+  );
+  assert.match(
+    searchJobsRegion,
+    /workArrangements:\s*z\.array\(z\.enum\(WORK_ARRANGEMENTS\)\)/,
+    'trackly_search_jobs must expose a typed workArrangements array',
+  );
+  assert.match(
+    searchJobsRegion,
+    /qs\.set\(['"]workArrangements['"],\s*params\.workArrangements\.join\(['"],['"]\)\)/,
+    'trackly_search_jobs must serialize workArrangements for the backend',
+  );
 });
 
 test('MCP STATUS_VALUES exposes only canonical public pipeline states', () => {

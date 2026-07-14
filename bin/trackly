@@ -57,7 +57,7 @@ const COMMAND_FLAGS = {
   login: [],
   logout: [],
   whoami: [],
-  jobs: ['function', 'company', 'region', 'job-type', 'remote', 'status', 'sort', 'limit', 'offset', 'keywords', 'location', 'modality'],
+  jobs: ['function', 'company', 'region', 'job-type', 'work-arrangement', 'remote', 'status', 'sort', 'limit', 'offset', 'keywords', 'location', 'modality'],
   job: [],
   companies: ['limit', 'offset'],
   search: [],
@@ -86,6 +86,7 @@ const STATUS_LABELS = {
   saved: 'saved',
   dismissed: 'dismissed',
 };
+const WORK_ARRANGEMENT_VALUES = ['remote', 'hybrid', 'in_person', 'unspecified'];
 
 function parseArgs(args) {
   const result = { _: [], command: null };
@@ -506,11 +507,24 @@ async function cmdJobs(args) {
     failNow('--remote cannot be combined with --region. Use one or the other (e.g. --region remote).');
   }
 
+  let workArrangements;
+  if (args['work-arrangement'] !== undefined) {
+    if (typeof args['work-arrangement'] !== 'string' || !args['work-arrangement'].trim()) {
+      failNow('--work-arrangement requires a comma-separated value: remote, hybrid, in_person, unspecified.');
+    }
+    workArrangements = [...new Set(args['work-arrangement'].split(',').map((value) => value.trim()))];
+    const invalid = workArrangements.filter((value) => !WORK_ARRANGEMENT_VALUES.includes(value));
+    if (invalid.length > 0) {
+      failNow(`Invalid --work-arrangement value "${invalid.join(',')}". Use: ${WORK_ARRANGEMENT_VALUES.join(', ')}.`);
+    }
+  }
+
   const params = new URLSearchParams();
   if (args.function) params.set('jobFunction', args.function);
   if (args.company) params.set('companyId', args.company);
   if (args.region) params.set('locationFilter', args.region);
   if (args['job-type']) params.set('jobModality', args['job-type']);
+  if (workArrangements) params.set('workArrangements', workArrangements.join(','));
   if (args.remote) params.set('usStates', 'REMOTE');
   if (args.status) params.set('status', args.status);
   if (args.sort) params.set('sort', args.sort);
@@ -994,7 +1008,7 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'login')}                Authenticate via Google OAuth
   ${color('cyan', 'logout')}               Clear credentials
   ${color('cyan', 'whoami')}               Show current user
-  ${color('cyan', 'jobs')}                 List jobs (--function, --company <id>, --region <tag>, --job-type <type>, --remote, --status, --sort, --limit, --offset, --keywords)
+  ${color('cyan', 'jobs')}                 List jobs (--function, --company <id>, --region <tag>, --job-type <type>, --work-arrangement <values>, --remote, --status, --sort, --limit, --offset, --keywords)
   ${color('cyan', 'job <id>')}             Get full job detail
   ${color('cyan', 'jobs <id>')}            Alias for job <id>
   ${color('cyan', 'companies')}            List companies
@@ -1036,6 +1050,8 @@ ${color('bold', 'Filter values:')}
                    Use a comma-separated list of region tags for multiple regions;
                    us/non_us/all cannot be combined.
   --job-type       full_time, internship, all  (employment type, not work-location)
+  --work-arrangement
+                   remote, hybrid, in_person, unspecified (comma-separated)
   --remote         Flag (no value). Filters for remote jobs (equivalent to usStates=REMOTE).
   --status         new, applying, applied_confirmed, check_later, not_interested, all
                    (filters by YOUR application pipeline state)
