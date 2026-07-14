@@ -363,14 +363,22 @@ function createServer() {
     {
       expectedRevision: z.number().int().min(1),
       source: z.enum(['web', 'ios', 'macos', 'codex', 'claude', 'mcp']).optional(),
-      changes: z.array(z.object({
-        key: z.string().min(1).max(200),
-        state: z.enum(['unknown', 'answered', 'intentionally_blank', 'declined']),
-        value: z.any().optional(),
-        scope: z.enum(['global', 'provider', 'company']),
-        scopeValue: z.string().max(200).optional(),
-        questionLabel: z.string().max(1000).optional(),
-      })).max(100).optional(),
+      changes: z.array(z.discriminatedUnion('scope', [
+        z.object({
+          key: z.string().min(1).max(200), state: z.enum(['unknown', 'answered', 'intentionally_blank', 'declined']),
+          value: z.any().optional(), scope: z.literal('global'), questionLabel: z.string().max(1000).optional(),
+        }),
+        z.object({
+          key: z.string().min(1).max(200), state: z.enum(['unknown', 'answered', 'intentionally_blank', 'declined']),
+          value: z.any().optional(), scope: z.literal('provider'), scopeValue: z.string().min(1).max(200),
+          questionLabel: z.string().max(1000).optional(),
+        }),
+        z.object({
+          key: z.string().min(1).max(200), state: z.enum(['unknown', 'answered', 'intentionally_blank', 'declined']),
+          value: z.any().optional(), scope: z.literal('company'), scopeValue: z.string().min(1).max(200),
+          questionLabel: z.string().max(1000).optional(),
+        }),
+      ])).max(100).optional(),
       education: z.array(z.object({
         school: z.string().min(1).max(500),
         degree: z.string().max(500).nullable().optional(),
