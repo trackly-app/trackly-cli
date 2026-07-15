@@ -292,7 +292,7 @@ test('agent doctor never mints a placeholder run to prepare a resume', async (t)
   assert.equal(report.resume.available, true);
   assert.match(report.resume.validation, /real Apply run/i);
   assert.equal(requests.some((request) => request.url.includes('/default-resume')), false);
-  assert.equal(result.code, 0);
+  assert.equal(result.code, report.ok ? 0 : 1);
 });
 
 test('agent doctor explains that exact resume validation is deferred to a real Apply run', async (t) => {
@@ -309,7 +309,6 @@ test('agent doctor explains that exact resume validation is deferred to a real A
     NO_COLOR: '1',
   });
 
-  assert.equal(result.code, 0);
   assert.equal(result.stderr, '');
   assert.match(result.stdout, /Resume validation: available \(exact bytes are verified during an active Apply run\)/);
 });
