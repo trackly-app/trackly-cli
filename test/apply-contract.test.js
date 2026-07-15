@@ -73,3 +73,13 @@ test('Apply contract makes maintenance resumable without duplicate runs or submi
   assert.match(source, /resume the existing agent_browser run/);
   assert.match(source, /Never start a duplicate run, blindly retry a mutation, or click Submit/);
 });
+
+test('Apply skill treats background-check authorization as explicit reusable consent', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  assert.match(skill, /`consent\.background_check_if_advanced`/);
+  assert.match(skill, /only when the form explicitly asks for consent to a background check if the candidate advances/);
+  assert.match(skill, /If it is unknown, ask before selecting it/);
+  assert.match(skill, /save the answer at the user's chosen scope/);
+  assert.match(skill, /Never infer it from privacy, demographic, recruiting-data, general application, criminal-record, or professional-reference consent/);
+  assert.match(skill, /Treat the latter two as separate unknown consent questions/);
+});

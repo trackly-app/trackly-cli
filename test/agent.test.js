@@ -36,7 +36,7 @@ function withTempAgentHome(run) {
 test('agent setup installs one canonical skill and links both clients', () => {
   withTempAgentHome(() => {
     const result = agent.setupAgent('both');
-    assert.equal(result.skillVersion, '2.0.0');
+    assert.equal(result.skillVersion, '2.1.0');
     assert.ok(fs.existsSync(path.join(result.canonical, 'SKILL.md')));
     assert.equal(result.clients.length, 2);
     for (const client of result.clients) {
@@ -59,7 +59,7 @@ test('clean temporary homes install Codex, Claude, and both client targets', () 
   }
 });
 
-test('resume confirmation rules make managed skill 1.0.0 stale and setup installs 2.0.0', () => {
+test('explicit-consent rules make managed skill 2.0.0 stale and setup installs 2.1.0', () => {
   withTempAgentHome(() => {
     const target = agent.clientSkillDir('codex');
     fs.mkdirSync(target, { recursive: true });
@@ -67,18 +67,18 @@ test('resume confirmation rules make managed skill 1.0.0 stale and setup install
     fs.writeFileSync(path.join(target, '.trackly-managed.json'), JSON.stringify({
       managedBy: 'trackly-cli',
       skill: 'trackly-apply',
-      skillVersion: '1.0.0',
+      skillVersion: '2.0.0',
     }));
 
     const before = agent.inspectClient('codex');
     assert.equal(before.installed, false);
-    assert.equal(before.installedSkillVersion, '1.0.0');
+    assert.equal(before.installedSkillVersion, '2.0.0');
 
     const setup = agent.setupAgent('codex');
-    assert.equal(setup.skillVersion, '2.0.0');
+    assert.equal(setup.skillVersion, '2.1.0');
     const after = agent.inspectClient('codex');
     assert.equal(after.installed, true);
-    assert.equal(after.installedSkillVersion, '2.0.0');
+    assert.equal(after.installedSkillVersion, '2.1.0');
     const installedSkill = fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8');
     assert.match(installedSkill, /Resume after maintenance/);
     assert.match(installedSkill, /Do not call `trackly_start_apply_run` again/);

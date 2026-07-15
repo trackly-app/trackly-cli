@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-07-15
+
+### Fixed
+
+- Trackly Apply now treats consent to a background check after advancement as explicit reusable consent. Unknown answers are asked before form selection, saved at the user's chosen scope, and never inferred from unrelated privacy, demographic, recruiting-data, criminal-record, professional-reference, or general application consent.
+- Bundled Trackly Apply skill 2.1.0 recognizes the canonical `consent.background_check_if_advanced` profile field while remaining compatible with the 2.x application protocol.
+
 ## [0.6.1] - 2026-07-14
 
 ### Fixed
