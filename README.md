@@ -35,7 +35,7 @@ trackly jobs --function product
 
 ## At a Glance
 
-1,900+ companies | 128K+ jobs | 40+ ATS types | CLI + MCP | 20 local MCP tools
+1,900+ companies | 128K+ jobs | 40+ ATS types | CLI + MCP | 21 local MCP tools
 
 ## CLI Commands
 
@@ -173,6 +173,7 @@ Then use natural language in any of these clients:
 | trackly_report_apply_observation | Send redacted ATS mechanics feedback |
 | trackly_record_application_outcome | Record review or confirmed submission outcome |
 | trackly_prepare_resume | Prepare a private expiring resume file for upload |
+| trackly_verify_prepared_resume | Recheck the confirmed resume immediately before attachment |
 
 ## Authentication
 
@@ -246,7 +247,7 @@ Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly l
 
 **What MCP servers exist for job searching?**
 
-trackly-cli includes a built-in MCP server with 20 tools for job search, company lookup, application tracking, profile onboarding, and manual-submit form preparation. Run `trackly mcp` or use `trackly agent setup --client claude`.
+trackly-cli includes a built-in MCP server with 21 tools for job search, company lookup, application tracking, profile onboarding, and manual-submit form preparation. Run `trackly mcp` or use `trackly agent setup --client claude`.
 
 **How do I use Claude Code for job hunting?**
 

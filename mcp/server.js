@@ -5,7 +5,7 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 const { McpError } = require('@modelcontextprotocol/sdk/types.js');
 const { z } = require('zod');
 const { apiRequest, hasAuth, maintenanceOutput } = require('../lib/client');
-const { prepareResume } = require('../lib/agent');
+const { prepareResume, verifyPreparedResume } = require('../lib/agent');
 const { version: PACKAGE_VERSION } = require('../package.json');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
@@ -469,9 +469,23 @@ function createServer() {
 
   server.tool(
     'trackly_prepare_resume',
-    'Download the authenticated default resume into a mode-0600 temporary Trackly cache for browser upload.',
-    {},
-    wrapTool(async () => prepareResume(), 'Failed to prepare default resume')
+    'Download the authenticated default resume into a mode-0600 temporary Trackly cache and return exact-file proof for user confirmation before browser upload.',
+    { runId: z.number().int().min(1) },
+    wrapTool(async ({ runId }) => prepareResume(runId), 'Failed to prepare default resume')
+  );
+
+  server.tool(
+    'trackly_verify_prepared_resume',
+    'Immediately before attachment, recompute the prepared resume fingerprint, validate its run and expiration, and lock the confirmed file read-only.',
+    {
+      runId: z.number().int().min(1),
+      confirmationId: z.string().min(1).max(200),
+      exactLocalPath: z.string().min(1).max(4096),
+      sha256: z.string().regex(/^[a-f0-9]{64}$/i),
+      sizeBytes: z.number().int().min(1),
+      expiresAt: z.string().datetime(),
+    },
+    wrapTool(async (proof) => verifyPreparedResume(proof), 'Prepared resume integrity verification failed')
   );
 
   server.registerPrompt('trackly-apply', {
@@ -482,7 +496,7 @@ function createServer() {
       role: 'user',
       content: {
         type: 'text',
-        text: 'Fetch the Trackly Apply protocol and profile onboarding, resolve missing answers with me, start the next approved queue run, fill the form, verify every required field, and stop before Submit. If maintenance interrupts the run, retain the run and browser context, wait for the advertised window, refetch protocol and profile state, and resume the existing agent_browser run. Never start a duplicate run, blindly retry a mutation, or click Submit.',
+        text: 'Fetch the Trackly Apply protocol and profile onboarding, resolve missing answers with me, and start the next approved queue run. Prepare the run-bound resume locally, show me its exact path, filename, size, SHA-256, run, and expiration, and obtain my explicit confirmation. Immediately before attachment, use the local verifier to validate the signed proof, recompute hash and size, check expiration, and lock the file read-only. Then fill the form, verify every required field, and stop before Submit. If maintenance interrupts the run, retain the run and browser context, wait for the advertised window, refetch protocol and profile state, and resume the existing agent_browser run. Never start a duplicate run, blindly retry a mutation, or click Submit.',
       },
     }],
   }));

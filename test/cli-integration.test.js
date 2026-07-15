@@ -278,44 +278,30 @@ test('agent doctor JSON exits non-zero when setup is not ready', async (t) => {
   assert.equal(JSON.parse(result.stdout).ok, false);
 });
 
-test('agent doctor validates the downloaded default resume before reporting readiness', async (t) => {
-  const { result } = await runAgainstMock(t, ['agent', 'doctor', '--json'], (req) => {
+test('agent doctor never mints a placeholder run to prepare a resume', async (t) => {
+  const { requests, result } = await runAgainstMock(t, ['agent', 'doctor', '--json'], (req) => {
     if (req.url === '/api/jobscout/apply/protocol') {
-      return { json: { protocol: { compatibleSkillMajor: 1 } } };
+      return { json: { protocol: { compatibleSkillMajor: 2 } } };
     }
     if (req.url === '/api/jobscout/application-profile') {
-      return { json: { profile: { revision: 1, completeness: { percent: 100, missingKeys: [] }, defaultResume: { id: 7 } } } };
-    }
-    if (req.url === '/api/jobscout/application-profile/default-resume') {
-      return { body: Buffer.from('not-a-resume'), headers: { 'Content-Type': 'application/octet-stream' } };
+      return { json: { profile: { revision: 1, completeness: { percent: 100, missingKeys: [] }, defaultResume: { id: 7, fileName: 'Resume.pdf' } } } };
     }
     return { status: 404, json: { error: 'not found' } };
   });
   const report = JSON.parse(result.stdout);
-  assert.equal(report.resume.verified, false);
-  assert.match(report.resume.error, /Unsupported or invalid resume type/);
-  assert.notEqual(result.code, 0);
+  assert.equal(report.resume.available, true);
+  assert.match(report.resume.validation, /real Apply run/i);
+  assert.equal(requests.some((request) => request.url.includes('/default-resume')), false);
+  assert.equal(result.code, report.ok ? 0 : 1);
 });
 
-test('agent doctor renders resume maintenance through the real human output path', async (t) => {
+test('agent doctor explains that exact resume validation is deferred to a real Apply run', async (t) => {
   const { result } = await runAgainstMock(t, ['agent', 'doctor'], (req) => {
     if (req.url === '/api/jobscout/apply/protocol') {
-      return { json: { protocol: { compatibleSkillMajor: 1 } } };
+      return { json: { protocol: { compatibleSkillMajor: 2 } } };
     }
     if (req.url === '/api/jobscout/application-profile') {
-      return { json: { profile: { revision: 1, completeness: { percent: 100, missingKeys: [] }, defaultResume: { id: 7 } } } };
-    }
-    if (req.url === '/api/jobscout/application-profile/default-resume') {
-      return {
-        status: 503,
-        headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'req-doctor-resume' },
-        body: JSON.stringify({
-          status: 'maintenance',
-          code: 'maintenance_mode',
-          message: 'Resume storage is paused.',
-          retryAfterSeconds: 120,
-        }),
-      };
+      return { json: { profile: { revision: 1, completeness: { percent: 100, missingKeys: [] }, defaultResume: { id: 7, fileName: 'Resume.pdf' } } } };
     }
     return { status: 404, json: { error: 'not found' } };
   }, {
@@ -323,12 +309,8 @@ test('agent doctor renders resume maintenance through the real human output path
     NO_COLOR: '1',
   });
 
-  assert.notEqual(result.code, 0);
   assert.equal(result.stderr, '');
-  assert.match(result.stdout, /Resume: Trackly is upgrading Resume storage is paused/);
-  assert.match(result.stdout, /Code: maintenance_mode; HTTP status: 503; service status: maintenance/);
-  assert.match(result.stdout, /Request ID: req-doctor-resume/);
-  assert.match(result.stdout, /resume the existing agent_browser run/);
+  assert.match(result.stdout, /Resume validation: available \(exact bytes are verified during an active Apply run\)/);
 });
 
 test('agent doctor renders API maintenance through the real human output path', async (t) => {

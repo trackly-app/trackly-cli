@@ -1053,7 +1053,7 @@ ${color('bold', 'Filter values:')}
   --work-arrangement
                    remote, hybrid, in_person, unspecified (comma-separated)
   --remote         Flag (no value). Filters for remote jobs (equivalent to usStates=REMOTE).
-  --status         new, applying, applied_confirmed, check_later, not_interested, all
+  --status         new, applied_confirmed, check_later, not_interested, all
                    (filters by YOUR application pipeline state)
   --sort           newest (default), match (highest match score first, requires resume)
 

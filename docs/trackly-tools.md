@@ -75,7 +75,7 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
   - `jobModality`: `full_time`, `internship`, `all` — employment type, NOT work arrangement.
   - `workArrangements`: one or more of `remote`, `hybrid`, `in_person`, `unspecified`. This is an independent axis and combines with region, employment type, and function filters.
   - `remote` (boolean): filter to remote jobs only. Maps to `usStates=REMOTE`.
-  - `status`: your application pipeline state. Values: `new`, `applied_confirmed`, `check_later`, `not_interested`, `all`. Older `applying` requests are accepted by the backend as a private compatibility alias for `check_later`, but new clients must not emit it.
+  - `status`: your application pipeline state. Values: `new`, `applied_confirmed`, `check_later`, `not_interested`, `all`.
   - `sort`: `newest` (default) or `match` (highest match score first; requires a resume on file). Backend rejects the deprecated values `oldest` and `company` with HTTP 400.
   - `keywords`, `companyId`, `limit`, `offset`.
 - **trackly_get_job** — Get full job details by ID
@@ -96,7 +96,10 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 - **trackly_get_apply_protocol** — Get the current ATS support, browser integrity rules, and compatible skill version.
 - **trackly_report_apply_observation** — Report redacted ATS mechanics without answer values.
 - **trackly_record_application_outcome** — Record review readiness or a confirmed manual submission.
-- **trackly_prepare_resume** — Local MCP only: materialize the default resume in a private, expiring mode-0600 cache. Hosted MCP returns a manual/local-agent requirement.
+- **trackly_prepare_resume** — Local MCP only: materialize the default resume in a private, expiring mode-0600 cache and return filename, size, SHA-256, exact local path, and visual-confirmation metadata. Hosted MCP returns a manual/local-agent requirement.
+- **trackly_verify_prepared_resume** — Local MCP only: immediately before attachment, recompute the user-confirmed resume hash and size, validate the exact path/run/expiration, and lock the file read-only. Any mismatch requires a fresh preview and confirmation.
+
+Apply contract v2 intentionally gives this verifier different local and hosted schemas: local MCP receives the full proof needed to inspect the private file, while hosted MCP accepts only run and confirmation identifiers and returns the manual/local-agent requirement. Local paths and fingerprints are never sent to the hosted verifier.
 
 ### Maintenance behavior
 

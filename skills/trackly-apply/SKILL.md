@@ -30,7 +30,17 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
 4. Require the one-time profile confirmation, complete education entries, and a default resume before browser work.
 5. Call `trackly_get_apply_queue`. Select deterministically unless the user names a job. Do not replace the queue call with a fresh job search.
 6. Call `trackly_start_apply_run` for the selected job.
-7. Call `trackly_prepare_resume`. If hosted MCP reports it unavailable, tell the user that local Trackly MCP or manual upload is required.
+7. Call `trackly_prepare_resume` with the active application run ID. If hosted MCP reports it unavailable, tell the user that local Trackly MCP or manual upload is required.
+8. Preserve the user’s filename returned by `trackly_prepare_resume`. Internal cache identifiers belong only in private parent directories and must never appear in the employer-facing upload filename.
+9. Before any upload, let the user inspect the exact prepared file returned by `trackly_prepare_resume`:
+   - Prefer an inline visual preview. Otherwise open the exact local file in Quick Look or Preview.app.
+   - Show a compact proof block with source (`Trackly default resume`), exact local path, user-facing filename, file size, SHA-256 fingerprint, application run, and expiration.
+   - Ask for explicit confirmation to use that resume. Bind confirmation to the exact SHA-256 and current application run; a different hash or run requires new confirmation.
+   - Always provide `confirmation.verification.exactLocalPath` so the user can independently verify the file. Never describe the prepared cache path as the original upload source.
+   - If an original local source path is known from the current session, identify it separately. Do not store original device paths in Trackly.
+   - A generic profile page is not proof of the prepared file. Use an app or web deep link only when the current protocol supplies an authenticated exact-resume viewer tied to the same SHA-256.
+   - If no exact preview method works, stop and ask the user to inspect the file manually.
+10. After the user confirms and immediately before attachment, call local `trackly_verify_prepared_resume` with the confirmed run ID, confirmation ID, exact path, SHA-256, size, and expiration. Continue only when it returns `verified: true` for exactly those values. The verifier validates the signed prepare-issued proof, recomputes the file hash, and locks it read-only. If it is unavailable, expired, missing, or mismatched, stop; prepare and visually confirm a fresh copy or require manual upload. Never send a local path or fingerprint to the hosted verifier.
 
 ## Resume after maintenance
 
@@ -50,7 +60,7 @@ Follow this order:
 
 1. Open the application in the controlled browser context and confirm the employer, role, ATS host, and HTTPS URL.
 2. Inspect the whole form and identify required fields, semantic controls, consent controls, document inputs, and multi-step sections.
-3. Upload the prepared resume before autofill when parsing may overwrite contact fields. Verify the filename chip.
+3. Only after the exact-hash visual confirmation and a successful immediate pre-attach `trackly_verify_prepared_resume` check, upload the prepared resume before autofill when parsing may overwrite contact fields. Do not change the file between verification and attachment. Verify that the filename chip exactly matches the prepared resume’s user-facing filename and contains no internal cache identifier. Stop and replace the attachment if it does not.
 4. Fill typed fields from the resolved Trackly profile. Clear parser-filled data when the canonical state is intentionally blank.
 5. Use real UI clicks for React/native selects, radios, and checkboxes. After every selection, verify the committed value and disappearance of the required-field error.
 6. Recheck email and phone through both browser DOM state and macOS accessibility state. Require exact values and reject duplicate/concatenated values.

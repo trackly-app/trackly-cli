@@ -36,7 +36,7 @@ function withTempAgentHome(run) {
 test('agent setup installs one canonical skill and links both clients', () => {
   withTempAgentHome(() => {
     const result = agent.setupAgent('both');
-    assert.equal(result.skillVersion, '1.0.1');
+    assert.equal(result.skillVersion, '2.0.0');
     assert.ok(fs.existsSync(path.join(result.canonical, 'SKILL.md')));
     assert.equal(result.clients.length, 2);
     for (const client of result.clients) {
@@ -46,7 +46,20 @@ test('agent setup installs one canonical skill and links both clients', () => {
   });
 });
 
-test('maintenance rules make managed skill 1.0.0 stale and setup installs 1.0.1', () => {
+test('clean temporary homes install Codex, Claude, and both client targets', () => {
+  for (const requested of ['codex', 'claude', 'both']) {
+    withTempAgentHome(() => {
+      const result = agent.setupAgent(requested);
+      const expected = requested === 'both' ? ['codex', 'claude'] : [requested];
+      assert.deepEqual(result.clients.map((client) => client.client), expected);
+      for (const client of result.clients) {
+        assert.ok(fs.existsSync(path.join(client.target, 'SKILL.md')));
+      }
+    });
+  }
+});
+
+test('resume confirmation rules make managed skill 1.0.0 stale and setup installs 2.0.0', () => {
   withTempAgentHome(() => {
     const target = agent.clientSkillDir('codex');
     fs.mkdirSync(target, { recursive: true });
@@ -62,10 +75,10 @@ test('maintenance rules make managed skill 1.0.0 stale and setup installs 1.0.1'
     assert.equal(before.installedSkillVersion, '1.0.0');
 
     const setup = agent.setupAgent('codex');
-    assert.equal(setup.skillVersion, '1.0.1');
+    assert.equal(setup.skillVersion, '2.0.0');
     const after = agent.inspectClient('codex');
     assert.equal(after.installed, true);
-    assert.equal(after.installedSkillVersion, '1.0.1');
+    assert.equal(after.installedSkillVersion, '2.0.0');
     const installedSkill = fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8');
     assert.match(installedSkill, /Resume after maintenance/);
     assert.match(installedSkill, /Do not call `trackly_start_apply_run` again/);
@@ -299,8 +312,11 @@ test('resume validation normalizes generic MIME types from file signatures', () 
 
 test('agent doctor distinguishes missing resumes from failed validation', () => {
   assert.equal(agent.resumeValidationStatus({ profile: { hasDefaultResume: false } }), 'not applicable (no default resume set)');
-  assert.equal(agent.resumeValidationStatus({ profile: { hasDefaultResume: true }, resume: { verified: false } }), 'failed');
-  assert.equal(agent.resumeValidationStatus({ profile: { hasDefaultResume: true }, resume: { verified: true } }), 'passed');
+  assert.equal(agent.resumeValidationStatus({ profile: { hasDefaultResume: true }, resume: { available: false } }), 'failed');
+  assert.equal(
+    agent.resumeValidationStatus({ profile: { hasDefaultResume: true }, resume: { available: true } }),
+    'available (exact bytes are verified during an active Apply run)',
+  );
 });
 
 test('resume preparation keeps CLI and MCP attribution distinct', () => {
@@ -309,11 +325,217 @@ test('resume preparation keeps CLI and MCP attribution distinct', () => {
   assert.notEqual(agent.CLI_USER_AGENT, agent.MCP_USER_AGENT);
 });
 
-test('resume cache names remain unique within the same millisecond', () => {
-  const first = agent.resumeCacheName('resume.pdf', 'application/pdf', 1234, 'aaaaaaaa');
-  const second = agent.resumeCacheName('resume.pdf', 'application/pdf', 1234, 'bbbbbbbb');
+test('resume cache keeps the user-facing filename exact while isolating internal uniqueness', () => {
+  const fileName = 'Candidate Résumé (2026) – Product.pdf';
+  const first = agent.resumeCacheName(fileName, 'application/pdf', 1234, 'aaaaaaaa');
+  const second = agent.resumeCacheName(fileName, 'application/pdf', 1234, 'bbbbbbbb');
   assert.notEqual(first, second);
-  assert.match(first, /^1234-aaaaaaaa-resume\.pdf$/);
+  assert.equal(path.dirname(first), '1234-aaaaaaaa');
+  assert.equal(path.basename(first), fileName);
+  assert.equal(path.basename(second), fileName);
+});
+
+test('resume cache rejects unsafe or silently lossy filenames', () => {
+  for (const fileName of [
+    '../Resume.pdf',
+    'folder\\Resume.pdf',
+    'Resume\u0000.pdf',
+    `${'a'.repeat(241)}.pdf`,
+    'Resume.pdf ',
+    'Resume.docx',
+  ]) {
+    assert.throws(
+      () => agent.resumeCacheName(fileName, 'application/pdf', 1234, 'aaaaaaaa'),
+      /resume filename/i,
+      fileName,
+    );
+  }
+});
+
+test('resume confirmation identifies the exact local bytes the user can inspect', () => {
+  const sha256 = 'a'.repeat(64);
+  const localPath = path.join('/private', 'trackly-cache', 'Resume - Candidate Name.pdf');
+  const expiresAt = '2026-07-14T12:00:00.000Z';
+  assert.deepEqual(agent.resumeConfirmation('Resume - Candidate Name.pdf', sha256, 132123, localPath, 91, expiresAt, 'proof-123'), {
+    required: true,
+    source: 'trackly_default_resume',
+    runId: 91,
+    confirmationId: 'proof-123',
+    fileName: 'Resume - Candidate Name.pdf',
+    sha256,
+    sizeBytes: 132123,
+    expiresAt,
+    verification: {
+      preferred: 'local_preview',
+      exactLocalPath: localPath,
+      displayExactPathRequired: true,
+    },
+  });
+});
+
+test('resume materialization binds exact bytes, path, filename, permissions, and proof to one run', () => {
+  withTempAgentHome(() => {
+    const now = Date.parse('2026-07-14T10:00:00.000Z');
+    const fileName = 'Candidate Résumé (2026) – Product.pdf';
+    const buffer = Buffer.from('%PDF-1.7\nexact resume bytes');
+    const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+
+    const prepared = agent.materializeResume({
+      buffer,
+      contentType: 'application/pdf',
+      fileName,
+      sha256,
+    }, {
+      runId: 91,
+      now,
+      nonce: 'aaaaaaaa',
+      confirmationId: 'proof-123',
+    });
+
+    assert.equal(path.basename(prepared.path), fileName);
+    assert.equal(path.basename(path.dirname(prepared.path)), `${now}-aaaaaaaa`);
+    assert.equal(prepared.fileName, fileName);
+    assert.deepEqual(fs.readFileSync(prepared.path), buffer);
+    assert.equal(fs.statSync(prepared.path).mode & 0o777, 0o600);
+    assert.equal(fs.statSync(path.dirname(prepared.path)).mode & 0o777, 0o700);
+    assert.equal(fs.statSync(path.join(path.dirname(prepared.path), '.trackly-resume-proof.json')).mode & 0o777, 0o400);
+    assert.equal(fs.statSync(path.join(process.env.TRACKLY_CONFIG_DIR, 'resume-proof.key')).mode & 0o777, 0o600);
+    assert.equal(prepared.sha256, sha256);
+    assert.equal(prepared.sizeBytes, buffer.length);
+    assert.equal(prepared.confirmation.runId, 91);
+    assert.equal(prepared.confirmation.confirmationId, 'proof-123');
+    assert.equal(prepared.confirmation.sha256, sha256);
+    assert.equal(prepared.confirmation.verification.exactLocalPath, prepared.path);
+    assert.equal(prepared.confirmation.expiresAt, prepared.expiresAt);
+  });
+});
+
+test('pre-attach verification rehashes the confirmed file and locks it read-only', () => {
+  withTempAgentHome(() => {
+    const now = Date.parse('2026-07-14T10:00:00.000Z');
+    const buffer = Buffer.from('%PDF-1.7\nconfirmed resume bytes');
+    const prepared = agent.materializeResume({
+      buffer,
+      contentType: 'application/pdf',
+      fileName: 'Resume - Candidate Name.pdf',
+      sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+    }, { runId: 91, now, nonce: 'aaaaaaaa', confirmationId: 'proof-123' });
+
+    const result = agent.verifyPreparedResume({
+      runId: prepared.confirmation.runId,
+      confirmationId: prepared.confirmation.confirmationId,
+      exactLocalPath: prepared.path,
+      sha256: prepared.sha256,
+      sizeBytes: prepared.sizeBytes,
+      expiresAt: prepared.expiresAt,
+    }, now + 1000);
+
+    assert.equal(result.verified, true);
+    assert.equal(result.sha256, prepared.sha256);
+    assert.equal(result.exactLocalPath, prepared.path);
+    assert.equal(result.permissions, '400');
+    assert.equal(fs.statSync(prepared.path).mode & 0o777, 0o400);
+  });
+});
+
+test('pre-attach verification rejects changed or expired resume proof', () => {
+  withTempAgentHome(() => {
+    const now = Date.parse('2026-07-14T10:00:00.000Z');
+    const buffer = Buffer.from('%PDF-1.7\nconfirmed resume bytes');
+    const prepared = agent.materializeResume({
+      buffer,
+      contentType: 'application/pdf',
+      fileName: 'Resume - Candidate Name.pdf',
+      sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+    }, { runId: 91, now, nonce: 'aaaaaaaa', confirmationId: 'proof-123' });
+    const proof = {
+      runId: 91,
+      confirmationId: 'proof-123',
+      exactLocalPath: prepared.path,
+      sha256: prepared.sha256,
+      sizeBytes: prepared.sizeBytes,
+      expiresAt: prepared.expiresAt,
+    };
+
+    assert.throws(() => agent.verifyPreparedResume({ ...proof, runId: 92 }, now + 1000), /does not match the confirmed run/i);
+    assert.throws(() => agent.verifyPreparedResume({ ...proof, confirmationId: 'different-proof' }, now + 1000), /does not match the confirmed run/i);
+
+    fs.writeFileSync(prepared.path, Buffer.from('%PDF-1.7\nchanged resume content'));
+    assert.throws(() => agent.verifyPreparedResume(proof, now + 1000), /changed after confirmation/i);
+
+    fs.writeFileSync(prepared.path, buffer);
+    assert.throws(() => agent.verifyPreparedResume(proof, Date.parse(prepared.expiresAt)), /expired/i);
+  });
+});
+
+test('pre-attach verification rejects a modified signed proof manifest', () => {
+  withTempAgentHome(() => {
+    const now = Date.parse('2026-07-14T10:00:00.000Z');
+    const buffer = Buffer.from('%PDF-1.7\nconfirmed resume bytes');
+    const prepared = agent.materializeResume({
+      buffer,
+      contentType: 'application/pdf',
+      fileName: 'Resume - Candidate Name.pdf',
+      sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+    }, { runId: 91, now, nonce: 'aaaaaaaa', confirmationId: 'proof-123' });
+    const manifestPath = path.join(path.dirname(prepared.path), '.trackly-resume-proof.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.runId = 92;
+    fs.chmodSync(manifestPath, 0o600);
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+    fs.chmodSync(manifestPath, 0o400);
+
+    assert.throws(() => agent.verifyPreparedResume({
+      runId: 91,
+      confirmationId: 'proof-123',
+      exactLocalPath: prepared.path,
+      sha256: prepared.sha256,
+      sizeBytes: prepared.sizeBytes,
+      expiresAt: prepared.expiresAt,
+    }, now + 1000), /proof is invalid/i);
+  });
+});
+
+test('resume preparation rejects a symlinked proof-signing key', () => {
+  withTempAgentHome((root) => {
+    const externalKey = path.join(root, 'external-proof.key');
+    const keyPath = path.join(process.env.TRACKLY_CONFIG_DIR, 'resume-proof.key');
+    fs.mkdirSync(process.env.TRACKLY_CONFIG_DIR, { recursive: true });
+    fs.writeFileSync(externalKey, crypto.randomBytes(32), { mode: 0o600 });
+    fs.symlinkSync(externalKey, keyPath);
+    const buffer = Buffer.from('%PDF-1.7\nconfirmed resume bytes');
+
+    assert.throws(() => agent.materializeResume({
+      buffer,
+      contentType: 'application/pdf',
+      fileName: 'Resume - Candidate Name.pdf',
+      sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+    }, { runId: 91 }), /not a private regular file/i);
+    assert.deepEqual(fs.readdirSync(agent.cacheDir()), []);
+  });
+});
+
+test('pre-attach verification rejects a cache path redirected through a symlink', () => {
+  withTempAgentHome((root) => {
+    const dir = agent.cacheDir();
+    const externalDir = path.join(root, 'external');
+    const cacheAlias = path.join(dir, '1700000000000-aaaaaaaa');
+    const fileName = 'Resume - Candidate Name.pdf';
+    const buffer = Buffer.from('%PDF-1.7\nexternal bytes');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(externalDir, { recursive: true });
+    fs.writeFileSync(path.join(externalDir, fileName), buffer, { mode: 0o600 });
+    fs.symlinkSync(externalDir, cacheAlias);
+
+    assert.throws(() => agent.verifyPreparedResume({
+      runId: 91,
+      confirmationId: 'proof-123',
+      exactLocalPath: path.join(cacheAlias, fileName),
+      sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+      sizeBytes: buffer.length,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    }), /resolves outside/i);
+  });
 });
 
 test('resume cache removes only expired files', () => {
@@ -333,6 +555,109 @@ test('resume cache removes only expired files', () => {
   });
 });
 
+test('resume cache cleanup handles private per-download directories', () => {
+  withTempAgentHome(() => {
+    const dir = agent.cacheDir();
+    const oldDir = path.join(dir, '1700000000000-aaaaaaaa');
+    const freshDir = path.join(dir, '1700000000000-bbbbbbbb');
+    fs.mkdirSync(oldDir, { recursive: true });
+    fs.mkdirSync(freshDir, { recursive: true });
+    const oldFile = path.join(oldDir, 'Resume - Candidate Name.pdf');
+    const freshFile = path.join(freshDir, 'Resume - Candidate Name.pdf');
+    fs.writeFileSync(oldFile, '%PDF-old');
+    fs.writeFileSync(freshFile, '%PDF-fresh');
+    const now = Date.now();
+    fs.utimesSync(oldFile, new Date(now - agent.CACHE_TTL_MS - 1000), new Date(now - agent.CACHE_TTL_MS - 1000));
+    fs.utimesSync(oldDir, new Date(now - agent.CACHE_TTL_MS - 1000), new Date(now - agent.CACHE_TTL_MS - 1000));
+
+    const result = agent.cleanResumeCache(now);
+
+    assert.equal(result.removed, 1);
+    assert.equal(fs.existsSync(oldFile), false);
+    assert.equal(fs.existsSync(oldDir), false);
+    assert.equal(fs.existsSync(freshFile), true);
+  });
+});
+
+test('resume cache cleanup leaves fresh empty download directories in place', () => {
+  withTempAgentHome(() => {
+    const dir = agent.cacheDir();
+    const freshEmpty = path.join(dir, `${Date.now()}-aaaaaaaa`);
+    fs.mkdirSync(freshEmpty, { recursive: true });
+
+    assert.doesNotThrow(() => agent.cleanResumeCache(Date.now()));
+    assert.equal(fs.existsSync(freshEmpty), true);
+  });
+});
+
+test('resume cache cleanup tolerates entries removed by another process', () => {
+  withTempAgentHome(() => {
+    const dir = agent.cacheDir();
+    const oldDir = path.join(dir, '1700000000000-aaaaaaaa');
+    const oldFile = path.join(oldDir, 'Resume - Candidate Name.pdf');
+    fs.mkdirSync(oldDir, { recursive: true });
+    fs.writeFileSync(oldFile, '%PDF-old');
+    const now = Date.now();
+    fs.utimesSync(oldFile, new Date(now - agent.CACHE_TTL_MS - 1000), new Date(now - agent.CACHE_TTL_MS - 1000));
+    fs.utimesSync(oldDir, new Date(now - agent.CACHE_TTL_MS - 1000), new Date(now - agent.CACHE_TTL_MS - 1000));
+
+    const originalLstat = fs.lstatSync;
+    let removedConcurrently = false;
+    fs.lstatSync = (target, ...args) => {
+      if (target === oldFile && !removedConcurrently) {
+        removedConcurrently = true;
+        fs.rmSync(oldFile, { force: true });
+      }
+      return originalLstat(target, ...args);
+    };
+    try {
+      assert.doesNotThrow(() => agent.cleanResumeCache(now));
+      assert.equal(removedConcurrently, true);
+    } finally {
+      fs.lstatSync = originalLstat;
+    }
+  });
+});
+
+test('resume cache cleanup tolerates a directory becoming non-empty before removal', () => {
+  withTempAgentHome(() => {
+    const dir = agent.cacheDir();
+    const oldDir = path.join(dir, '1700000000000-aaaaaaaa');
+    fs.mkdirSync(oldDir, { recursive: true });
+    const now = Date.now();
+    fs.utimesSync(oldDir, new Date(now - agent.CACHE_TTL_MS - 1000), new Date(now - agent.CACHE_TTL_MS - 1000));
+
+    const originalRmdir = fs.rmdirSync;
+    fs.rmdirSync = (target, ...args) => {
+      if (target === oldDir) {
+        const error = new Error('directory is no longer empty');
+        error.code = 'ENOTEMPTY';
+        throw error;
+      }
+      return originalRmdir(target, ...args);
+    };
+    try {
+      assert.doesNotThrow(() => agent.cleanResumeCache(now));
+    } finally {
+      fs.rmdirSync = originalRmdir;
+    }
+  });
+});
+
+test('resume cache cleanup never follows symlinked children', () => {
+  withTempAgentHome((root) => {
+    const dir = agent.cacheDir();
+    const external = path.join(root, 'outside.pdf');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(external, '%PDF-outside');
+    fs.utimesSync(external, new Date(0), new Date(0));
+    fs.symlinkSync(external, path.join(dir, 'legacy-link.pdf'));
+
+    assert.doesNotThrow(() => agent.cleanResumeCache(Date.now()));
+    assert.equal(fs.existsSync(external), true);
+  });
+});
+
 test('public skill contains no personal profile data or absolute user paths', () => {
   const root = agent.bundledSkillDir();
   const files = [];
@@ -347,4 +672,14 @@ test('public skill contains no personal profile data or absolute user paths', ()
   const text = files.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
   assert.doesNotMatch(text, /Kevin|Astuhuaman|berkeley\.edu|2710 Bancroft|\/Users\//i);
   assert.match(text, /Stop before Submit/);
+  assert.match(text, /preserve.*user.*filename/i);
+  assert.match(text, /internal.*cache.*identifier/i);
+  assert.match(text, /visual.*preview/i);
+  assert.match(text, /explicit.*confirmation/i);
+  assert.match(text, /exact.*SHA-256/i);
+  assert.match(text, /exact.*prepared.*file/i);
+  assert.match(text, /exact local path/i);
+  assert.match(text, /Always provide.*exactLocalPath/i);
+  assert.match(text, /Quick Look|Preview\.app/i);
+  assert.match(text, /generic.*profile.*not.*proof/i);
 });

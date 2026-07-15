@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-14
+
+### Fixed
+
+- Prepared resumes preserve the exact user-facing filename supplied by Trackly, while unique cache identifiers remain private parent-directory names and never appear in employer upload chips.
+- Prepared-resume results require visual confirmation bound to the exact SHA-256, application run, and expiring local file before upload. The bundled skill directs agents to preview the exact bytes and always display the exact local path.
+- Expired-resume cleanup supports the nested private cache layout safely, including concurrent cleanup by multiple Trackly processes.
+- A local pre-attach verifier validates a signed prepare-issued proof, recomputes the confirmed resume fingerprint, validates its run and expiration, and locks the exact file read-only immediately before browser attachment.
+- Removed the retired `applying` status from the final CLI help surface.
+- Bundled Trackly Apply skill 2.0.0 and tool contract 2.0.0 make the run-bound exact-file confirmation gate an explicit breaking safety upgrade.
+
 ## [0.6.0] - 2026-07-14
 
 ### Added

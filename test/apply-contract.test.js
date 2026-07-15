@@ -47,16 +47,17 @@ function toolArguments(name) {
 const normalizeSchema = (schema) => schema.replace(/\s+/g, '').replace(/,([}\]])/g, '$1');
 
 test('local MCP Apply schemas match each complete versioned input schema', () => {
-  assert.equal(contract.contractVersion, '1.0.0');
+  assert.equal(contract.contractVersion, '2.0.0');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
-    assert.equal(normalizeSchema(toolArguments(name)[2]), expectedSchema, `${name} schema drifted`);
+    const localSchema = typeof expectedSchema === 'string' ? expectedSchema : expectedSchema.local;
+    assert.equal(normalizeSchema(toolArguments(name)[2]), localSchema, `${name} schema drifted`);
   }
 });
 
 test('local MCP has no uncontracted Trackly Apply tools', () => {
   const names = [...source.matchAll(/server\.tool\(\s*['"]([^'"]+)['"]/g)]
     .map((match) => match[1])
-    .filter((name) => name.includes('apply') || name.includes('application_profile') || name.includes('application_outcome') || name.includes('profile_onboarding') || name === 'trackly_prepare_resume')
+    .filter((name) => name.includes('apply') || name.includes('application_profile') || name.includes('application_outcome') || name.includes('profile_onboarding') || name === 'trackly_prepare_resume' || name === 'trackly_verify_prepared_resume')
     .sort();
   assert.deepEqual(names, Object.keys(contract.tools).sort());
 });
