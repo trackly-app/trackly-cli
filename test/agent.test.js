@@ -59,7 +59,7 @@ test('clean temporary homes install Codex, Claude, and both client targets', () 
   }
 });
 
-test('resume and explicit-consent rules make managed skill 1.0.0 stale and setup installs 2.1.0', () => {
+test('explicit-consent rules make managed skill 2.0.0 stale and setup installs 2.1.0', () => {
   withTempAgentHome(() => {
     const target = agent.clientSkillDir('codex');
     fs.mkdirSync(target, { recursive: true });
@@ -67,12 +67,12 @@ test('resume and explicit-consent rules make managed skill 1.0.0 stale and setup
     fs.writeFileSync(path.join(target, '.trackly-managed.json'), JSON.stringify({
       managedBy: 'trackly-cli',
       skill: 'trackly-apply',
-      skillVersion: '1.0.0',
+      skillVersion: '2.0.0',
     }));
 
     const before = agent.inspectClient('codex');
     assert.equal(before.installed, false);
-    assert.equal(before.installedSkillVersion, '1.0.0');
+    assert.equal(before.installedSkillVersion, '2.0.0');
 
     const setup = agent.setupAgent('codex');
     assert.equal(setup.skillVersion, '2.1.0');
