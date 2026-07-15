@@ -65,7 +65,8 @@ Follow this order:
 5. Use real UI clicks for React/native selects, radios, and checkboxes. After every selection, verify the committed value and disappearance of the required-field error.
 6. Recheck email and phone through both browser DOM state and macOS accessibility state. Require exact values and reject duplicate/concatenated values.
 7. Complete known optional fields, education, links, relocation, and source answers. Do not silently omit canonical answers.
-8. Run the full integrity gate, including the final consent checkbox, every visible error, all steps, and any correction banner.
+8. Treat background-check, criminal-record, and reference-check authorization as the canonical `consent.background_check_if_advanced` field. If it is unknown, ask explicitly before selecting it and save the answer at the user's chosen scope. Never infer it from privacy, demographic, recruiting-data, or general application consent.
+9. Run the full integrity gate, including the final consent checkbox, every visible error, all steps, and any correction banner.
 
 When the user corrects an answer, immediately save the appropriate scope with `trackly_update_application_profile` and report only a redacted mechanics observation through `trackly_report_apply_observation`. Never promote one user’s value into a global default.
 
