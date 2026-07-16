@@ -76,7 +76,7 @@ When the user corrects an answer, immediately save the appropriate scope with `t
 
 ## Review handoff
 
-Call `trackly_record_application_outcome` with `review_ready`, then provide the review block defined in [references/review-handoff.md](references/review-handoff.md). Keep the browser on the final review state and stop.
+Call `trackly_record_application_outcome` with `review_ready`, then provide the review block defined in [references/review-handoff.md](references/review-handoff.md). For a single run, keep the browser on the final review state and stop. For a frozen batch, preserve the current review-ready tab and continue the same lifecycle for the next mapped batch member; stop only after every frozen member is review-ready, then provide one review block per run. Never submit any member.
 
 After the user submits manually:
 

@@ -109,6 +109,9 @@ test('Apply skill freezes and completes every member of an explicitly requested 
   assert.match(skill, /show and verify each member's exact path, size, hash, run ID, and expiration/);
   assert.match(skill, /only for the frozen job\/run\/tab set/);
   assert.match(skill, /a run falls outside the frozen batch/);
+  assert.match(skill, /preserve the current review-ready tab and continue the same lifecycle for the next mapped batch member/);
+  assert.match(skill, /stop only after every frozen member is review-ready/);
+  assert.match(skill, /one review block per run/);
 });
 
 test('Apply skill treats missing education months as unknown instead of inferring defaults', () => {
@@ -145,5 +148,7 @@ test('Apply skill calibrates free-text answers without requiring an external hum
   assert.match(writing, /This gate remains authoritative and self-contained/);
   assert.match(writing, /Use no em dash by default/);
   assert.match(writing, /generic company praise or unsupported enthusiasm/);
-  assert.match(writing, /Compare the final response with the voice sample for rhythm and register/);
+  assert.match(writing, /When a voice sample exists, compare the final response with it/);
+  assert.match(writing, /When the sample was declined or remains unknown for the current run/);
+  assert.match(writing, /use the saved style instructions or plain default instead/);
 });

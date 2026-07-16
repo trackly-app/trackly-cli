@@ -33,4 +33,4 @@ Before entering the response:
 4. Vary sentence length and structure. Avoid a sequence of equally sized, equally formal sentences.
 5. Prefer active verbs, concrete nouns, real numbers, and named examples already supported by the profile.
 6. Read the answer aloud. If it sounds like a press release, generic cover letter, or assistant response, rewrite it.
-7. Compare the final response with the voice sample for rhythm and register, then confirm every factual claim again.
+7. When a voice sample exists, compare the final response with it for rhythm and register. When the sample was declined or remains unknown for the current run, use the saved style instructions or plain default instead. In every case, confirm each factual claim again.
