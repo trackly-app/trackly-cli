@@ -29,13 +29,14 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
    - Require explicit encrypted-storage consent before saving restricted profile values.
 4. Require the one-time profile confirmation, complete education entries, and a default resume before browser work.
 5. Call `trackly_get_apply_queue`. Select deterministically unless the user names a job. Do not replace the queue call with a fresh job search.
+   - If the user requests the next `N` jobs, prepare `N` distinct runs and browser tabs through `review_ready`. A review-ready run does not block starting the next queued job. Never submit any of them.
 6. Call `trackly_start_apply_run` for the selected job.
 7. Call `trackly_prepare_resume` with the active application run ID. If hosted MCP reports it unavailable, tell the user that local Trackly MCP or manual upload is required.
 8. Preserve the user’s filename returned by `trackly_prepare_resume`. Internal cache identifiers belong only in private parent directories and must never appear in the employer-facing upload filename.
 9. Before any upload, let the user inspect the exact prepared file returned by `trackly_prepare_resume`:
    - Prefer an inline visual preview. Otherwise open the exact local file in Quick Look or Preview.app.
    - Show a compact proof block with source (`Trackly default resume`), exact local path, user-facing filename, file size, SHA-256 fingerprint, application run, and expiration.
-   - Ask for explicit confirmation to use that resume. Bind confirmation to the exact SHA-256 and current application run; a different hash or run requires new confirmation.
+   - Ask for explicit confirmation to use that resume. Bind confirmation to the exact SHA-256 and current application run. For an explicitly approved batch of `N` runs, the user may authorize the same confirmed SHA-256 for all `N`; still show and verify each run's exact path, size, hash, run ID, and expiration, and stop if any hash differs. Outside that batch, a different hash or run requires new confirmation.
    - Always provide `confirmation.verification.exactLocalPath` so the user can independently verify the file. Never describe the prepared cache path as the original upload source.
    - If an original local source path is known from the current session, identify it separately. Do not store original device paths in Trackly.
    - A generic profile page is not proof of the prepared file. Use an app or web deep link only when the current protocol supplies an authenticated exact-resume viewer tied to the same SHA-256.
@@ -62,9 +63,10 @@ Follow this order:
 2. Inspect the whole form and identify required fields, semantic controls, consent controls, document inputs, and multi-step sections.
 3. Only after the exact-hash visual confirmation and a successful immediate pre-attach `trackly_verify_prepared_resume` check, upload the prepared resume before autofill when parsing may overwrite contact fields. Do not change the file between verification and attachment. Verify that the filename chip exactly matches the prepared resume’s user-facing filename and contains no internal cache identifier. Stop and replace the attachment if it does not.
 4. Fill typed fields from the resolved Trackly profile. Clear parser-filled data when the canonical state is intentionally blank.
-5. Use real UI clicks for React/native selects, radios, and checkboxes. After every selection, verify the committed value and disappearance of the required-field error.
+5. Use real UI clicks for React/native selects, radios, and checkboxes. Resolve boolean values by their exact semantic label (`true` to Yes, `false` to No), never by option order, index, proximity, or a stale prior selection. After every selection, compare the committed value with the canonical Trackly value and verify the required-field error disappeared. Treat any mismatch as a failed field and correct it before continuing.
 6. Recheck email and phone through both browser DOM state and macOS accessibility state. Require exact values and reject duplicate/concatenated values.
 7. Complete known optional fields, education, links, relocation, and source answers. Do not silently omit canonical answers.
+   - Treat partial dates as unknown at the missing precision. If Trackly has only a year but the ATS requires a month, ask once and sync the complete date before selecting either control. Never accept an ATS-selected current/default month or infer an education month.
 8. Use the canonical `consent.background_check_if_advanced` field only when the form explicitly asks for consent to a background check if the candidate advances. If it is unknown, ask before selecting it and save the answer at the user's chosen scope. Never infer it from privacy, demographic, recruiting-data, general application, criminal-record, or professional-reference consent. Treat the latter two as separate unknown consent questions unless the current profile schema supplies their own canonical fields.
 9. Run the full integrity gate, including the final consent checkbox, every visible error, all steps, and any correction banner.
 

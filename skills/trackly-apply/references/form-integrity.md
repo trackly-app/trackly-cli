@@ -6,7 +6,9 @@ Run this gate after each semantic selection and again across the entire form bef
 
 - Open React comboboxes and click the exact list option. Do not inject a value or rely on displayed input text.
 - Click native select options, radio labels, and checkboxes through the UI.
-- After selection, verify the selected/checked state from the control, dispatch-completed page state, and visible label.
+- Map booleans semantically: canonical `true` must commit the visible Yes-equivalent and canonical `false` the visible No-equivalent. Never choose a boolean option by index, DOM order, keyboard offset, proximity, or previous control state.
+- After selection, verify the selected/checked state from the control, dispatch-completed page state, and visible label. Compare the normalized committed value to the canonical Trackly value; presence alone is insufficient.
+- If the committed value is the semantic opposite of the canonical value, stop the sweep, correct the field through a fresh real UI selection, and report a redacted integrity observation.
 - Verify that the control’s required error is absent. A visible value beside “This field is required” is a failed field.
 - If a stale error remains, reopen and reselect the control. Use non-submitting validation only when the ATS provides it.
 

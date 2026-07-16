@@ -83,3 +83,14 @@ test('Apply skill treats background-check authorization as explicit reusable con
   assert.match(skill, /Never infer it from privacy, demographic, recruiting-data, general application, criminal-record, or professional-reference consent/);
   assert.match(skill, /Treat the latter two as separate unknown consent questions/);
 });
+
+test('Apply skill maps boolean answers semantically and verifies the canonical value', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  const integrity = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'form-integrity.md'), 'utf8');
+
+  assert.match(skill, /`true` to Yes, `false` to No/);
+  assert.match(skill, /never by option order, index, proximity, or a stale prior selection/);
+  assert.match(skill, /compare the committed value with the canonical Trackly value/);
+  assert.match(integrity, /Never choose a boolean option by index, DOM order, keyboard offset, proximity, or previous control state/);
+  assert.match(integrity, /semantic opposite of the canonical value/);
+});
