@@ -27,14 +27,27 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
    - Save ATS-specific behavior by provider and employer-specific facts by company.
    - Ask which scope applies when it is unclear.
    - Require explicit encrypted-storage consent before saving restricted profile values.
+   - Use `employment.previously_worked_for_employer` only at company scope.
+   - Use `employment.has_close_relationship_at_employer` only at company scope.
+   - Use `location.requires_relocation_assistance` only at global scope.
+   - Keep `identity.pronouns` separate from `eeo.gender_identity`; save `eeo.gender_identity` only at global scope.
+   - Use `consent.future_opportunity_retention` only at company scope because one employer's optional retention choice is not consent for another employer.
+   - Treat an accuracy or truthfulness certification as a live per-run attestation. Never save that attestation to the reusable profile; ask and verify it on every application run.
 4. Require the one-time profile confirmation, complete education entries, and a default resume before browser work.
 5. Call `trackly_get_apply_queue`. Select deterministically unless the user names a job. Do not replace the queue call with a fresh job search.
    - If the user requests the next `N` jobs, freeze the deterministic ordered set of exactly `N` job IDs before starting any run. Do not replace, rescore, or expand that approved batch.
    - For each fixed batch member, preserve an explicit job ID -> application run ID -> browser tab mapping. Complete the full start -> resume preparation -> exact-file confirmation -> pre-attach verification -> form completion -> `review_ready` lifecycle for every member. A review-ready run does not block the next member. Never submit any of them.
-6. Call `trackly_start_apply_run` for the selected job or current fixed batch member.
-7. Call `trackly_prepare_resume` with that exact application run ID. If hosted MCP reports it unavailable, tell the user that local Trackly MCP or manual upload is required.
-8. Preserve the user’s filename returned by `trackly_prepare_resume`. Internal cache identifiers belong only in private parent directories and must never appear in the employer-facing upload filename.
-9. Before any upload, let the user inspect the exact prepared file returned by `trackly_prepare_resume`:
+6. Call `trackly_start_apply_run` for the selected job or current fixed batch member. Reuse an active run returned by Trackly; never create a replacement run because browser control was interrupted.
+7. Pass the browser readiness gate before preparing resume bytes:
+   - Use semantic browser control through Codex in-app browser controls, Chrome MCP/extension browser control, or Claude in Chrome.
+   - Prove the surface can discover or reclaim every target tab, inspect the DOM, click and select semantic controls, upload a file, and read committed field state.
+   - Bind each tab to the exact employer, role, ATS, requisition URL, job ID, and run ID. A window position or ephemeral tab number alone is not identity.
+   - After a handoff, context resume, or browser-control interruption, reclaim and re-verify every mapped tab before continuing.
+   - Do not call `trackly_prepare_resume` until this gate passes. Accessibility may provide an independent verification signal, but coordinate-only clicking is forbidden for form completion.
+   - If the semantic browser bridge is unavailable, preserve every existing run and tab mapping, record the blocker when possible, and stop before any upload or form mutation.
+8. Call `trackly_prepare_resume` with that exact application run ID. If hosted MCP reports it unavailable, tell the user that local Trackly MCP or manual upload is required.
+9. Preserve the user’s filename returned by `trackly_prepare_resume`. Internal cache identifiers belong only in private parent directories and must never appear in the employer-facing upload filename.
+10. Before any upload, let the user inspect the exact prepared file returned by `trackly_prepare_resume`:
    - Prefer an inline visual preview. Otherwise open the exact local file in Quick Look or Preview.app.
    - Show a compact proof block with source (`Trackly default resume`), exact local path, user-facing filename, file size, SHA-256 fingerprint, application run, and expiration.
    - Ask for explicit confirmation to use that resume. Bind confirmation to the exact SHA-256 and current application run. For an explicitly approved batch of `N` runs, the user may authorize the same confirmed SHA-256 only for the frozen job/run/tab set; still show and verify each member's exact path, size, hash, run ID, and expiration. Stop if any hash differs, a run is missing, or a run falls outside the frozen batch. Outside that batch, a different hash or run requires new confirmation.
@@ -42,7 +55,7 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
    - If an original local source path is known from the current session, identify it separately. Do not store original device paths in Trackly.
    - A generic profile page is not proof of the prepared file. Use an app or web deep link only when the current protocol supplies an authenticated exact-resume viewer tied to the same SHA-256.
    - If no exact preview method works, stop and ask the user to inspect the file manually.
-10. After the user confirms and immediately before attachment, call local `trackly_verify_prepared_resume` with the confirmed run ID, confirmation ID, exact path, SHA-256, size, and expiration. Continue only when it returns `verified: true` for exactly those values. The verifier validates the signed prepare-issued proof, recomputes the file hash, and locks it read-only. If it is unavailable, expired, missing, or mismatched, stop; prepare and visually confirm a fresh copy or require manual upload. Never send a local path or fingerprint to the hosted verifier.
+11. After the user confirms and immediately before attachment, call local `trackly_verify_prepared_resume` with the confirmed run ID, confirmation ID, exact path, SHA-256, size, and expiration. Continue only when it returns `verified: true` for exactly those values. The verifier validates the signed prepare-issued proof, recomputes the file hash, and locks it read-only. If it is unavailable, expired, missing, or mismatched, stop; prepare and visually confirm a fresh copy or require manual upload. Never send a local path or fingerprint to the hosted verifier.
 
 ## Resume after maintenance
 
@@ -56,7 +69,7 @@ If any REST or MCP tool returns canonical `maintenance_mode` (or the legacy `pla
 
 ## Fill the form
 
-Read [references/ats-playbook.md](references/ats-playbook.md) for the detected ATS and [references/form-integrity.md](references/form-integrity.md) before interacting with fields.
+Read [references/ats-playbook.md](references/ats-playbook.md) for the detected ATS, [references/form-integrity.md](references/form-integrity.md), and [references/scenario-coverage.md](references/scenario-coverage.md) before interacting with fields.
 
 Follow this order:
 
@@ -74,9 +87,11 @@ Follow this order:
 
 When the user corrects an answer, immediately save the appropriate scope with `trackly_update_application_profile` and report only a redacted mechanics observation through `trackly_report_apply_observation`. Never promote one user’s value into a global default.
 
+For every run, track only scenarios actually exercised. Before `review_ready`, report each exercised scenario with `observationType: scenario_coverage`, the stable scenario code, browser surface, and whether the tab was resumed after handoff. Never include answer values or page text. Include the actual scenario coverage in the final handoff; do not claim unobserved coverage.
+
 ## Review handoff
 
-Call `trackly_record_application_outcome` with `review_ready`, then provide the review block defined in [references/review-handoff.md](references/review-handoff.md). For a single run, keep the browser on the final review state and stop. For a frozen batch, preserve the current review-ready tab and continue the same lifecycle for the next mapped batch member; stop only after every frozen member is review-ready, then provide one review block per run. Never submit any member.
+Call `trackly_record_application_outcome` with `review_ready`, then provide the review block defined in [references/review-handoff.md](references/review-handoff.md). For a single run, keep the browser on the final review state and stop. For a frozen batch, preserve the current review-ready tab and continue the same lifecycle for the next mapped batch member; stop only after every frozen member is review-ready, then provide one review block per run. Never submit any member. End with job ID -> run ID -> browser tab -> ATS -> status plus the actual scenario coverage for each run.
 
 After the user submits manually:
 

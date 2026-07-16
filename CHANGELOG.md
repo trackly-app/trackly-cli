@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-07-16
+
+### Added
+
+- Trackly Apply now gates resume preparation on semantic browser readiness, binds every application tab to its exact job and run, and reclaims the mapping after handoffs or browser-control interruptions.
+- Application profile schema 1.3 adds safely scoped answers for prior employer work, close relationships at an employer, relocation assistance, gender-identity wording, and optional future-opportunity data retention.
+- Redacted per-run scenario coverage records which browser, resume, semantic-control, validation, consent, and handoff mechanics were actually exercised.
+
+### Fixed
+
+- Coordinate-only browser interaction can no longer substitute for observable semantic form control.
+- Accuracy and truthfulness certifications remain per-run attestations and are never persisted as reusable profile answers.
+- Bundled Trackly Apply skill 2.3.0 and tool contract 2.1.0 keep production agents aligned with the stronger browser harness.
+
 ## [0.6.3] - 2026-07-15
 
 ### Added

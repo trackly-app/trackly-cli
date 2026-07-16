@@ -2,6 +2,13 @@
 
 Run this gate after each semantic selection and again across the entire form before review.
 
+## Browser-control continuity
+
+- If the semantic browser bridge becomes unavailable, stop before the next form mutation. Coordinate-only computer use is not a safe substitute for semantic field control.
+- Preserve the current run and job mapping. After control returns, reclaim and re-verify the tab against the exact employer, role, ATS, requisition URL, job ID, and run ID.
+- Reinspect the DOM and committed control state after every handoff, context resume, navigation, or rerender. Do not assume a stale snapshot or tab handle still identifies the same application.
+- Prepare resume bytes only after semantic tab discovery, inspection, selection, upload, and committed-state capabilities are available.
+
 ## Semantic controls
 
 - Open React comboboxes and click the exact list option. Do not inject a value or rely on displayed input text.

@@ -47,7 +47,7 @@ function toolArguments(name) {
 const normalizeSchema = (schema) => schema.replace(/\s+/g, '').replace(/,([}\]])/g, '$1');
 
 test('local MCP Apply schemas match each complete versioned input schema', () => {
-  assert.equal(contract.contractVersion, '2.0.0');
+  assert.equal(contract.contractVersion, '2.1.0');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
     const localSchema = typeof expectedSchema === 'string' ? expectedSchema : expectedSchema.local;
     assert.equal(normalizeSchema(toolArguments(name)[2]), localSchema, `${name} schema drifted`);
@@ -112,6 +112,66 @@ test('Apply skill freezes and completes every member of an explicitly requested 
   assert.match(skill, /preserve the current review-ready tab and continue the same lifecycle for the next mapped batch member/);
   assert.match(skill, /stop only after every frozen member is review-ready/);
   assert.match(skill, /one review block per run/);
+});
+
+test('Apply skill proves semantic browser readiness before preparing resume bytes', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  const integrity = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'form-integrity.md'), 'utf8');
+
+  assert.match(skill, /browser readiness gate/);
+  assert.match(skill, /Codex in-app browser controls, Chrome MCP\/extension browser control, or Claude in Chrome/);
+  assert.match(skill, /discover or reclaim every target tab/);
+  assert.match(skill, /exact employer, role, ATS, requisition URL, job ID, and run ID/);
+  assert.match(skill, /Do not call `trackly_prepare_resume` until this gate passes/);
+  assert.match(skill, /coordinate-only clicking is forbidden/);
+  assert.match(skill, /preserve every existing run and tab mapping/);
+  assert.match(integrity, /semantic browser bridge becomes unavailable/);
+  assert.match(integrity, /reclaim and re-verify the tab/);
+});
+
+test('Apply skill scopes learned answers and keeps accuracy certification ephemeral', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+
+  assert.match(skill, /`employment\.previously_worked_for_employer`.*company scope/s);
+  assert.match(skill, /`employment\.has_close_relationship_at_employer`.*company scope/s);
+  assert.match(skill, /`location\.requires_relocation_assistance`.*global scope/s);
+  assert.match(skill, /`eeo\.gender_identity`.*global scope/s);
+  assert.match(skill, /`consent\.future_opportunity_retention`.*company scope/s);
+  assert.match(skill, /accuracy or truthfulness certification/);
+  assert.match(skill, /Never save that attestation to the reusable profile/);
+  assert.match(skill, /ask and verify it on every application run/);
+});
+
+test('Apply skill records and reports actual scenario coverage for every run', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  const coverage = fs.readFileSync(path.join(
+    __dirname,
+    '..',
+    'skills',
+    'trackly-apply',
+    'references',
+    'scenario-coverage.md',
+  ), 'utf8');
+  const review = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'review-handoff.md'), 'utf8');
+
+  assert.match(skill, /references\/scenario-coverage\.md/);
+  assert.match(skill, /`observationType: scenario_coverage`/);
+  assert.match(skill, /actual scenario coverage/);
+  assert.match(coverage, /browserSurface/);
+  assert.match(coverage, /resumedAfterHandoff/);
+  assert.match(coverage, /resume_upload/);
+  assert.match(coverage, /required_error_sweep/);
+  assert.match(coverage, /final_consent/);
+  assert.match(review, /Actual scenario coverage:/);
+});
+
+test('Apply observation contract accepts redacted browser scenario metadata', () => {
+  const schema = normalizeSchema(toolArguments('trackly_report_apply_observation')[2]);
+
+  assert.match(schema, /scenarioCode:z\.string\(\)\.max\(100\)\.optional\(\)/);
+  assert.match(schema, /browserSurface:z\.string\(\)\.max\(100\)\.optional\(\)/);
+  assert.match(schema, /resumedAfterHandoff:z\.boolean\(\)\.optional\(\)/);
+  assert.doesNotMatch(schema, /answerValue|pageText/);
 });
 
 test('Apply skill treats missing education months as unknown instead of inferring defaults', () => {
