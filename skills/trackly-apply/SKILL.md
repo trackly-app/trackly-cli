@@ -68,7 +68,8 @@ Follow this order:
 7. Complete known optional fields, education, links, relocation, and source answers. Do not silently omit canonical answers.
    - Treat partial dates as unknown at the missing precision. If Trackly has only a year but the ATS requires a month, ask once and sync the complete date before selecting either control. Never accept an ATS-selected current/default month or infer an education month.
 8. Use the canonical `consent.background_check_if_advanced` field only when the form explicitly asks for consent to a background check if the candidate advances. If it is unknown, ask before selecting it and save the answer at the user's chosen scope. Never infer it from privacy, demographic, recruiting-data, general application, criminal-record, or professional-reference consent. Treat the latter two as separate unknown consent questions unless the current profile schema supplies their own canonical fields.
-9. Run the full integrity gate, including the final consent checkbox, every visible error, all steps, and any correction banner.
+9. For a free-text application response, read [references/application-writing.md](references/application-writing.md). Calibrate from the user's Trackly writing fields, use only supported profile and role facts, and run the built-in voice and anti-slop gate before entering the response. Do not require a separate writing or humanizer skill.
+10. Run the full integrity gate, including the final consent checkbox, every visible error, all steps, and any correction banner.
 
 When the user corrects an answer, immediately save the appropriate scope with `trackly_update_application_profile` and report only a redacted mechanics observation through `trackly_report_apply_observation`. Never promote one user’s value into a global default.
 
@@ -81,6 +82,7 @@ After the user submits manually:
 - If a success page is visible, record `submitted` with a short non-sensitive confirmation signal.
 - If the user explicitly confirms submission, record `submitted` with `user_confirmed`.
 - If neither exists, do not move the job to applied.
+- Treat a contradictory ATS response such as “already applied” as provisional until the exact requisition URL settles. Do not click Submit again. Preserve the page, confirm the job/requisition identifier is unchanged, and re-read the final route state after the UI and network activity settle. A later explicit success state on that same requisition overrides the provisional error and must be recorded as `submitted`; otherwise record the run as blocked without marking the job applied.
 
 ## Support boundary
 

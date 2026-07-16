@@ -29,3 +29,10 @@ Run this gate after each semantic selection and again across the entire form bef
 6. Confirm the Submit button is present but do not click it.
 
 If any field’s committed state cannot be observed, fail the gate and explain which field needs manual review.
+
+## Submission-state reconciliation
+
+- Never retry Submit after a contradictory or duplicate-application response.
+- Treat “already applied” and similar banners as provisional until the current ATS route finishes settling.
+- Confirm the employer, role, and exact requisition identifier are unchanged, then re-read the final state from that same URL.
+- An explicit success state on the exact requisition is authoritative and may be recorded as submitted. Without success or explicit user confirmation, record blocked and leave the job out of Applied.

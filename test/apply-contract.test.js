@@ -94,3 +94,27 @@ test('Apply skill maps boolean answers semantically and verifies the canonical v
   assert.match(integrity, /Never choose a boolean option by index, DOM order, keyboard offset, proximity, or previous control state/);
   assert.match(integrity, /semantic opposite of the canonical value/);
 });
+
+test('Apply skill reconciles contradictory ATS submission states without retrying Submit', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  const integrity = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'form-integrity.md'), 'utf8');
+
+  assert.match(skill, /contradictory ATS response such as “already applied” as provisional/);
+  assert.match(skill, /Do not click Submit again/);
+  assert.match(skill, /explicit success state on that same requisition overrides the provisional error/);
+  assert.match(integrity, /exact requisition identifier are unchanged/);
+  assert.match(integrity, /Without success or explicit user confirmation, record blocked/);
+});
+
+test('Apply skill calibrates free-text answers without requiring an external humanizer', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  const writing = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'application-writing.md'), 'utf8');
+
+  assert.match(skill, /Do not require a separate writing or humanizer skill/);
+  assert.match(writing, /`writing\.voice_sample` and `writing\.style_instructions`/);
+  assert.match(writing, /Never copy them into the public skill, logs, observations, or another user's defaults/);
+  assert.match(writing, /This gate remains authoritative and self-contained/);
+  assert.match(writing, /Use no em dash by default/);
+  assert.match(writing, /generic company praise or unsupported enthusiasm/);
+  assert.match(writing, /Compare the final response with the voice sample for rhythm and register/);
+});
