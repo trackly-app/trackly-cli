@@ -29,13 +29,15 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
    - Require explicit encrypted-storage consent before saving restricted profile values.
 4. Require the one-time profile confirmation, complete education entries, and a default resume before browser work.
 5. Call `trackly_get_apply_queue`. Select deterministically unless the user names a job. Do not replace the queue call with a fresh job search.
-6. Call `trackly_start_apply_run` for the selected job.
-7. Call `trackly_prepare_resume` with the active application run ID. If hosted MCP reports it unavailable, tell the user that local Trackly MCP or manual upload is required.
+   - If the user requests the next `N` jobs, freeze the deterministic ordered set of exactly `N` job IDs before starting any run. Do not replace, rescore, or expand that approved batch.
+   - For each fixed batch member, preserve an explicit job ID -> application run ID -> browser tab mapping. Complete the full start -> resume preparation -> exact-file confirmation -> pre-attach verification -> form completion -> `review_ready` lifecycle for every member. A review-ready run does not block the next member. Never submit any of them.
+6. Call `trackly_start_apply_run` for the selected job or current fixed batch member.
+7. Call `trackly_prepare_resume` with that exact application run ID. If hosted MCP reports it unavailable, tell the user that local Trackly MCP or manual upload is required.
 8. Preserve the user’s filename returned by `trackly_prepare_resume`. Internal cache identifiers belong only in private parent directories and must never appear in the employer-facing upload filename.
 9. Before any upload, let the user inspect the exact prepared file returned by `trackly_prepare_resume`:
    - Prefer an inline visual preview. Otherwise open the exact local file in Quick Look or Preview.app.
    - Show a compact proof block with source (`Trackly default resume`), exact local path, user-facing filename, file size, SHA-256 fingerprint, application run, and expiration.
-   - Ask for explicit confirmation to use that resume. Bind confirmation to the exact SHA-256 and current application run; a different hash or run requires new confirmation.
+   - Ask for explicit confirmation to use that resume. Bind confirmation to the exact SHA-256 and current application run. For an explicitly approved batch of `N` runs, the user may authorize the same confirmed SHA-256 only for the frozen job/run/tab set; still show and verify each member's exact path, size, hash, run ID, and expiration. Stop if any hash differs, a run is missing, or a run falls outside the frozen batch. Outside that batch, a different hash or run requires new confirmation.
    - Always provide `confirmation.verification.exactLocalPath` so the user can independently verify the file. Never describe the prepared cache path as the original upload source.
    - If an original local source path is known from the current session, identify it separately. Do not store original device paths in Trackly.
    - A generic profile page is not proof of the prepared file. Use an app or web deep link only when the current protocol supplies an authenticated exact-resume viewer tied to the same SHA-256.
@@ -62,23 +64,26 @@ Follow this order:
 2. Inspect the whole form and identify required fields, semantic controls, consent controls, document inputs, and multi-step sections.
 3. Only after the exact-hash visual confirmation and a successful immediate pre-attach `trackly_verify_prepared_resume` check, upload the prepared resume before autofill when parsing may overwrite contact fields. Do not change the file between verification and attachment. Verify that the filename chip exactly matches the prepared resume’s user-facing filename and contains no internal cache identifier. Stop and replace the attachment if it does not.
 4. Fill typed fields from the resolved Trackly profile. Clear parser-filled data when the canonical state is intentionally blank.
-5. Use real UI clicks for React/native selects, radios, and checkboxes. After every selection, verify the committed value and disappearance of the required-field error.
+5. Use real UI clicks for React/native selects, radios, and checkboxes. Resolve boolean values by their exact semantic label (`true` to Yes, `false` to No), never by option order, index, proximity, or a stale prior selection. After every selection, compare the committed value with the canonical Trackly value. If the field is required or had a validation error before selection, verify that the required-field error disappeared. An optional control with no validation error passes when its committed value is correct. Treat any value mismatch or applicable stale error as a failed field and correct it before continuing.
 6. Recheck email and phone through both browser DOM state and macOS accessibility state. Require exact values and reject duplicate/concatenated values.
 7. Complete known optional fields, education, links, relocation, and source answers. Do not silently omit canonical answers.
+   - Treat partial dates as unknown at the missing precision. If Trackly has only a year but the ATS requires a month, ask once and sync the complete date before selecting either control. Never accept an ATS-selected current/default month or infer an education month.
 8. Use the canonical `consent.background_check_if_advanced` field only when the form explicitly asks for consent to a background check if the candidate advances. If it is unknown, ask before selecting it and save the answer at the user's chosen scope. Never infer it from privacy, demographic, recruiting-data, general application, criminal-record, or professional-reference consent. Treat the latter two as separate unknown consent questions unless the current profile schema supplies their own canonical fields.
-9. Run the full integrity gate, including the final consent checkbox, every visible error, all steps, and any correction banner.
+9. For a free-text application response, read [references/application-writing.md](references/application-writing.md). Calibrate from the user's Trackly writing fields, use only supported profile and role facts, and run the built-in voice and anti-slop gate before entering the response. Do not require a separate writing or humanizer skill.
+10. Run the full integrity gate, including the final consent checkbox, every visible error, all steps, and any correction banner.
 
 When the user corrects an answer, immediately save the appropriate scope with `trackly_update_application_profile` and report only a redacted mechanics observation through `trackly_report_apply_observation`. Never promote one user’s value into a global default.
 
 ## Review handoff
 
-Call `trackly_record_application_outcome` with `review_ready`, then provide the review block defined in [references/review-handoff.md](references/review-handoff.md). Keep the browser on the final review state and stop.
+Call `trackly_record_application_outcome` with `review_ready`, then provide the review block defined in [references/review-handoff.md](references/review-handoff.md). For a single run, keep the browser on the final review state and stop. For a frozen batch, preserve the current review-ready tab and continue the same lifecycle for the next mapped batch member; stop only after every frozen member is review-ready, then provide one review block per run. Never submit any member.
 
 After the user submits manually:
 
 - If a success page is visible, record `submitted` with a short non-sensitive confirmation signal.
 - If the user explicitly confirms submission, record `submitted` with `user_confirmed`.
 - If neither exists, do not move the job to applied.
+- Treat a contradictory ATS response such as “already applied” as provisional until the exact requisition URL settles. Do not click Submit again. Preserve the page, confirm the job/requisition identifier is unchanged, and re-read the final route state after the UI and network activity settle. A later explicit success state on that same requisition overrides the provisional error and must be recorded as `submitted`; otherwise record the run as blocked without marking the job applied.
 
 ## Support boundary
 

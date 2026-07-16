@@ -6,8 +6,10 @@ Run this gate after each semantic selection and again across the entire form bef
 
 - Open React comboboxes and click the exact list option. Do not inject a value or rely on displayed input text.
 - Click native select options, radio labels, and checkboxes through the UI.
-- After selection, verify the selected/checked state from the control, dispatch-completed page state, and visible label.
-- Verify that the control’s required error is absent. A visible value beside “This field is required” is a failed field.
+- Map booleans semantically: canonical `true` must commit the visible Yes-equivalent and canonical `false` the visible No-equivalent. Never choose a boolean option by index, DOM order, keyboard offset, proximity, or previous control state.
+- After selection, verify the selected/checked state from the control, dispatch-completed page state, and visible label. Compare the normalized committed value to the canonical Trackly value; presence alone is insufficient.
+- If the committed value is the semantic opposite of the canonical value, stop the sweep, correct the field through a fresh real UI selection, and report a redacted integrity observation.
+- For a required control or a control that had a validation error before selection, verify that the error is absent afterward. A visible value beside “This field is required” is a failed field. An optional control that never had a validation error passes when its committed value is correct.
 - If a stale error remains, reopen and reselect the control. Use non-submitting validation only when the ATS provides it.
 
 ## Contact-field integrity
@@ -27,3 +29,10 @@ Run this gate after each semantic selection and again across the entire form bef
 6. Confirm the Submit button is present but do not click it.
 
 If any field’s committed state cannot be observed, fail the gate and explain which field needs manual review.
+
+## Submission-state reconciliation
+
+- Never retry Submit after a contradictory or duplicate-application response.
+- Treat “already applied” and similar banners as provisional until the current ATS route finishes settling.
+- Confirm the employer, role, and exact requisition identifier are unchanged, then re-read the final state from that same URL.
+- An explicit success state on the exact requisition is authoritative and may be recorded as submitted. Without success or explicit user confirmation, record blocked and leave the job out of Applied.

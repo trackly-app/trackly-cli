@@ -83,3 +83,72 @@ test('Apply skill treats background-check authorization as explicit reusable con
   assert.match(skill, /Never infer it from privacy, demographic, recruiting-data, general application, criminal-record, or professional-reference consent/);
   assert.match(skill, /Treat the latter two as separate unknown consent questions/);
 });
+
+test('Apply skill maps boolean answers semantically and verifies the canonical value', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  const integrity = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'form-integrity.md'), 'utf8');
+
+  assert.match(skill, /`true` to Yes, `false` to No/);
+  assert.match(skill, /never by option order, index, proximity, or a stale prior selection/);
+  assert.match(skill, /compare the committed value with the canonical Trackly value/);
+  assert.match(skill, /If the field is required or had a validation error before selection/);
+  assert.match(skill, /An optional control with no validation error passes when its committed value is correct/);
+  assert.match(integrity, /Never choose a boolean option by index, DOM order, keyboard offset, proximity, or previous control state/);
+  assert.match(integrity, /semantic opposite of the canonical value/);
+  assert.match(integrity, /An optional control that never had a validation error passes when its committed value is correct/);
+});
+
+test('Apply skill freezes and completes every member of an explicitly requested batch', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+
+  assert.match(skill, /freeze the deterministic ordered set of exactly `N` job IDs/);
+  assert.match(skill, /Do not replace, rescore, or expand that approved batch/);
+  assert.match(skill, /job ID -> application run ID -> browser tab mapping/);
+  assert.match(skill, /full start -> resume preparation -> exact-file confirmation -> pre-attach verification -> form completion -> `review_ready` lifecycle/);
+  assert.match(skill, /for every member/);
+  assert.match(skill, /show and verify each member's exact path, size, hash, run ID, and expiration/);
+  assert.match(skill, /only for the frozen job\/run\/tab set/);
+  assert.match(skill, /a run falls outside the frozen batch/);
+  assert.match(skill, /preserve the current review-ready tab and continue the same lifecycle for the next mapped batch member/);
+  assert.match(skill, /stop only after every frozen member is review-ready/);
+  assert.match(skill, /one review block per run/);
+});
+
+test('Apply skill treats missing education months as unknown instead of inferring defaults', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+
+  assert.match(skill, /Treat partial dates as unknown at the missing precision/);
+  assert.match(skill, /ask once and sync the complete date/);
+  assert.match(skill, /Never accept an ATS-selected current\/default month or infer an education month/);
+});
+
+test('Apply skill reconciles contradictory ATS submission states without retrying Submit', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  const integrity = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'form-integrity.md'), 'utf8');
+
+  assert.match(skill, /contradictory ATS response such as “already applied” as provisional/);
+  assert.match(skill, /Do not click Submit again/);
+  assert.match(skill, /explicit success state on that same requisition overrides the provisional error/);
+  assert.match(integrity, /exact requisition identifier are unchanged/);
+  assert.match(integrity, /Without success or explicit user confirmation, record blocked/);
+});
+
+test('Apply skill calibrates free-text answers without requiring an external humanizer', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  const writing = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'application-writing.md'), 'utf8');
+
+  assert.match(skill, /Do not require a separate writing or humanizer skill/);
+  assert.match(writing, /`writing\.voice_sample` and `writing\.style_instructions`/);
+  assert.match(writing, /never block an application run when they are unknown/);
+  assert.match(writing, /ask once before drafting and synchronize the answer/);
+  assert.match(writing, /decline a voice sample/);
+  assert.match(writing, /intentionally blank style instructions/);
+  assert.match(writing, /continue with the plain default style for the current run/);
+  assert.match(writing, /Never copy them into the public skill, logs, observations, or another user's defaults/);
+  assert.match(writing, /This gate remains authoritative and self-contained/);
+  assert.match(writing, /Use no em dash by default/);
+  assert.match(writing, /generic company praise or unsupported enthusiasm/);
+  assert.match(writing, /When a voice sample exists, compare the final response with it/);
+  assert.match(writing, /When the sample was declined or remains unknown for the current run/);
+  assert.match(writing, /use the saved style instructions or plain default instead/);
+});

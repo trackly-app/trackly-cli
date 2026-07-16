@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-07-15
+
+### Added
+
+- Trackly Apply can calibrate free-text application answers from optional, private voice samples and style preferences stored in the user's Trackly profile. The bundled anti-slop gate is self-contained, avoids em dashes by default, and does not require a separate Humanizer skill.
+- Explicit next-N batching freezes the approved job set and preserves each job, run, browser tab, and resume-integrity proof through `review_ready` without submitting.
+
+### Fixed
+
+- Boolean ATS controls are selected and verified by semantic value rather than option order, preventing `Yes` answers such as age eligibility from being committed as `No`.
+- Missing education months remain unknown until the user confirms them; browser defaults are never accepted as profile truth.
+- Contradictory ATS states such as an initial “already applied” message are reconciled against the exact requisition before recording the final outcome.
+- Optional controls without validation errors no longer fail the required-field integrity gate after a correct committed selection.
+- Bundled Trackly Apply skill 2.2.0 includes the stronger semantic, batching, education-date, ATS-reconciliation, and writing-integrity rules.
+
 ## [0.6.2] - 2026-07-15
 
 ### Fixed
