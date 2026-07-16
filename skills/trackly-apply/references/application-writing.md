@@ -5,7 +5,7 @@ Use this reference for free-text questions such as "Why this company?", motivati
 ## Calibrate once
 
 - Read `writing.voice_sample` and `writing.style_instructions` from the resolved Trackly profile.
-- If either required field is unknown, ask during onboarding and synchronize the answer before browser work. Let the user decline a voice sample or choose intentionally blank style instructions.
+- Offer both optional fields during profile setup, but never block an application run when they are unknown. If a free-text question appears before the user has set them, ask once before drafting and synchronize the answer. Let the user decline a voice sample, choose intentionally blank style instructions, or continue with the plain default style for the current run.
 - Treat the sample and preferences as private user data. Never copy them into the public skill, logs, observations, or another user's defaults.
 - A separate humanizer or writing skill may be used when available, but it is optional. This gate remains authoritative and self-contained.
 

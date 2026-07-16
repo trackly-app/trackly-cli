@@ -102,8 +102,11 @@ test('Apply skill freezes and completes every member of an explicitly requested 
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
 
   assert.match(skill, /freeze the deterministic ordered set of exactly `N` job IDs/);
+  assert.match(skill, /Do not replace, rescore, or expand that approved batch/);
   assert.match(skill, /job ID -> application run ID -> browser tab mapping/);
   assert.match(skill, /full start -> resume preparation -> exact-file confirmation -> pre-attach verification -> form completion -> `review_ready` lifecycle/);
+  assert.match(skill, /for every member/);
+  assert.match(skill, /show and verify each member's exact path, size, hash, run ID, and expiration/);
   assert.match(skill, /only for the frozen job\/run\/tab set/);
   assert.match(skill, /a run falls outside the frozen batch/);
 });
@@ -133,6 +136,11 @@ test('Apply skill calibrates free-text answers without requiring an external hum
 
   assert.match(skill, /Do not require a separate writing or humanizer skill/);
   assert.match(writing, /`writing\.voice_sample` and `writing\.style_instructions`/);
+  assert.match(writing, /never block an application run when they are unknown/);
+  assert.match(writing, /ask once before drafting and synchronize the answer/);
+  assert.match(writing, /decline a voice sample/);
+  assert.match(writing, /intentionally blank style instructions/);
+  assert.match(writing, /continue with the plain default style for the current run/);
   assert.match(writing, /Never copy them into the public skill, logs, observations, or another user's defaults/);
   assert.match(writing, /This gate remains authoritative and self-contained/);
   assert.match(writing, /Use no em dash by default/);
