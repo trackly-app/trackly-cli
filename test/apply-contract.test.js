@@ -95,6 +95,14 @@ test('Apply skill maps boolean answers semantically and verifies the canonical v
   assert.match(integrity, /semantic opposite of the canonical value/);
 });
 
+test('Apply skill treats missing education months as unknown instead of inferring defaults', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+
+  assert.match(skill, /Treat partial dates as unknown at the missing precision/);
+  assert.match(skill, /ask once and sync the complete date/);
+  assert.match(skill, /Never accept an ATS-selected current\/default month or infer an education month/);
+});
+
 test('Apply skill reconciles contradictory ATS submission states without retrying Submit', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
   const integrity = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'form-integrity.md'), 'utf8');
