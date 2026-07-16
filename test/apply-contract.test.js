@@ -91,8 +91,21 @@ test('Apply skill maps boolean answers semantically and verifies the canonical v
   assert.match(skill, /`true` to Yes, `false` to No/);
   assert.match(skill, /never by option order, index, proximity, or a stale prior selection/);
   assert.match(skill, /compare the committed value with the canonical Trackly value/);
+  assert.match(skill, /If the field is required or had a validation error before selection/);
+  assert.match(skill, /An optional control with no validation error passes when its committed value is correct/);
   assert.match(integrity, /Never choose a boolean option by index, DOM order, keyboard offset, proximity, or previous control state/);
   assert.match(integrity, /semantic opposite of the canonical value/);
+  assert.match(integrity, /An optional control that never had a validation error passes when its committed value is correct/);
+});
+
+test('Apply skill freezes and completes every member of an explicitly requested batch', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+
+  assert.match(skill, /freeze the deterministic ordered set of exactly `N` job IDs/);
+  assert.match(skill, /job ID -> application run ID -> browser tab mapping/);
+  assert.match(skill, /full start -> resume preparation -> exact-file confirmation -> pre-attach verification -> form completion -> `review_ready` lifecycle/);
+  assert.match(skill, /only for the frozen job\/run\/tab set/);
+  assert.match(skill, /a run falls outside the frozen batch/);
 });
 
 test('Apply skill treats missing education months as unknown instead of inferring defaults', () => {
