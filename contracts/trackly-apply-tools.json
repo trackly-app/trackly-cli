@@ -1,5 +1,5 @@
 {
-  "contractVersion": "2.0.0",
+  "contractVersion": "2.1.0",
   "tools": {
     "trackly_get_apply_queue": "{limit:z.number().int().min(1).max(100).optional()}",
     "trackly_get_application_profile": "{includeSensitive:z.boolean().optional(),provider:z.string().max(100).optional(),companyId:z.string().max(100).optional()}",
@@ -7,7 +7,7 @@
     "trackly_update_application_profile": "{expectedRevision:z.number().int().min(1),source:z.enum(['web','ios','macos','codex','claude','mcp']).optional(),changes:z.array(z.discriminatedUnion('scope',[z.object({key:z.string().min(1).max(200),state:z.enum(['unknown','answered','intentionally_blank','declined']),value:z.any().optional(),scope:z.literal('global'),questionLabel:z.string().max(1000).optional()}),z.object({key:z.string().min(1).max(200),state:z.enum(['unknown','answered','intentionally_blank','declined']),value:z.any().optional(),scope:z.literal('provider'),scopeValue:z.string().min(1).max(200),questionLabel:z.string().max(1000).optional()}),z.object({key:z.string().min(1).max(200),state:z.enum(['unknown','answered','intentionally_blank','declined']),value:z.any().optional(),scope:z.literal('company'),scopeValue:z.string().min(1).max(200),questionLabel:z.string().max(1000).optional()})])).max(100).optional(),education:z.array(z.object({school:z.string().min(1).max(500),degree:z.string().max(500).nullable().optional(),fieldOfStudy:z.string().max(500).nullable().optional(),gpa:z.string().max(50).nullable().optional(),startDate:z.string().max(50).nullable().optional(),endDate:z.string().max(50).nullable().optional()})).max(20).optional(),confirmProfile:z.boolean().optional(),sensitiveStorageConsent:z.boolean().optional()}",
     "trackly_start_apply_run": "{jobId:z.number().int().min(1),clientName:z.string().max(100).optional()}",
     "trackly_get_apply_protocol": "{}",
-    "trackly_report_apply_observation": "{runId:z.number().int().min(1).optional(),provider:z.string().min(1).max(100),fieldLabel:z.string().min(1).max(1000),observationType:z.string().min(1).max(100),resolutionCode:z.string().max(100).optional(),metadata:z.object({controlType:z.string().max(100).optional(),required:z.boolean().optional(),errorCode:z.string().max(100).optional(),committed:z.boolean().optional()}).optional()}",
+    "trackly_report_apply_observation": "{runId:z.number().int().min(1).optional(),provider:z.string().min(1).max(100),fieldLabel:z.string().min(1).max(1000),observationType:z.string().min(1).max(100),resolutionCode:z.string().max(100).optional(),metadata:z.object({controlType:z.string().max(100).optional(),required:z.boolean().optional(),errorCode:z.string().max(100).optional(),committed:z.boolean().optional(),scenarioCode:z.string().max(100).optional(),browserSurface:z.string().max(100).optional(),resumedAfterHandoff:z.boolean().optional()}).optional()}",
     "trackly_record_application_outcome": "{runId:z.number().int().min(1),outcome:z.enum(['review_ready','submitted','failed','blocked']),confirmation:z.string().max(500).optional()}",
     "trackly_prepare_resume": "{runId:z.number().int().min(1)}",
     "trackly_verify_prepared_resume": {

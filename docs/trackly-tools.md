@@ -94,7 +94,7 @@ You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 - **trackly_update_application_profile** — Save explicit answer states with optimistic concurrency and global/provider/company scope.
 - **trackly_start_apply_run** — Start a manual-submit browser run for a queued job.
 - **trackly_get_apply_protocol** — Get the current ATS support, browser integrity rules, and compatible skill version.
-- **trackly_report_apply_observation** — Report redacted ATS mechanics without answer values.
+- **trackly_report_apply_observation** — Report redacted ATS mechanics and actual scenario coverage without answer values or page text.
 - **trackly_record_application_outcome** — Record review readiness or a confirmed manual submission.
 - **trackly_prepare_resume** — Local MCP only: materialize the default resume in a private, expiring mode-0600 cache and return filename, size, SHA-256, exact local path, and visual-confirmation metadata. Hosted MCP returns a manual/local-agent requirement.
 - **trackly_verify_prepared_resume** — Local MCP only: immediately before attachment, recompute the user-confirmed resume hash and size, validate the exact path/run/expiration, and lock the file read-only. Any mismatch requires a fresh preview and confirmation.

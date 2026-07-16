@@ -439,7 +439,7 @@ function createServer() {
 
   server.tool(
     'trackly_report_apply_observation',
-    'Report a redacted ATS mechanics observation. Never include answer values, addresses, contact data, OTPs, or free-form page content.',
+    'Report a redacted ATS mechanics or scenario-coverage observation. Never include answer values, addresses, contact data, OTPs, or free-form page content.',
     {
       runId: z.number().int().min(1).optional(),
       provider: z.string().min(1).max(100),
@@ -451,6 +451,9 @@ function createServer() {
         required: z.boolean().optional(),
         errorCode: z.string().max(100).optional(),
         committed: z.boolean().optional(),
+        scenarioCode: z.string().max(100).optional(),
+        browserSurface: z.string().max(100).optional(),
+        resumedAfterHandoff: z.boolean().optional(),
       }).optional(),
     },
     wrapTool(async (params) => apiRequest('POST', '/api/jobscout/apply/observations', params, false, false, MCP_USER_AGENT), 'Failed to report apply observation')
