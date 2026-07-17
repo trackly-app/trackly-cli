@@ -122,7 +122,10 @@ test('Apply skill proves semantic browser readiness before preparing resume byte
   assert.match(skill, /Codex in-app browser controls, Chrome MCP\/extension browser control, or Claude in Chrome/);
   assert.match(skill, /discover or reclaim every target tab/);
   assert.match(skill, /exact employer, role, ATS, requisition URL, job ID, and run ID/);
-  assert.match(skill, /Do not call `trackly_prepare_resume` until this gate passes/);
+  assert.match(skill, /Do not call `trackly_prepare_resume` until this same-run attestation succeeds/);
+  assert.match(skill, /`observationType: browser_ready`/);
+  assert.match(skill, /`browserBindingHash`/);
+  assert.match(skill, /browser surface, and browser binding hash/);
   assert.match(skill, /coordinate-only clicking is forbidden/);
   assert.match(skill, /preserve every existing run and tab mapping/);
   assert.match(integrity, /semantic browser bridge becomes unavailable/);
@@ -168,10 +171,25 @@ test('Apply skill records and reports actual scenario coverage for every run', (
 test('Apply observation contract accepts redacted browser scenario metadata', () => {
   const schema = normalizeSchema(toolArguments('trackly_report_apply_observation')[2]);
 
-  assert.match(schema, /scenarioCode:z\.string\(\)\.max\(100\)\.optional\(\)/);
-  assert.match(schema, /browserSurface:z\.string\(\)\.max\(100\)\.optional\(\)/);
+  assert.match(schema, /runId:z\.number\(\)\.int\(\)\.min\(1\),/);
+  assert.match(schema, /scenarioCode:z\.enum\(APPLY_SCENARIO_CODES\)/);
+  assert.match(schema, /browserSurface:z\.enum\(APPLY_BROWSER_SURFACES\)/);
+  assert.match(schema, /browserBindingHash:z\.string\(\)\.regex\(\/\^\[a-f0-9\]\{64\}\$\/\)\.optional\(\)/);
   assert.match(schema, /resumedAfterHandoff:z\.boolean\(\)\.optional\(\)/);
   assert.doesNotMatch(schema, /answerValue|pageText/);
+});
+
+test('Apply MCP prompt gates resume preparation on the same browser binding', () => {
+  const browserGate = source.indexOf('Reclaim semantic browser control');
+  const prepare = source.indexOf('Prepare the run-bound resume locally', browserGate);
+  assert.ok(browserGate > 0);
+  assert.ok(prepare > browserGate);
+  assert.match(source.slice(browserGate, prepare), /browser_ready attestation/);
+});
+
+test('Apply skill requires protocol 2.1 for skill 2.3', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  assert.match(skill, /Skill 2\.3 requires protocol 2\.1\.0 or newer/);
 });
 
 test('Apply skill treats missing education months as unknown instead of inferring defaults', () => {

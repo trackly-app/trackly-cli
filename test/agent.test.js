@@ -320,6 +320,22 @@ test('agent doctor distinguishes missing resumes from failed validation', () => 
   );
 });
 
+test('agent doctor compatibility requires protocol 2.1 or newer', () => {
+  assert.equal(agent.protocolAtLeast('2.0.9'), false);
+  assert.equal(agent.protocolAtLeast('2.1.0'), true);
+  assert.equal(agent.protocolAtLeast('2.2.0'), true);
+  assert.equal(agent.protocolAtLeast('1.99.0'), false);
+  assert.equal(agent.protocolAtLeast('invalid'), false);
+});
+
+test('agent doctor fails browser readiness closed unless a full semantic surface exists', () => {
+  assert.equal(agent.liveBrowserReady({ codex: false, codexComputerUse: false, claude: null }), false);
+  assert.equal(agent.liveBrowserReady({ codex: true, codexComputerUse: false, claude: null }), false);
+  assert.equal(agent.liveBrowserReady({ codex: false, codexComputerUse: true, claude: null }), false);
+  assert.equal(agent.liveBrowserReady({ codex: true, codexComputerUse: true, claude: null }), true);
+  assert.equal(agent.liveBrowserReady({ codex: false, codexComputerUse: false, claude: true }), true);
+});
+
 test('resume preparation keeps CLI and MCP attribution distinct', () => {
   assert.match(agent.CLI_USER_AGENT, /^trackly-cli\//);
   assert.match(agent.MCP_USER_AGENT, /^trackly-mcp\//);
