@@ -281,7 +281,7 @@ test('agent doctor JSON exits non-zero when setup is not ready', async (t) => {
 test('agent doctor never mints a placeholder run to prepare a resume', async (t) => {
   const { requests, result } = await runAgainstMock(t, ['agent', 'doctor', '--json'], (req) => {
     if (req.url === '/api/jobscout/apply/protocol') {
-      return { json: { protocol: { compatibleSkillMajor: 2 } } };
+      return { json: { protocol: { compatibleSkillMajor: 4, version: '3.0.0' } } };
     }
     if (req.url === '/api/jobscout/application-profile') {
       return { json: { profile: { revision: 1, completeness: { percent: 100, missingKeys: [] }, defaultResume: { id: 7, fileName: 'Resume.pdf' } } } };
@@ -298,7 +298,7 @@ test('agent doctor never mints a placeholder run to prepare a resume', async (t)
 test('agent doctor explains that exact resume validation is deferred to a real Apply run', async (t) => {
   const { result } = await runAgainstMock(t, ['agent', 'doctor'], (req) => {
     if (req.url === '/api/jobscout/apply/protocol') {
-      return { json: { protocol: { compatibleSkillMajor: 2 } } };
+      return { json: { protocol: { compatibleSkillMajor: 4, version: '3.0.0' } } };
     }
     if (req.url === '/api/jobscout/application-profile') {
       return { json: { profile: { revision: 1, completeness: { percent: 100, missingKeys: [] }, defaultResume: { id: 7, fileName: 'Resume.pdf' } } } };

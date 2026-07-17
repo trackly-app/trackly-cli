@@ -47,7 +47,7 @@ function toolArguments(name) {
 const normalizeSchema = (schema) => schema.replace(/\s+/g, '').replace(/,([}\]])/g, '$1');
 
 test('local MCP Apply schemas match each complete versioned input schema', () => {
-  assert.equal(contract.contractVersion, '2.0.0');
+  assert.equal(contract.contractVersion, '3.0.0');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
     const localSchema = typeof expectedSchema === 'string' ? expectedSchema : expectedSchema.local;
     assert.equal(normalizeSchema(toolArguments(name)[2]), localSchema, `${name} schema drifted`);
@@ -71,7 +71,7 @@ test('Apply contract makes maintenance resumable without duplicate runs or submi
 
   assert.match(source, /If maintenance interrupts an existing run, do not call this tool again/);
   assert.match(source, /resume the existing agent_browser run/);
-  assert.match(source, /Never start a duplicate run, blindly retry a mutation, or click Submit/);
+  assert.match(source, /Never start a duplicate run, blindly retry a mutation,.*or click Submit/);
 });
 
 test('Apply skill treats background-check authorization as explicit reusable consent', () => {
@@ -104,7 +104,7 @@ test('Apply skill freezes and completes every member of an explicitly requested 
   assert.match(skill, /freeze the deterministic ordered set of exactly `N` job IDs/);
   assert.match(skill, /Do not replace, rescore, or expand that approved batch/);
   assert.match(skill, /job ID -> application run ID -> browser tab mapping/);
-  assert.match(skill, /full start -> resume preparation -> exact-file confirmation -> pre-attach verification -> form completion -> `review_ready` lifecycle/);
+  assert.match(skill, /conditional resume preparation\/confirmation\/verification when an upload control exists/);
   assert.match(skill, /for every member/);
   assert.match(skill, /show and verify each member's exact path, size, hash, run ID, and expiration/);
   assert.match(skill, /only for the frozen job\/run\/tab set/);
@@ -112,6 +112,117 @@ test('Apply skill freezes and completes every member of an explicitly requested 
   assert.match(skill, /preserve the current review-ready tab and continue the same lifecycle for the next mapped batch member/);
   assert.match(skill, /stop only after every frozen member is review-ready/);
   assert.match(skill, /one review block per run/);
+});
+
+test('Apply skill proves semantic browser readiness before preparing resume bytes', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  const integrity = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'form-integrity.md'), 'utf8');
+
+  assert.match(skill, /browser readiness gate/);
+  assert.match(skill, /Codex in-app browser controls, Chrome MCP\/extension browser control, or Claude in Chrome/);
+  assert.match(skill, /discover or reclaim every target tab/);
+  assert.match(skill, /exact employer, role, ATS, requisition URL, job ID, and run ID/);
+  assert.match(skill, /Do not call `trackly_prepare_resume` until this same-run attestation succeeds/);
+  assert.match(skill, /`observationType: browser_ready`/);
+  assert.match(skill, /`browserBindingHash`/);
+  assert.match(skill, /browser surface, and browser binding hash/);
+  assert.match(skill, /coordinate-only clicking is forbidden/);
+  assert.match(skill, /preserve every existing run and tab mapping/);
+  assert.match(skill, /A missing file input is not itself a blocker/);
+  assert.match(skill, /If and only if the application offers or requires a resume attachment/);
+  assert.match(skill, /skip steps 8–11 and do not report `resume_upload` as exercised/);
+  assert.match(integrity, /semantic browser bridge becomes unavailable/);
+  assert.match(integrity, /reclaim and re-verify the tab/);
+  assert.match(integrity, /A form without a file input skips the resume path/);
+});
+
+test('Apply skill scopes learned answers and keeps accuracy certification ephemeral', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+
+  assert.match(skill, /`employment\.previously_worked_for_employer`.*company scope/s);
+  assert.match(skill, /`employment\.has_close_relationship_at_employer`.*company scope/s);
+  assert.match(skill, /`location\.requires_relocation_assistance`.*global scope/s);
+  assert.match(skill, /`eeo\.gender_identity`.*global scope/s);
+  assert.match(skill, /`consent\.future_opportunity_retention`.*company scope/s);
+  assert.match(skill, /accuracy or truthfulness certification/);
+  assert.match(skill, /Never save that attestation to the reusable profile/);
+  assert.match(skill, /ask and verify it on every application run/);
+});
+
+test('Apply skill records and reports actual scenario coverage for every run', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  const coverage = fs.readFileSync(path.join(
+    __dirname,
+    '..',
+    'skills',
+    'trackly-apply',
+    'references',
+    'scenario-coverage.md',
+  ), 'utf8');
+  const review = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'review-handoff.md'), 'utf8');
+
+  assert.match(skill, /references\/scenario-coverage\.md/);
+  assert.match(skill, /`observationType: scenario_coverage`/);
+  assert.match(skill, /`observationType: browser_ready`/);
+  assert.match(skill, /`metadata\.committed: true`/);
+  assert.match(skill, /do not send a duplicate `scenario_coverage` row/);
+  assert.match(skill, /actual scenario coverage/);
+  assert.match(coverage, /browserSurface/);
+  assert.match(coverage, /Every `passed` or `corrected` scenario requires `true`/);
+  assert.match(coverage, /A blocked scenario is not scenario-coverage evidence/);
+  assert.doesNotMatch(coverage, /`resolutionCode`: `passed`, `corrected`, or `blocked`/);
+  assert.match(coverage, /resumedAfterHandoff/);
+  assert.match(coverage, /resume_upload/);
+  assert.match(coverage, /required_error_sweep/);
+  assert.match(coverage, /final_consent/);
+  assert.match(review, /Actual scenario coverage:/);
+});
+
+test('Apply observation contract accepts redacted browser scenario metadata', () => {
+  const schema = normalizeSchema(toolArguments('trackly_report_apply_observation')[2]);
+
+  assert.match(schema, /runId:z\.number\(\)\.int\(\)\.min\(1\),/);
+  assert.match(schema, /scenarioCode:z\.enum\(APPLY_SCENARIO_CODES\)/);
+  assert.match(schema, /browserSurface:z\.enum\(APPLY_BROWSER_SURFACES\)/);
+  assert.match(schema, /committed:z\.boolean\(\)/);
+  assert.match(schema, /browserBindingHash:z\.string\(\)\.regex\(\/\^\[a-f0-9\]\{64\}\$\/\)\.optional\(\)/);
+  assert.match(schema, /resumedAfterHandoff:z\.boolean\(\)\.optional\(\)/);
+  assert.doesNotMatch(schema, /answerValue|pageText/);
+});
+
+test('Apply MCP prompt gates resume preparation on the same browser binding', () => {
+  const browserGate = source.indexOf('Reclaim semantic browser control');
+  const prepare = source.indexOf('prepare the run-bound resume locally', browserGate);
+  assert.ok(browserGate > 0);
+  assert.ok(prepare > browserGate);
+  assert.match(source.slice(browserGate, prepare), /browser_ready attestation/);
+});
+
+test('Apply skill 4.0 requires compatible protocol major 3 and skill major 4', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  assert.match(skill, /Skill 4\.0 requires protocol major 3 \(version 3\.0\.0 or newer\)/);
+  assert.match(skill, /`compatibleSkillMajor: 4`/);
+  assert.match(skill, /pre-guided-mode skill or run/);
+  assert.match(skill, /resumed run may retain an older compatible 3\.x patch\/minor version/);
+});
+
+test('Apply skill consumes backend ATS capabilities and enforces guided stop conditions', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  const playbook = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'ats-playbook.md'), 'utf8');
+  assert.match(skill, /backend-owned `atsCapability`, `originPolicy`, and `executionBlocker`/);
+  assert.match(skill, /Stop before `trackly_start_apply_run` whenever `executionBlocker` is non-null/);
+  assert.match(skill, /Unknown employer forms use the protocol's `unknownAtsFallback` only when/);
+  assert.match(skill, /LinkedIn-hosted applications are manual-only/);
+  assert.match(skill, /corresponding same-run committed evidence/);
+  assert.match(skill, /host === allowedDomain/);
+  assert.match(skill, /host\.endsWith\("\." \+ allowedDomain\)/);
+  assert.match(skill, /originPolicy\.tenantRule/);
+  assert.match(skill, /originPolicy\.verifiedAtsTenant/);
+  assert.match(skill, /never invent or reinterpret a strategy token/);
+  assert.match(playbook, /Guided enterprise ATS/);
+  assert.match(playbook, /Guided mid-market ATS/);
+  assert.match(playbook, /Unknown employer-hosted form/);
+  assert.match(playbook, /Do not automate LinkedIn-hosted applications/);
 });
 
 test('Apply skill treats missing education months as unknown instead of inferring defaults', () => {

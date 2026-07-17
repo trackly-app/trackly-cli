@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-16
+
+### Added
+
+- Bundled Trackly Apply skill 4.0.0 consumes the backend-owned ATS capability and origin catalog, enabling constrained guided mode across named enterprise and mid-market ATS providers while keeping LinkedIn-hosted and unverified employer forms manual-only.
+- Provider capabilities now carry required integrity scenarios, risks, and explicit stop conditions instead of a binary supported/unsupported claim.
+
+### Changed
+
+- Agent doctor now requires Apply protocol 3.0.0 and skill major 4 for the breaking cross-ATS guided-mode contract.
+- The versioned Apply MCP tool contract is now 3.0.0. `trackly_report_apply_observation.metadata.committed` is required, so older observation callers must update before using CLI 0.7.0.
+- Guided runs stop before start on any queue blocker, validate redirects and data-receiving iframes against backend-authorized origins, and require every backend-published integrity scenario before review.
+- Unknown employer forms never share provider-scoped answers across companies.
+
+## [0.6.4] - 2026-07-16
+
+### Added
+
+- Trackly Apply now gates resume preparation on semantic browser readiness, binds every application tab to its exact job and run, and reclaims the mapping after handoffs or browser-control interruptions.
+- Application profile schema 1.3 adds safely scoped answers for prior employer work, close relationships at an employer, relocation assistance, gender-identity wording, and optional future-opportunity data retention.
+- Redacted per-run scenario coverage records which browser, resume, semantic-control, validation, consent, and handoff mechanics were actually exercised.
+
+### Fixed
+
+- Coordinate-only browser interaction can no longer substitute for observable semantic form control.
+- Accuracy and truthfulness certifications remain per-run attestations and are never persisted as reusable profile answers.
+- Bundled Trackly Apply skill 3.0.0 and tool contract 2.1.0 enforce a breaking compatibility gate so older 2.x skills stop before the stronger browser harness runs.
+
 ## [0.6.3] - 2026-07-15
 
 ### Added

@@ -10,7 +10,7 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
 ## Non-negotiable rules
 
 1. Stop before Submit. Never click a submit-application button, even when the user previously approved submission or asks for full automation. The user submits manually.
-2. Treat a saved/check-later job as an execution instruction. Do not rescore, veto, or delay it based on fit. Surface only execution blockers such as a closed posting, unsupported ATS, missing answer, or verification challenge.
+2. Treat a saved/check-later job as an execution instruction. Do not rescore, veto, or delay it based on fit. Surface only execution blockers such as a closed posting, a protocol-declared manual-only ATS, missing answer, or verification challenge.
 3. Never invent immigration, authorization, EEO, education, compensation, consent, employment, referral, or communication answers.
 4. Never store OTPs, CAPTCHA answers, or human-verification codes. Do not evade anti-bot controls; pause for the user.
 5. Mark a job applied only after a real success page or the user explicitly confirms manual submission.
@@ -19,7 +19,7 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
 
 ## Start every run
 
-1. Call `trackly_get_apply_protocol`. Reject an incompatible major skill version and report that `trackly agent setup` must update the skill.
+1. Call `trackly_get_apply_protocol`. Skill 4.0 requires protocol major 3 (version 3.0.0 or newer) and `compatibleSkillMajor: 4`. Reject an older or incompatible major and report that the backend must finish updating or `trackly agent setup` must update the skill. This breaking gate prevents a pre-guided-mode skill or run from being reused under the stronger cross-ATS contract.
 2. Call `trackly_get_profile_onboarding` or fetch both the profile schema and application profile. Ask only unknown or unconfirmed fields.
 3. Save answers with `trackly_update_application_profile`:
    - Use `answered`, `intentionally_blank`, `declined`, or `unknown` exactly.
@@ -27,14 +27,32 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
    - Save ATS-specific behavior by provider and employer-specific facts by company.
    - Ask which scope applies when it is unclear.
    - Require explicit encrypted-storage consent before saving restricted profile values.
-4. Require the one-time profile confirmation, complete education entries, and a default resume before browser work.
+   - Use `employment.previously_worked_for_employer` only at company scope.
+   - Use `employment.has_close_relationship_at_employer` only at company scope.
+   - Use `location.requires_relocation_assistance` only at global scope.
+   - Keep `identity.pronouns` separate from `eeo.gender_identity`; save `eeo.gender_identity` only at global scope.
+   - Use `consent.future_opportunity_retention` only at company scope because one employer's optional retention choice is not consent for another employer.
+   - Treat an accuracy or truthfulness certification as a live per-run attestation. Never save that attestation to the reusable profile; ask and verify it on every application run.
+4. Require the one-time profile confirmation, complete education entries, and default-resume metadata before browser work. Do not prepare or upload the resume when the form has no attachment control.
 5. Call `trackly_get_apply_queue`. Select deterministically unless the user names a job. Do not replace the queue call with a fresh job search.
+   - Use the queue item's backend-owned `atsCapability`, `originPolicy`, and `executionBlocker`. Never infer a stronger support claim from the page design or the LLM's familiarity with a provider. Required scenarios are backend-enforced gates; possible scenarios are reported only when actually exercised.
+   - Stop before `trackly_start_apply_run` whenever `executionBlocker` is non-null. `standard` runs use the provider playbook. `guided` runs are allowed only while semantic browser state remains observable, `originPolicy.authorized` is true, and every published stop condition is obeyed. `manual_only` items stop without starting or mutating a run.
    - If the user requests the next `N` jobs, freeze the deterministic ordered set of exactly `N` job IDs before starting any run. Do not replace, rescore, or expand that approved batch.
-   - For each fixed batch member, preserve an explicit job ID -> application run ID -> browser tab mapping. Complete the full start -> resume preparation -> exact-file confirmation -> pre-attach verification -> form completion -> `review_ready` lifecycle for every member. A review-ready run does not block the next member. Never submit any of them.
-6. Call `trackly_start_apply_run` for the selected job or current fixed batch member.
-7. Call `trackly_prepare_resume` with that exact application run ID. If hosted MCP reports it unavailable, tell the user that local Trackly MCP or manual upload is required.
-8. Preserve the user’s filename returned by `trackly_prepare_resume`. Internal cache identifiers belong only in private parent directories and must never appear in the employer-facing upload filename.
-9. Before any upload, let the user inspect the exact prepared file returned by `trackly_prepare_resume`:
+   - For each fixed batch member, preserve an explicit job ID -> application run ID -> browser tab mapping. Complete the full start -> conditional resume preparation/confirmation/verification when an upload control exists -> form completion -> `review_ready` lifecycle for every member. A review-ready run does not block the next member. Never submit any of them.
+6. Call `trackly_start_apply_run` for the selected job or current fixed batch member. Reuse an active run returned by Trackly; never create a replacement run because browser control was interrupted.
+   - Require `run.protocolVersion` to share protocol major 3 with the fetched protocol. A resumed run may retain an older compatible 3.x patch/minor version; preserve that exact run and let the backend bind observations and resume proof to its stored version. Stop on a major mismatch. Compare `run.atsCapability` and `run.originPolicy` with the queue values. Stop and refetch the protocol and queue if support level, execution mode, provider, required scenarios, or authorized origin policy changed between preflight and run creation.
+   - In guided mode, inspect the page before preparing any resume bytes. Confirm the employer, role, HTTPS origin, reachable review path, semantic controls, whether an attachment control exists, and absence of a credential, verification, CAPTCHA, or submit-only wall. A missing file input is not itself a blocker; skip the resume path when the application has no attachment control. Any other failed precondition is an execution blocker, not permission to improvise.
+7. Pass the browser readiness gate before preparing resume bytes:
+   - Use semantic browser control through Codex in-app browser controls, Chrome MCP/extension browser control, or Claude in Chrome.
+   - Prove non-mutating capability: the surface can discover or reclaim every target tab, inspect the DOM, click and select semantic controls, determine whether a file input exists, and read committed field state. When an upload control exists, identify it semantically. Do not upload any file during readiness; a real upload happens only after exact-file confirmation and verification.
+   - Bind each tab to the exact employer, role, ATS, requisition URL, job ID, and run ID. A window position or ephemeral tab number alone is not identity.
+   - Build a value-free browser binding from those normalized keys plus the semantic browser surface and stable controller tab identity. Compute its lowercase SHA-256; never send the raw URL, title, employer, role, or tab text as observation metadata.
+   - After a handoff, context resume, or browser-control interruption, reclaim and re-verify every mapped tab before continuing.
+   - Report `observationType: browser_ready` for the current run with `scenarioCode: browser_reclaim`, the allowed `browserSurface`, `committed: true`, and that `browserBindingHash`. Do not call `trackly_prepare_resume` until this same-run attestation succeeds. Accessibility may provide an independent verification signal, but coordinate-only clicking is forbidden for form completion.
+   - If the semantic browser bridge is unavailable, preserve every existing run and tab mapping, record the blocker when possible, and stop before any upload or form mutation.
+8. If and only if the application offers or requires a resume attachment, call `trackly_prepare_resume` with that exact application run ID, browser surface, and browser binding hash. If hosted MCP reports it unavailable, tell the user that local Trackly MCP or manual upload is required. If no attachment control exists, skip steps 8–11 and do not report `resume_upload` as exercised.
+9. Preserve the user’s filename returned by `trackly_prepare_resume`. Internal cache identifiers belong only in private parent directories and must never appear in the employer-facing upload filename.
+10. Before any upload, let the user inspect the exact prepared file returned by `trackly_prepare_resume`:
    - Prefer an inline visual preview. Otherwise open the exact local file in Quick Look or Preview.app.
    - Show a compact proof block with source (`Trackly default resume`), exact local path, user-facing filename, file size, SHA-256 fingerprint, application run, and expiration.
    - Ask for explicit confirmation to use that resume. Bind confirmation to the exact SHA-256 and current application run. For an explicitly approved batch of `N` runs, the user may authorize the same confirmed SHA-256 only for the frozen job/run/tab set; still show and verify each member's exact path, size, hash, run ID, and expiration. Stop if any hash differs, a run is missing, or a run falls outside the frozen batch. Outside that batch, a different hash or run requires new confirmation.
@@ -42,7 +60,7 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
    - If an original local source path is known from the current session, identify it separately. Do not store original device paths in Trackly.
    - A generic profile page is not proof of the prepared file. Use an app or web deep link only when the current protocol supplies an authenticated exact-resume viewer tied to the same SHA-256.
    - If no exact preview method works, stop and ask the user to inspect the file manually.
-10. After the user confirms and immediately before attachment, call local `trackly_verify_prepared_resume` with the confirmed run ID, confirmation ID, exact path, SHA-256, size, and expiration. Continue only when it returns `verified: true` for exactly those values. The verifier validates the signed prepare-issued proof, recomputes the file hash, and locks it read-only. If it is unavailable, expired, missing, or mismatched, stop; prepare and visually confirm a fresh copy or require manual upload. Never send a local path or fingerprint to the hosted verifier.
+11. After the user confirms and immediately before attachment, call local `trackly_verify_prepared_resume` with the confirmed run ID, confirmation ID, exact path, SHA-256, size, and expiration. Continue only when it returns `verified: true` for exactly those values. The verifier validates the signed prepare-issued proof, recomputes the file hash, and locks it read-only. If it is unavailable, expired, missing, or mismatched, stop; prepare and visually confirm a fresh copy or require manual upload. Never send a local path or fingerprint to the hosted verifier.
 
 ## Resume after maintenance
 
@@ -56,13 +74,13 @@ If any REST or MCP tool returns canonical `maintenance_mode` (or the legacy `pla
 
 ## Fill the form
 
-Read [references/ats-playbook.md](references/ats-playbook.md) for the detected ATS and [references/form-integrity.md](references/form-integrity.md) before interacting with fields.
+Read [references/ats-playbook.md](references/ats-playbook.md) for the detected ATS, [references/form-integrity.md](references/form-integrity.md), and [references/scenario-coverage.md](references/scenario-coverage.md) before interacting with fields.
 
 Follow this order:
 
-1. Open the application in the controlled browser context and confirm the employer, role, ATS host, and HTTPS URL.
+1. Open the application in the controlled browser context and confirm the employer, role, ATS host, and HTTPS URL. Before entering private data, parse and normalize the URL, then require the exact origin to equal an `originPolicy.authorizedOrigins` entry or the normalized hostname to satisfy `host === allowedDomain` or `host.endsWith("." + allowedDomain)` for an allowed ATS suffix or verified company domain. Never use substring, display-text, logo, or suffix-without-a-dot matching. For a vendor-hosted ATS, execute the backend-owned declarative `originPolicy.tenantRule` exactly, including its extraction, exact-host-depth, locale, percent-decoding, normalization, and fail-closed semantics, then require the normalized result to equal `originPolicy.verifiedAtsTenant`; never invent or reinterpret a strategy token. Revalidate both origin and tenant after every redirect and apply the same policy to every iframe that receives private data. Stop on any unmatched origin or tenant, malformed percent encoding, missing rule, or rule shape the client cannot execute exactly.
 2. Inspect the whole form and identify required fields, semantic controls, consent controls, document inputs, and multi-step sections.
-3. Only after the exact-hash visual confirmation and a successful immediate pre-attach `trackly_verify_prepared_resume` check, upload the prepared resume before autofill when parsing may overwrite contact fields. Do not change the file between verification and attachment. Verify that the filename chip exactly matches the prepared resume’s user-facing filename and contains no internal cache identifier. Stop and replace the attachment if it does not.
+3. When an attachment control exists, only after the exact-hash visual confirmation and a successful immediate pre-attach `trackly_verify_prepared_resume` check, upload the prepared resume before autofill when parsing may overwrite contact fields. Do not change the file between verification and attachment. Verify that the filename chip exactly matches the prepared resume’s user-facing filename and contains no internal cache identifier. Stop and replace the attachment if it does not. When no attachment control exists, skip resume preparation and upload without treating that absence as an error.
 4. Fill typed fields from the resolved Trackly profile. Clear parser-filled data when the canonical state is intentionally blank.
 5. Use real UI clicks for React/native selects, radios, and checkboxes. Resolve boolean values by their exact semantic label (`true` to Yes, `false` to No), never by option order, index, proximity, or a stale prior selection. After every selection, compare the committed value with the canonical Trackly value. If the field is required or had a validation error before selection, verify that the required-field error disappeared. An optional control with no validation error passes when its committed value is correct. Treat any value mismatch or applicable stale error as a failed field and correct it before continuing.
 6. Recheck email and phone through both browser DOM state and macOS accessibility state. Require exact values and reject duplicate/concatenated values.
@@ -72,11 +90,13 @@ Follow this order:
 9. For a free-text application response, read [references/application-writing.md](references/application-writing.md). Calibrate from the user's Trackly writing fields, use only supported profile and role facts, and run the built-in voice and anti-slop gate before entering the response. Do not require a separate writing or humanizer skill.
 10. Run the full integrity gate, including the final consent checkbox, every visible error, all steps, and any correction banner.
 
-When the user corrects an answer, immediately save the appropriate scope with `trackly_update_application_profile` and report only a redacted mechanics observation through `trackly_report_apply_observation`. Never promote one user’s value into a global default.
+When the user corrects an answer, immediately save the appropriate scope with `trackly_update_application_profile` and report only a redacted mechanics observation through `trackly_report_apply_observation`. Never promote one user’s value into a global default. For `generic_web_form`, never save provider-scoped answers; use company scope for form-specific answers.
+
+For every run, track only scenarios actually exercised. Attest `browser_reclaim` once with the same-run `observationType: browser_ready`, exact binding hash, browser surface, and `metadata.committed: true`; do not send a duplicate `scenario_coverage` row for it. Before `review_ready`, report every other exercised scenario with `observationType: scenario_coverage`, the stable scenario code, browser surface, `metadata.committed: true` for `passed` or `corrected`, and whether the tab was resumed after handoff. Every required scenario must have the corresponding same-run committed evidence. If any required scenario is missing, uncommitted, or blocked, record the run as `blocked` instead of `review_ready`. Never include answer values or page text. Include the actual scenario coverage in the final handoff; do not claim unobserved coverage.
 
 ## Review handoff
 
-Call `trackly_record_application_outcome` with `review_ready`, then provide the review block defined in [references/review-handoff.md](references/review-handoff.md). For a single run, keep the browser on the final review state and stop. For a frozen batch, preserve the current review-ready tab and continue the same lifecycle for the next mapped batch member; stop only after every frozen member is review-ready, then provide one review block per run. Never submit any member.
+Call `trackly_record_application_outcome` with `review_ready`, then provide the review block defined in [references/review-handoff.md](references/review-handoff.md). For a single run, keep the browser on the final review state and stop. For a frozen batch, preserve the current review-ready tab and continue the same lifecycle for the next mapped batch member; stop only after every frozen member is review-ready, then provide one review block per run. Never submit any member. End with job ID -> run ID -> browser tab -> ATS -> status plus the actual scenario coverage for each run.
 
 After the user submits manually:
 
@@ -87,7 +107,10 @@ After the user submits manually:
 
 ## Support boundary
 
-- Greenhouse: fully supported.
-- Ashby and Lever: best effort; stop if the integrity gate cannot observe committed state.
-- Other ATS platforms: stop and explain that the current protocol does not support them.
+- Treat the current protocol's `atsCapabilities` as authoritative on every run. Do not hardcode or remember a provider's level from an earlier session.
+- `full` means the deterministic Trackly fixtures and live beta cover the advertised mechanics. It never permits submission or bypassing an integrity failure.
+- `best_effort` means use the named playbook and stop if browser and accessibility state disagree.
+- `guided` means the provider or employer-hosted page may be completed only through observable semantic controls. Obey every published stop condition; stop on login credentials, OTP/email verification, CAPTCHA/human verification, unexpected origin/employer, submit-only navigation, or unobservable committed state.
+- `blocked` / `manual_only` means do not start or mutate an application. LinkedIn-hosted applications are manual-only. If Trackly already stores a separate external application URL, evaluate that stored URL as its own ATS/origin; do not request or invent a URL override that the run cannot bind.
+- Unknown employer forms use the protocol's `unknownAtsFallback` only when the queue supplies an authorized, verified company-domain origin policy. An unmatched or unverified HTTPS page is manual-only, not guided, and is never promoted to `full` by the agent.
 - Launch support: Codex and Claude Code on macOS with browser control and computer use available.

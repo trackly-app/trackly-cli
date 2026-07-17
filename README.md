@@ -99,7 +99,9 @@ trackly agent setup --client codex    # or claude / both
 trackly agent doctor
 ```
 
-The skill uses the profile and default resume in your Trackly account, asks only missing questions, fills user-approved saved jobs, and always stops before Submit. Greenhouse is fully supported; Ashby and Lever are best effort.
+The skill uses the profile and default resume in your Trackly account, asks only missing questions, fills user-approved saved jobs, and always stops before Submit. Support is fetched from Trackly at the start of every run: Greenhouse is full, Ashby and Lever are best effort, and 27 additional named ATS/provider classes use constrained guided mode. Employer-hosted unknown forms run only when Trackly binds them to a verified company domain. LinkedIn-hosted forms and unverified origins remain manual-only; a separately stored external application URL is evaluated under its own ATS and origin policy.
+
+Guided mode is deliberately fail-closed. The agent stops on credential entry, OTP/email verification, CAPTCHA/human verification, an unexpected employer or origin, a submit-only transition, or any field whose committed state cannot be observed. `trackly agent doctor` checks the local skill, MCP registration, protocol compatibility, declared browser/computer-use configuration, profile completeness, and default-resume metadata. Live semantic browser capability and the exact resume bytes are verified at the start of a real run.
 
 #### Claude Code one-liner
 
