@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Coordinate-only browser interaction can no longer substitute for observable semantic form control.
 - Accuracy and truthfulness certifications remain per-run attestations and are never persisted as reusable profile answers.
-- Bundled Trackly Apply skill 2.3.0 and tool contract 2.1.0 keep production agents aligned with the stronger browser harness.
+- Bundled Trackly Apply skill 3.0.0 and tool contract 2.1.0 enforce a breaking compatibility gate so older 2.x skills stop before the stronger browser harness runs.
 
 ## [0.6.3] - 2026-07-15
 
