@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-16
+
+### Added
+
+- Bundled Trackly Apply skill 4.0.0 consumes the backend-owned ATS capability and origin catalog, enabling constrained guided mode across named enterprise and mid-market ATS providers while keeping LinkedIn-hosted and unverified employer forms manual-only.
+- Provider capabilities now carry required integrity scenarios, risks, and explicit stop conditions instead of a binary supported/unsupported claim.
+
+### Changed
+
+- Agent doctor now requires Apply protocol 3.0.0 and skill major 4 for the breaking cross-ATS guided-mode contract.
+- The versioned Apply MCP tool contract is now 3.0.0. `trackly_report_apply_observation.metadata.committed` is required, so older observation callers must update before using CLI 0.7.0.
+- Guided runs stop before start on any queue blocker, validate redirects and data-receiving iframes against backend-authorized origins, and require every backend-published integrity scenario before review.
+- Unknown employer forms never share provider-scoped answers across companies.
+
 ## [0.6.4] - 2026-07-16
 
 ### Added

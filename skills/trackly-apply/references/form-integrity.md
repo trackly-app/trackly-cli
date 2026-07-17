@@ -7,7 +7,14 @@ Run this gate after each semantic selection and again across the entire form bef
 - If the semantic browser bridge becomes unavailable, stop before the next form mutation. Coordinate-only computer use is not a safe substitute for semantic field control.
 - Preserve the current run and job mapping. After control returns, reclaim and re-verify the tab against the exact employer, role, ATS, requisition URL, job ID, and run ID.
 - Reinspect the DOM and committed control state after every handoff, context resume, navigation, or rerender. Do not assume a stale snapshot or tab handle still identifies the same application.
-- Prepare resume bytes only after semantic tab discovery, inspection, selection, upload, and committed-state capabilities are available.
+- Prepare resume bytes only after semantic tab discovery, inspection, selection, committed-state capability, and a semantic determination that an attachment control exists. A form without a file input skips the resume path; it is not blocked. Do not perform a readiness upload.
+
+## Page and website-type inventory
+
+- Before entering private data on a guided or unknown form, enumerate the current HTTPS origin, every visible step, any iframe origins, all file inputs, and the control that advances toward review. Require every data-receiving origin to match the backend-supplied run `originPolicy`; page text, logos, and employer names are not origin proof.
+- Distinguish `Next`, `Continue`, `Save`, `Review`, and `Submit` by accessible name and observed behavior. If the only way to reveal the next state is a submit-like mutation, stop for manual review.
+- Treat navigation to a different origin as a new trust boundary. Reconfirm employer, role, and requisition, then parse and normalize the redirected URL. An exact origin may equal an `authorizedOrigins` entry; hostname policies match only when `host === allowedDomain` or `host.endsWith("." + allowedDomain)`. Never accept substring, display-text, or `notexample.com` / `example.com.evil.test` lookalikes. On a vendor-hosted ATS, the shared origin is insufficient: execute the backend-owned declarative `originPolicy.tenantRule` exactly after every redirect or data-receiving iframe change, including extraction, exact host depth, optional locale, percent decoding, normalization, and every fail-closed condition. Compare the normalized result to `originPolicy.verifiedAtsTenant`. Never guess the meaning of an opaque strategy token. Unmatched redirects, tenants, malformed encoding, missing or unexecutable rules, and iframe origins are manual-only.
+- Treat an authentication wall as a user handoff. Never enter, retrieve, store, or infer credentials.
 
 ## Semantic controls
 
@@ -18,6 +25,9 @@ Run this gate after each semantic selection and again across the entire form bef
 - If the committed value is the semantic opposite of the canonical value, stop the sweep, correct the field through a fresh real UI selection, and report a redacted integrity observation.
 - For a required control or a control that had a validation error before selection, verify that the error is absent afterward. A visible value beside “This field is required” is a failed field. An optional control that never had a validation error passes when its committed value is correct.
 - If a stale error remains, reopen and reselect the control. Use non-submitting validation only when the ATS provides it.
+- For custom comboboxes, verify the selected option through at least one committed semantic signal (`aria-selected`, hidden form value, selected-value chip, or a framework state reflected in the control) plus the visible label. Typed or displayed text alone is not a committed selection.
+- For native selects, verify the selected option's `value` and visible label after the `change` event settles.
+- For radios and checkboxes, verify the input's checked state and its exact associated label. A decorative checkmark is not sufficient.
 
 ## Contact-field integrity
 

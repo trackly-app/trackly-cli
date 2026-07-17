@@ -21,8 +21,31 @@
 - Best effort: stop when a required or semantic control cannot pass the integrity gate.
 - A Lever confirmation/thank-you page is a valid submission signal.
 
-## Unsupported or verification state
+## Guided enterprise ATS
 
-- Do not improvise on unsupported ATS platforms.
-- Pause for OTP, email verification, CAPTCHA, or other human verification. Never read or store the code as a profile answer.
+This group includes Workday, Oracle Recruiting/Taleo, SAP SuccessFactors, iCIMS, Phenom, Eightfold, Jibe, and Avature when the current protocol marks them `guided`.
+
+- Expect account or login steps, multi-page state, custom comboboxes, employer-hosted shells, embedded frames, and resume parsing.
+- Before uploading, confirm there is a semantic path from the current page to review that does not require the agent to enter credentials, solve verification, or cross to an unexpected origin.
+- Reclaim and revalidate the exact requisition after every page transition. Recheck prior-step values when the page exposes them.
+- Stop immediately when committed state is hidden, the only next control submits the application, or an authentication/verification wall appears.
+
+## Guided mid-market ATS
+
+This group includes SmartRecruiters, Workable, BambooHR, Recruitee, Jobvite, Teamtailor, Comeet, Rippling, Gem, JazzHR, Breezy HR, Freshteam, Personio, Pinpoint, Zoho Recruit, Gusto, HiBob, Paylocity, and ADP when the current protocol marks them `guided`. YC Work at a Startup is currently `manual_only` because its shared job URL does not expose a company tenant that Trackly can verify.
+
+- Expect a mixture of native controls, custom widgets, employer subdomains, embedded frames, shared profile data, and optional resume parsing.
+- Match the live HTTPS origin, employer, role, and requisition before entering private data.
+- Use the same committed-state and required-error gate as Greenhouse. Familiar-looking controls do not lower the evidence requirement.
+
+## Unknown employer-hosted form
+
+- Use only when the protocol resolves the run to `generic_web_form` in guided mode and supplies `originPolicy.authorized: true` with `verification: verified_employer_domain`.
+- Inventory every step, origin transition, control type, required error, file input, and review/submit boundary before any upload.
+- Never claim provider support from visual similarity. Stop if any critical control cannot be observed semantically.
+
+## Manual-only or verification state
+
+- Do not automate LinkedIn-hosted applications. If Trackly already stores a separate external application URL, evaluate that stored URL under its own backend-issued ATS and origin policy; otherwise let the user complete the LinkedIn form manually.
+- Pause for login credentials, OTP, email verification, CAPTCHA, or other human verification. Never read or store credentials or a verification code as a profile answer.
 - Report closed/inactive postings as blockers; do not dismiss the saved job unless the user requests it.

@@ -10,10 +10,13 @@ For each exercised scenario, call `trackly_report_apply_observation` with:
 - `provider`: the normalized ATS.
 - `fieldLabel`: a generic mechanics label such as `Run scenario coverage`; never copy private page text.
 - `observationType`: `scenario_coverage`.
-- `resolutionCode`: `passed`, `corrected`, or `blocked`.
+- `resolutionCode`: `passed` or `corrected`. A blocked scenario is not scenario-coverage evidence; record the Apply run as `blocked` and optionally report a redacted `integrity_failure` observation.
 - `metadata.scenarioCode`: one stable code from the list below.
 - `metadata.browserSurface`: the semantic browser surface used, such as `codex_in_app`, `chrome_extension`, or `claude_in_chrome`.
+- `metadata.committed`: `true` only after the scenario's actual committed state is observed. Every `passed` or `corrected` scenario requires `true`.
 - `metadata.resumedAfterHandoff`: whether that run's tab had to be reclaimed after a handoff or browser-control interruption.
+
+`browser_reclaim` is the exception to the observation shape above: attest it once with `observationType: browser_ready`, `metadata.scenarioCode: browser_reclaim`, `metadata.browserSurface`, `metadata.browserBindingHash`, and `metadata.committed: true`. Do not send a duplicate `scenario_coverage` row for browser reclaim.
 
 ## Stable scenario codes
 
@@ -30,4 +33,4 @@ For each exercised scenario, call `trackly_report_apply_observation` with:
 
 ## Final reporting
 
-List scenario codes separately for every run. Do not report a code because the ATS commonly has that behavior; report it only when it actually occurred and was observed on that run. Mark blocked coverage honestly when committed state could not be verified.
+List scenario codes separately for every run. Do not report a code because the ATS commonly has that behavior; report it only when it actually occurred and was observed on that run. A visible value is not proof of committed state. When committed state cannot be verified, omit passed/corrected coverage for that scenario and record the run as blocked.

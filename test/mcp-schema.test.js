@@ -151,16 +151,41 @@ test('local MCP exposes a pre-attach resume integrity verifier', () => {
   assert.match(verifyRegion, /verifyPreparedResume\(proof\)/);
 });
 
-test('local MCP prompt includes the complete contract-v2 resume proof gate', () => {
+test('local MCP requires committed-state evidence on every apply observation', () => {
+  const observationRegion = SERVER_SRC.slice(
+    SERVER_SRC.indexOf("'trackly_report_apply_observation'"),
+    SERVER_SRC.indexOf("'trackly_record_application_outcome'"),
+  );
+  assert.match(observationRegion, /committed:\s*z\.boolean\(\)/);
+  assert.doesNotMatch(observationRegion, /committed:\s*z\.boolean\(\)\.optional\(\)/);
+});
+
+test('local MCP prompt includes the complete run-bound resume proof gate', () => {
   const promptRegion = SERVER_SRC.slice(
     SERVER_SRC.indexOf("server.registerPrompt('trackly-apply'"),
     SERVER_SRC.indexOf("server.registerResource('trackly-apply-protocol'"),
   );
-  assert.match(promptRegion, /Prepare the run-bound resume locally/);
+  assert.match(promptRegion, /major\(run\.protocolVersion\) === major\(protocol\.version\)/);
+  assert.match(promptRegion, /protocol\.compatibleSkillMajor === 4/);
+  assert.match(promptRegion, /semantically identified Resume or CV attachment control/);
+  assert.match(promptRegion, /Only when that specific control exists, prepare the run-bound resume locally/);
+  assert.match(promptRegion, /cover-letter, portfolio, transcript, and other supporting-document controls separately/);
+  assert.match(promptRegion, /never upload a resume to them/);
   assert.match(promptRegion, /exact path, filename, size, SHA-256, run, and expiration/);
   assert.match(promptRegion, /obtain my explicit confirmation/);
-  assert.match(promptRegion, /Immediately before attachment, use the local verifier/);
+  assert.match(promptRegion, /Immediately before attaching the resume, use the local verifier/);
   assert.match(promptRegion, /lock the file read-only/);
+  assert.match(promptRegion, /stop on every non-null executionBlocker/);
+  assert.match(promptRegion, /every manual_only item/);
+  assert.match(promptRegion, /provider, atsCapability, required scenarios, and originPolicy/);
+  assert.match(promptRegion, /host === allowedDomain or host\.endsWith/);
+  assert.match(promptRegion, /backend-owned originPolicy\.tenantRule/);
+  assert.match(promptRegion, /originPolicy\.verifiedAtsTenant/);
+  assert.match(promptRegion, /never invent or reinterpret a strategy token/);
+  assert.match(promptRegion, /same-run passed or corrected scenario_coverage observation/);
+  assert.match(promptRegion, /scenario_coverage observation with committed=true/);
+  assert.match(promptRegion, /browser_reclaim, which is satisfied only by browser_ready/);
+  assert.match(promptRegion, /record blocked rather than review_ready/);
 });
 
 test('resume preparation requires backend confirmation for the exact active run', () => {
