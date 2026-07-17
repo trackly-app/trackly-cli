@@ -11,6 +11,13 @@ const { version: PACKAGE_VERSION } = require('../package.json');
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
 const MCP_MAINTENANCE_ERROR_CODE = -32002;
 const AUTH_HINT = 'Run `trackly login` or set TRACKLY_API_KEY. Get a key at https://usetrackly.app (sign in → Settings → API Keys).';
+const APPLY_BROWSER_SURFACES = ['codex_in_app', 'chrome_extension', 'claude_in_chrome'];
+const APPLY_SCENARIO_CODES = [
+  'browser_reclaim', 'resume_upload', 'resume_parser_recheck', 'semantic_boolean_commit',
+  'custom_select_commit', 'multi_step_navigation', 'free_text_voice',
+  'required_error_sweep', 'final_consent', 'handoff_reclaim',
+];
+const SAFE_OBSERVATION_CODE = /^[a-z0-9][a-z0-9_:-]{0,99}$/;
 
 // Mirrors `granola-followup-app/src/services/region-classifier.ts:8` REGION_TAGS.
 // Keep in sync when the backend enum changes.
@@ -441,20 +448,21 @@ function createServer() {
     'trackly_report_apply_observation',
     'Report a redacted ATS mechanics or scenario-coverage observation. Never include answer values, addresses, contact data, OTPs, or free-form page content.',
     {
-      runId: z.number().int().min(1).optional(),
-      provider: z.string().min(1).max(100),
+      runId: z.number().int().min(1),
+      provider: z.string().regex(SAFE_OBSERVATION_CODE),
       fieldLabel: z.string().min(1).max(1000),
-      observationType: z.string().min(1).max(100),
-      resolutionCode: z.string().max(100).optional(),
+      observationType: z.string().regex(SAFE_OBSERVATION_CODE),
+      resolutionCode: z.string().regex(SAFE_OBSERVATION_CODE).optional(),
       metadata: z.object({
-        controlType: z.string().max(100).optional(),
+        controlType: z.string().regex(SAFE_OBSERVATION_CODE).optional(),
         required: z.boolean().optional(),
-        errorCode: z.string().max(100).optional(),
+        errorCode: z.string().regex(SAFE_OBSERVATION_CODE).optional(),
         committed: z.boolean().optional(),
-        scenarioCode: z.string().max(100).optional(),
-        browserSurface: z.string().max(100).optional(),
+        scenarioCode: z.enum(APPLY_SCENARIO_CODES),
+        browserSurface: z.enum(APPLY_BROWSER_SURFACES),
+        browserBindingHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
         resumedAfterHandoff: z.boolean().optional(),
-      }).optional(),
+      }),
     },
     wrapTool(async (params) => apiRequest('POST', '/api/jobscout/apply/observations', params, false, false, MCP_USER_AGENT), 'Failed to report apply observation')
   );
@@ -473,8 +481,13 @@ function createServer() {
   server.tool(
     'trackly_prepare_resume',
     'Download the authenticated default resume into a mode-0600 temporary Trackly cache and return exact-file proof for user confirmation before browser upload.',
-    { runId: z.number().int().min(1) },
-    wrapTool(async ({ runId }) => prepareResume(runId), 'Failed to prepare default resume')
+    {
+      runId: z.number().int().min(1),
+      browserSurface: z.enum(APPLY_BROWSER_SURFACES),
+      browserBindingHash: z.string().regex(/^[a-f0-9]{64}$/),
+    },
+    wrapTool(async ({ runId, browserSurface, browserBindingHash }) =>
+      prepareResume(runId, browserSurface, browserBindingHash), 'Failed to prepare default resume')
   );
 
   server.tool(
@@ -499,7 +512,7 @@ function createServer() {
       role: 'user',
       content: {
         type: 'text',
-        text: 'Fetch the Trackly Apply protocol and profile onboarding, resolve missing answers with me, and start the next approved queue run. Prepare the run-bound resume locally, show me its exact path, filename, size, SHA-256, run, and expiration, and obtain my explicit confirmation. Immediately before attachment, use the local verifier to validate the signed proof, recompute hash and size, check expiration, and lock the file read-only. Then fill the form, verify every required field, and stop before Submit. If maintenance interrupts the run, retain the run and browser context, wait for the advertised window, refetch protocol and profile state, and resume the existing agent_browser run. Never start a duplicate run, blindly retry a mutation, or click Submit.',
+        text: 'Fetch the Trackly Apply protocol and profile onboarding, resolve missing answers with me, and start the next approved queue run. Reclaim semantic browser control, verify the exact job/run/tab binding, hash that value-free binding, and report the same-run browser_ready attestation before preparing resume bytes. Prepare the run-bound resume locally with that browser surface and binding hash, show me its exact path, filename, size, SHA-256, run, and expiration, and obtain my explicit confirmation. Immediately before attachment, use the local verifier to validate the signed proof, recompute hash and size, check expiration, and lock the file read-only. Then fill the form, verify every required field, and stop before Submit. If maintenance interrupts the run, retain the run and browser context, wait for the advertised window, refetch protocol and profile state, and resume the existing agent_browser run. Never start a duplicate run, blindly retry a mutation, or click Submit.',
       },
     }],
   }));

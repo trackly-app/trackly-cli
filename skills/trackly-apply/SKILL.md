@@ -19,7 +19,7 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
 
 ## Start every run
 
-1. Call `trackly_get_apply_protocol`. Reject an incompatible major skill version and report that `trackly agent setup` must update the skill.
+1. Call `trackly_get_apply_protocol`. Skill 2.3 requires protocol 2.1.0 or newer within compatible major 2. Reject an older or incompatible protocol and report that the backend must finish updating or `trackly agent setup` must update the skill.
 2. Call `trackly_get_profile_onboarding` or fetch both the profile schema and application profile. Ask only unknown or unconfirmed fields.
 3. Save answers with `trackly_update_application_profile`:
    - Use `answered`, `intentionally_blank`, `declined`, or `unknown` exactly.
@@ -42,10 +42,11 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
    - Use semantic browser control through Codex in-app browser controls, Chrome MCP/extension browser control, or Claude in Chrome.
    - Prove the surface can discover or reclaim every target tab, inspect the DOM, click and select semantic controls, upload a file, and read committed field state.
    - Bind each tab to the exact employer, role, ATS, requisition URL, job ID, and run ID. A window position or ephemeral tab number alone is not identity.
+   - Build a value-free browser binding from those normalized keys plus the semantic browser surface and stable controller tab identity. Compute its lowercase SHA-256; never send the raw URL, title, employer, role, or tab text as observation metadata.
    - After a handoff, context resume, or browser-control interruption, reclaim and re-verify every mapped tab before continuing.
-   - Do not call `trackly_prepare_resume` until this gate passes. Accessibility may provide an independent verification signal, but coordinate-only clicking is forbidden for form completion.
+   - Report `observationType: browser_ready` for the current run with `scenarioCode: browser_reclaim`, the allowed `browserSurface`, `committed: true`, and that `browserBindingHash`. Do not call `trackly_prepare_resume` until this same-run attestation succeeds. Accessibility may provide an independent verification signal, but coordinate-only clicking is forbidden for form completion.
    - If the semantic browser bridge is unavailable, preserve every existing run and tab mapping, record the blocker when possible, and stop before any upload or form mutation.
-8. Call `trackly_prepare_resume` with that exact application run ID. If hosted MCP reports it unavailable, tell the user that local Trackly MCP or manual upload is required.
+8. Call `trackly_prepare_resume` with that exact application run ID, browser surface, and browser binding hash. If hosted MCP reports it unavailable, tell the user that local Trackly MCP or manual upload is required.
 9. Preserve the user’s filename returned by `trackly_prepare_resume`. Internal cache identifiers belong only in private parent directories and must never appear in the employer-facing upload filename.
 10. Before any upload, let the user inspect the exact prepared file returned by `trackly_prepare_resume`:
    - Prefer an inline visual preview. Otherwise open the exact local file in Quick Look or Preview.app.
