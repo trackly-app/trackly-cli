@@ -120,6 +120,18 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Post PR notice when Claude workflow self-changed
+        if: steps.review-workflow.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN_POST: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          echo "::warning title=Claude review skipped::This PR changes the Claude review workflow, so automated Claude review is skipped until the workflow lands on the default branch. Use compensating structured review before relying on this gate."
+          BODY="## 🔵 Claude Code Review"$'\n\n'"⚠️ Automated review skipped because this PR changes the Claude review workflow. This required check is NOT an approval and NOT a clean review result. Use compensating structured review before relying on this gate."
+          python3 -c 'import json,sys;print(json.dumps({"body":sys.argv[1]}))' "$BODY" > "$RUNNER_TEMP/cr_self_change_notice.json" || { echo "::warning::could not build self-change notice body"; exit 0; }
+          curl -sS --fail -X POST             -H "Authorization: Bearer ${GH_TOKEN_POST}"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments"             -d @"$RUNNER_TEMP/cr_self_change_notice.json" >/dev/null             && echo "Posted self-change review-skip notice to PR."             || echo "::warning::Failed to post self-change review-skip notice to the PR."
+
       # Precompute the diff in a trusted step and inject it DIRECTLY into the
       # prompt (via GITHUB_ENV). Claude is then given no filesystem/shell tools,
       # so prompt-injected PR content cannot read other runner state. The diff
