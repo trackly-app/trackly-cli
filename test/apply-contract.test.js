@@ -187,9 +187,11 @@ test('Apply MCP prompt gates resume preparation on the same browser binding', ()
   assert.match(source.slice(browserGate, prepare), /browser_ready attestation/);
 });
 
-test('Apply skill requires protocol 2.1 for skill 2.3', () => {
+test('Apply skill 3 requires protocol 2.1 and compatible skill major 3', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
-  assert.match(skill, /Skill 2\.3 requires protocol 2\.1\.0 or newer/);
+  assert.match(skill, /Skill 3 requires protocol 2\.1\.0 or newer/);
+  assert.match(skill, /`compatibleSkillMajor: 3`/);
+  assert.match(skill, /every 2\.x skill stop/);
 });
 
 test('Apply skill treats missing education months as unknown instead of inferring defaults', () => {

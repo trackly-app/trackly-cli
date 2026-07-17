@@ -19,7 +19,7 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
 
 ## Start every run
 
-1. Call `trackly_get_apply_protocol`. Skill 2.3 requires protocol 2.1.0 or newer within compatible major 2. Reject an older or incompatible protocol and report that the backend must finish updating or `trackly agent setup` must update the skill.
+1. Call `trackly_get_apply_protocol`. Skill 3 requires protocol 2.1.0 or newer and `compatibleSkillMajor: 3`. Reject an older or incompatible protocol and report that the backend must finish updating or `trackly agent setup` must update the skill. This major gate intentionally makes every 2.x skill stop before a v3 application run.
 2. Call `trackly_get_profile_onboarding` or fetch both the profile schema and application profile. Ask only unknown or unconfirmed fields.
 3. Save answers with `trackly_update_application_profile`:
    - Use `answered`, `intentionally_blank`, `declined`, or `unknown` exactly.
@@ -40,7 +40,7 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
 6. Call `trackly_start_apply_run` for the selected job or current fixed batch member. Reuse an active run returned by Trackly; never create a replacement run because browser control was interrupted.
 7. Pass the browser readiness gate before preparing resume bytes:
    - Use semantic browser control through Codex in-app browser controls, Chrome MCP/extension browser control, or Claude in Chrome.
-   - Prove the surface can discover or reclaim every target tab, inspect the DOM, click and select semantic controls, upload a file, and read committed field state.
+   - Prove non-mutating capability: the surface can discover or reclaim every target tab, inspect the DOM, click and select semantic controls, identify the file input, and read committed field state. Do not upload any file during readiness; the real upload happens only after exact-file confirmation and verification.
    - Bind each tab to the exact employer, role, ATS, requisition URL, job ID, and run ID. A window position or ephemeral tab number alone is not identity.
    - Build a value-free browser binding from those normalized keys plus the semantic browser surface and stable controller tab identity. Compute its lowercase SHA-256; never send the raw URL, title, employer, role, or tab text as observation metadata.
    - After a handoff, context resume, or browser-control interruption, reclaim and re-verify every mapped tab before continuing.
