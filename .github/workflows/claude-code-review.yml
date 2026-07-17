@@ -310,9 +310,13 @@ jobs:
             ## 🔵 Claude Code Review
 
             Then give the counts of 🔴/🟡/🟢 and a one-line recommendation
-            (APPROVE / REQUEST_CHANGES / COMMENT). If there are zero findings,
-            still post this verdict comment saying "LGTM — no issues found
-            (checked correctness, security, data-loss, tests, performance)."
+            (APPROVE / REQUEST_CHANGES / COMMENT). If there are zero findings
+            and the review input was not truncated, still post this verdict
+            comment saying "LGTM — no issues found (checked correctness,
+            security, data-loss, tests, performance)." If the review input
+            contains `[NOTE: diff truncated`, say "Partial LGTM — no issues
+            found in the visible diff (coverage was partial because the diff
+            was truncated)" and do not claim full coverage.
 
             STEP 4 — ALSO end your run with a final text message containing the
             COMPLETE review: the `## 🔵 Claude Code Review` header, the 🔴/🟡/🟢
@@ -324,6 +328,7 @@ jobs:
           claude_args: |
             --model ${{ env.CLAUDE_REVIEW_MODEL }}
             --fallback-model ${{ env.CLAUDE_REVIEW_FALLBACK_MODEL }}
+            --tools ""
             --allowedTools "mcp__github_inline_comment__create_inline_comment"
             --disallowedTools "Read,Grep,Glob,Bash,Edit,Write,WebFetch,WebSearch,NotebookEdit"
 
@@ -429,9 +434,13 @@ jobs:
             ## 🔵 Claude Code Review
 
             Then give the counts of 🔴/🟡/🟢 and a one-line recommendation
-            (APPROVE / REQUEST_CHANGES / COMMENT). If there are zero findings,
-            still post this verdict comment saying "LGTM — no issues found
-            (checked correctness, security, data-loss, tests, performance)."
+            (APPROVE / REQUEST_CHANGES / COMMENT). If there are zero findings
+            and the review input was not truncated, still post this verdict
+            comment saying "LGTM — no issues found (checked correctness,
+            security, data-loss, tests, performance)." If the review input
+            contains `[NOTE: diff truncated`, say "Partial LGTM — no issues
+            found in the visible diff (coverage was partial because the diff
+            was truncated)" and do not claim full coverage.
 
             STEP 4 — ALSO end your run with a final text message containing the
             COMPLETE review: the `## 🔵 Claude Code Review` header, the 🔴/🟡/🟢
@@ -442,6 +451,7 @@ jobs:
             inline posting also succeeds.
           claude_args: |
             --model ${{ env.CLAUDE_REVIEW_FALLBACK_MODEL }}
+            --tools ""
             --allowedTools "mcp__github_inline_comment__create_inline_comment"
             --disallowedTools "Read,Grep,Glob,Bash,Edit,Write,WebFetch,WebSearch,NotebookEdit"
 
