@@ -282,7 +282,7 @@ test('agent evidence returns the authenticated value-free beta report', async (t
   const report = {
     windowDays: 90,
     targetReviewedRuns: 20,
-    summary: { totalRuns: 4, reviewedRuns: 3, submittedRuns: 2, blockedRuns: 1, failedRuns: 0, activeRuns: 1 },
+    summary: { totalRuns: 4, reviewedRuns: 3, submittedRuns: 2, blockedRuns: 1, failedRuns: 0, activeRuns: 1, excludedLegacyRuns: 2 },
     providers: [{ provider: 'greenhouse', totalRuns: 4, reviewedRuns: 3, submittedRuns: 2, blockedRuns: 1 }],
     evidence: {
       criticalContact: { verifiedRuns: 3, correctedRuns: 1, unresolvedFailureRuns: 0, coveragePercent: 100 },

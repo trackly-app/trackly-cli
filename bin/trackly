@@ -1026,6 +1026,9 @@ async function cmdAgent(args) {
       console.log(color('bold', 'Trackly Apply evidence'));
       console.log(`Window: last ${report.windowDays} days`);
       console.log(`Reviewed: ${report.summary.reviewedRuns}/${report.targetReviewedRuns}; submitted=${report.summary.submittedRuns}; blocked=${report.summary.blockedRuns}`);
+      if (report.summary.excludedLegacyRuns) {
+        console.log(`Excluded pre-evidence runs: ${report.summary.excludedLegacyRuns}`);
+      }
       console.log(`Critical contact integrity: ${report.evidence.criticalContact.coveragePercent}% (${report.evidence.criticalContact.verifiedRuns}/${report.summary.reviewedRuns}); corrected=${report.evidence.criticalContact.correctedRuns}; unresolved=${report.evidence.criticalContact.unresolvedFailureRuns}`);
       console.log(`Manual-submit boundary: ${report.evidence.manualSubmitBoundary.coveragePercent}% (${report.evidence.manualSubmitBoundary.verifiedRuns}/${report.summary.reviewedRuns}); violations=${report.evidence.manualSubmitBoundary.violationRuns}`);
       for (const provider of report.providers) {
