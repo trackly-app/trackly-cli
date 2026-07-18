@@ -7,17 +7,13 @@ const { z } = require('zod');
 const { apiRequest, hasAuth, maintenanceOutput } = require('../lib/client');
 const { prepareResume, verifyPreparedResume } = require('../lib/agent');
 const { version: PACKAGE_VERSION } = require('../package.json');
+const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
 const MCP_MAINTENANCE_ERROR_CODE = -32002;
 const AUTH_HINT = 'Run `trackly login` or set TRACKLY_API_KEY. Get a key at https://usetrackly.app (sign in → Settings → API Keys).';
-const APPLY_BROWSER_SURFACES = ['codex_in_app', 'chrome_extension', 'claude_in_chrome'];
-const APPLY_SCENARIO_CODES = [
-  'browser_reclaim', 'resume_upload', 'resume_parser_recheck', 'semantic_boolean_commit',
-  'custom_select_commit', 'multi_step_navigation', 'free_text_voice',
-  'required_error_sweep', 'final_consent', 'handoff_reclaim',
-  'critical_contact_integrity', 'manual_submit_boundary',
-];
+const APPLY_BROWSER_SURFACES = APPLY_CONTRACT.constants.applyBrowserSurfaces;
+const APPLY_SCENARIO_CODES = APPLY_CONTRACT.constants.applyScenarioCodes;
 const SAFE_OBSERVATION_CODE = /^[a-z0-9][a-z0-9_:-]{0,99}$/;
 
 // Mirrors `granola-followup-app/src/services/region-classifier.ts:8` REGION_TAGS.
@@ -449,7 +445,8 @@ function createServer() {
       const qs = new URLSearchParams();
       if (windowDays !== undefined) qs.set('windowDays', String(windowDays));
       if (targetReviewedRuns !== undefined) qs.set('targetReviewedRuns', String(targetReviewedRuns));
-      const suffix = qs.size ? `?${qs.toString()}` : '';
+      const query = qs.toString();
+      const suffix = query ? `?${query}` : '';
       return apiRequest('GET', `/api/jobscout/apply/evidence${suffix}`, null, false, false, MCP_USER_AGENT);
     }, 'Failed to fetch apply evidence')
   );
@@ -526,6 +523,12 @@ function createServer() {
     description: 'Run the manual-submit Trackly Apply workflow for the next user-approved job.',
   }, async () => ({
     messages: [{
+      role: 'user',
+      content: {
+        type: 'text',
+        text: 'Compatibility gate: require Trackly Apply protocol version 3.1.0 or newer before starting or resuming any run. Stop and update Trackly when the backend protocol is older.',
+      },
+    }, {
       role: 'user',
       content: {
         type: 'text',

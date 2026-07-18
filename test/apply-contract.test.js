@@ -54,6 +54,20 @@ test('local MCP Apply schemas match each complete versioned input schema', () =>
   }
 });
 
+test('versioned contract owns the exact Apply scenario and browser-surface enums', () => {
+  assert.deepEqual(contract.constants.applyScenarioCodes, [
+    'browser_reclaim', 'resume_upload', 'resume_parser_recheck', 'semantic_boolean_commit',
+    'custom_select_commit', 'multi_step_navigation', 'free_text_voice',
+    'required_error_sweep', 'final_consent', 'handoff_reclaim',
+    'critical_contact_integrity', 'manual_submit_boundary',
+  ]);
+  assert.deepEqual(contract.constants.applyBrowserSurfaces, [
+    'codex_in_app', 'chrome_extension', 'claude_in_chrome',
+  ]);
+  assert.match(source, /const APPLY_SCENARIO_CODES = APPLY_CONTRACT\.constants\.applyScenarioCodes/);
+  assert.match(source, /const APPLY_BROWSER_SURFACES = APPLY_CONTRACT\.constants\.applyBrowserSurfaces/);
+});
+
 test('Apply skill emits value-free beta evidence for contact integrity and the manual-submit boundary', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
   const coverage = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'scenario-coverage.md'), 'utf8');
@@ -206,6 +220,21 @@ test('Apply MCP prompt gates resume preparation on the same browser binding', ()
   assert.ok(browserGate > 0);
   assert.ok(prepare > browserGate);
   assert.match(source.slice(browserGate, prepare), /browser_ready attestation/);
+});
+
+test('Apply MCP evidence preserves custom bounds and prompt rejects pre-3.1 protocols', () => {
+  const evidenceRegion = source.slice(
+    source.indexOf("'trackly_get_apply_evidence'"),
+    source.indexOf("'trackly_get_apply_protocol'"),
+  );
+  const promptRegion = source.slice(
+    source.indexOf("server.registerPrompt('trackly-apply'"),
+    source.indexOf("server.registerResource('trackly-apply-protocol'"),
+  );
+
+  assert.match(evidenceRegion, /const query = qs\.toString\(\)/);
+  assert.match(evidenceRegion, /const suffix = query \? `\?\$\{query\}` : ''/);
+  assert.match(promptRegion, /require Trackly Apply protocol version 3\.1\.0 or newer/);
 });
 
 test('Apply skill 4.1 requires protocol 3.1 or newer and skill major 4', () => {
