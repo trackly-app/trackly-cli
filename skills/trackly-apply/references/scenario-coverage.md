@@ -30,6 +30,10 @@ For each exercised scenario, call `trackly_report_apply_observation` with:
 - `required_error_sweep`: every required field and visible error surface was checked.
 - `final_consent`: the final certification, acknowledgement, or consent control was verified.
 - `handoff_reclaim`: the browser tab was reclaimed after a context or control handoff.
+- `critical_contact_integrity`: every present canonical contact control was exact after parsing/autofill and the form inventory proved that no required contact field was omitted.
+- `manual_submit_boundary`: the agent reached an observable final review boundary and stopped without activating Submit or its equivalent.
+
+The last two codes are universal review proofs and must be reported for every review-ready run. Their observations are value-free: never include email, phone, applicant name, answer values, page text, or local paths.
 
 ## Final reporting
 

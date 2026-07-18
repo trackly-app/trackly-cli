@@ -36,7 +36,7 @@ function withTempAgentHome(run) {
 test('agent setup installs one canonical skill and links both clients', () => {
   withTempAgentHome(() => {
     const result = agent.setupAgent('both');
-    assert.equal(result.skillVersion, '4.0.0');
+    assert.equal(result.skillVersion, '4.1.0');
     assert.ok(fs.existsSync(path.join(result.canonical, 'SKILL.md')));
     assert.equal(result.clients.length, 2);
     for (const client of result.clients) {
@@ -59,7 +59,7 @@ test('clean temporary homes install Codex, Claude, and both client targets', () 
   }
 });
 
-test('cross-ATS guided mode makes managed skill 3.1.0 stale and setup installs 4.0.0', () => {
+test('Apply evidence mode makes managed skill 4.0.0 stale and setup installs 4.1.0', () => {
   withTempAgentHome(() => {
     const target = agent.clientSkillDir('codex');
     fs.mkdirSync(target, { recursive: true });
@@ -67,18 +67,18 @@ test('cross-ATS guided mode makes managed skill 3.1.0 stale and setup installs 4
     fs.writeFileSync(path.join(target, '.trackly-managed.json'), JSON.stringify({
       managedBy: 'trackly-cli',
       skill: 'trackly-apply',
-      skillVersion: '3.1.0',
+      skillVersion: '4.0.0',
     }));
 
     const before = agent.inspectClient('codex');
     assert.equal(before.installed, false);
-    assert.equal(before.installedSkillVersion, '3.1.0');
+    assert.equal(before.installedSkillVersion, '4.0.0');
 
     const setup = agent.setupAgent('codex');
-    assert.equal(setup.skillVersion, '4.0.0');
+    assert.equal(setup.skillVersion, '4.1.0');
     const after = agent.inspectClient('codex');
     assert.equal(after.installed, true);
-    assert.equal(after.installedSkillVersion, '4.0.0');
+    assert.equal(after.installedSkillVersion, '4.1.0');
     const installedSkill = fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8');
     assert.match(installedSkill, /Resume after maintenance/);
     assert.match(installedSkill, /Do not call `trackly_start_apply_run` again/);
@@ -320,11 +320,13 @@ test('agent doctor distinguishes missing resumes from failed validation', () => 
   );
 });
 
-test('agent doctor compatibility requires protocol 3.0 or newer', () => {
+test('agent doctor compatibility requires protocol 3.1 or newer', () => {
   assert.equal(agent.protocolAtLeast('2.0.9'), false);
   assert.equal(agent.protocolAtLeast('2.1.0'), false);
   assert.equal(agent.protocolAtLeast('2.99.9'), false);
-  assert.equal(agent.protocolAtLeast('3.0.0'), true);
+  assert.equal(agent.protocolAtLeast('3.0.0'), false);
+  assert.equal(agent.protocolAtLeast('3.0.9'), false);
+  assert.equal(agent.protocolAtLeast('3.1.0'), true);
   assert.equal(agent.protocolAtLeast('1.99.0'), false);
   assert.equal(agent.protocolAtLeast('invalid'), false);
 });

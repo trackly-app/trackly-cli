@@ -19,6 +19,7 @@ Education:
 EEO / consent choices:
 Custom answers:
 Integrity sweep: pass/fail
+Manual-submit boundary verified: yes/no
 Actual scenario coverage:
 Items requiring your attention:
 

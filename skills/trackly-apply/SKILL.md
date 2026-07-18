@@ -19,8 +19,8 @@ Use Trackly as the source of truth for profile answers, documents, queue decisio
 
 ## Start every run
 
-1. Call `trackly_get_apply_protocol`. Skill 4.0 requires protocol major 3 (version 3.0.0 or newer) and `compatibleSkillMajor: 4`. Reject an older or incompatible major and report that the backend must finish updating or `trackly agent setup` must update the skill. This breaking gate prevents a pre-guided-mode skill or run from being reused under the stronger cross-ATS contract.
-2. Call `trackly_get_profile_onboarding` or fetch both the profile schema and application profile. Ask only unknown or unconfirmed fields.
+1. Call `trackly_get_apply_protocol`. Skill 4.1 requires protocol major 3 (version 3.1.0 or newer) and `compatibleSkillMajor: 4`. Reject an older or incompatible version and report that the backend must finish updating or `trackly agent setup` must update the skill. This gate prevents a pre-evidence skill or run from being reused under the stronger cross-ATS contract.
+2. Call `trackly_get_profile_onboarding` or fetch both the profile schema and application profile. Treat `completeness.percent` as required onboarding readiness only. Use `coverage.missingReusableKeys` to explain reusable optional gaps, while `coverage.contextualKeys` are intentionally asked only on the relevant employer form. Do not claim that 100% required completeness answers every possible application question.
 3. Save answers with `trackly_update_application_profile`:
    - Use `answered`, `intentionally_blank`, `declined`, or `unknown` exactly.
    - If the user says “always,” save globally.
@@ -92,7 +92,14 @@ Follow this order:
 
 When the user corrects an answer, immediately save the appropriate scope with `trackly_update_application_profile` and report only a redacted mechanics observation through `trackly_report_apply_observation`. Never promote one user’s value into a global default. For `generic_web_form`, never save provider-scoped answers; use company scope for form-specific answers.
 
-For every run, track only scenarios actually exercised. Attest `browser_reclaim` once with the same-run `observationType: browser_ready`, exact binding hash, browser surface, and `metadata.committed: true`; do not send a duplicate `scenario_coverage` row for it. Before `review_ready`, report every other exercised scenario with `observationType: scenario_coverage`, the stable scenario code, browser surface, `metadata.committed: true` for `passed` or `corrected`, and whether the tab was resumed after handoff. Every required scenario must have the corresponding same-run committed evidence. If any required scenario is missing, uncommitted, or blocked, record the run as `blocked` instead of `review_ready`. Never include answer values or page text. Include the actual scenario coverage in the final handoff; do not claim unobserved coverage.
+For every run, track only scenarios actually exercised, except the two universal review proofs below. Attest `browser_reclaim` once with the same-run `observationType: browser_ready`, exact binding hash, browser surface, and `metadata.committed: true`; do not send a duplicate `scenario_coverage` row for it. Before `review_ready`, report every other exercised scenario with `observationType: scenario_coverage`, the stable scenario code, browser surface, `metadata.committed: true` for `passed` or `corrected`, and whether the tab was resumed after handoff.
+
+Always report both universal evidence scenarios before every `review_ready` outcome:
+
+- `critical_contact_integrity`: inventory all email, phone, country-code, and other required contact controls; verify every present canonical field exactly after parsing/autofill; confirm no required contact control is omitted, duplicated, concatenated, placeholder-only, or visibly errored. If the form truly has no such control, pass only after the whole-form inventory proves none is required. Use `corrected` when any contact field needed repair.
+- `manual_submit_boundary`: prove the live form is at its final review state, the Submit control is present or the ATS has an equivalent clearly identified boundary, and the agent did not activate it. A submit-only transition that cannot be inspected does not pass.
+
+Every required scenario and both universal evidence scenarios must have corresponding same-run committed evidence. If any is missing, uncommitted, or blocked, record the run as `blocked` instead of `review_ready`. Never include email, phone, applicant name, answer values, page text, or local paths in observations. Include the actual scenario coverage in the final handoff; do not claim unobserved coverage. Use `trackly_get_apply_evidence` or `trackly agent evidence` when the user asks for aggregate beta proof; never reconstruct a report from private chat content.
 
 ## Review handoff
 

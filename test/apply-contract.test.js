@@ -47,11 +47,21 @@ function toolArguments(name) {
 const normalizeSchema = (schema) => schema.replace(/\s+/g, '').replace(/,([}\]])/g, '$1');
 
 test('local MCP Apply schemas match each complete versioned input schema', () => {
-  assert.equal(contract.contractVersion, '3.0.0');
+  assert.equal(contract.contractVersion, '3.1.0');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
     const localSchema = typeof expectedSchema === 'string' ? expectedSchema : expectedSchema.local;
     assert.equal(normalizeSchema(toolArguments(name)[2]), localSchema, `${name} schema drifted`);
   }
+});
+
+test('Apply skill emits value-free beta evidence for contact integrity and the manual-submit boundary', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  const coverage = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'scenario-coverage.md'), 'utf8');
+
+  assert.match(skill, /`critical_contact_integrity`/);
+  assert.match(skill, /`manual_submit_boundary`/);
+  assert.match(skill, /report both universal evidence scenarios before every `review_ready` outcome/);
+  assert.match(coverage, /never include email, phone, applicant name, answer values, page text, or local paths/);
 });
 
 test('local MCP has no uncontracted Trackly Apply tools', () => {
@@ -198,11 +208,11 @@ test('Apply MCP prompt gates resume preparation on the same browser binding', ()
   assert.match(source.slice(browserGate, prepare), /browser_ready attestation/);
 });
 
-test('Apply skill 4.0 requires compatible protocol major 3 and skill major 4', () => {
+test('Apply skill 4.1 requires protocol 3.1 or newer and skill major 4', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
-  assert.match(skill, /Skill 4\.0 requires protocol major 3 \(version 3\.0\.0 or newer\)/);
+  assert.match(skill, /Skill 4\.1 requires protocol major 3 \(version 3\.1\.0 or newer\)/);
   assert.match(skill, /`compatibleSkillMajor: 4`/);
-  assert.match(skill, /pre-guided-mode skill or run/);
+  assert.match(skill, /pre-evidence skill or run/);
   assert.match(skill, /resumed run may retain an older compatible 3\.x patch\/minor version/);
 });
 
