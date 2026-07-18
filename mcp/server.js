@@ -526,7 +526,7 @@ function createServer() {
       role: 'user',
       content: {
         type: 'text',
-        text: 'Compatibility gate: require both the fetched Trackly Apply protocol and run.protocolVersion to be version 3.1.0 or newer before starting or resuming. Never continue or replace a pre-evidence 3.0.x run; preserve it, record it blocked when possible, and stop for supported lifecycle cleanup.',
+        text: 'Compatibility gate: before starting a new run, require the fetched Trackly Apply protocol to be version 3.1.0 or newer. After trackly_start_apply_run returns, or before resuming an existing run, require the returned or stored run.protocolVersion to be version 3.1.0 or newer. Never continue or replace a pre-evidence 3.0.x run; preserve it, record it blocked when possible, and stop for supported lifecycle cleanup.',
       },
     }, {
       role: 'user',

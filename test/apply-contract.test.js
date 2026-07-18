@@ -234,7 +234,8 @@ test('Apply MCP evidence preserves custom bounds and prompt rejects pre-3.1 prot
 
   assert.match(evidenceRegion, /const query = qs\.toString\(\)/);
   assert.match(evidenceRegion, /const suffix = query \? `\?\$\{query\}` : ''/);
-  assert.match(promptRegion, /require both the fetched Trackly Apply protocol and run\.protocolVersion to be version 3\.1\.0 or newer/);
+  assert.match(promptRegion, /before starting a new run, require the fetched Trackly Apply protocol to be version 3\.1\.0 or newer/);
+  assert.match(promptRegion, /After trackly_start_apply_run returns, or before resuming an existing run, require the returned or stored run\.protocolVersion to be version 3\.1\.0 or newer/);
 });
 
 test('Apply skill 4.1 requires protocol 3.1 or newer and skill major 4', () => {
