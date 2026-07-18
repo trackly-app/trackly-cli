@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-17
+
+### Added
+
+- `trackly agent evidence` and `trackly_get_apply_evidence` expose an authenticated, aggregate beta report without contact values, answers, addresses, page text, or local paths.
+- Trackly Apply skill 4.1 records committed `critical_contact_integrity` and `manual_submit_boundary` proof before every review-ready outcome.
+
+### Changed
+
+- Apply protocol/tool contract 3.1 distinguishes required onboarding completeness from optional reusable coverage and employer-specific contextual questions.
+- `hono` is now a direct `^4.12.30` dependency, guaranteeing the patched runtime for every npm consumer instead of relying on a package-local override.
+
 ## [0.7.0] - 2026-07-16
 
 ### Added

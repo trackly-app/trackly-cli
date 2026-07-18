@@ -47,11 +47,35 @@ function toolArguments(name) {
 const normalizeSchema = (schema) => schema.replace(/\s+/g, '').replace(/,([}\]])/g, '$1');
 
 test('local MCP Apply schemas match each complete versioned input schema', () => {
-  assert.equal(contract.contractVersion, '3.0.0');
+  assert.equal(contract.contractVersion, '3.1.0');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
     const localSchema = typeof expectedSchema === 'string' ? expectedSchema : expectedSchema.local;
     assert.equal(normalizeSchema(toolArguments(name)[2]), localSchema, `${name} schema drifted`);
   }
+});
+
+test('versioned contract owns the exact Apply scenario and browser-surface enums', () => {
+  assert.deepEqual(contract.constants.applyScenarioCodes, [
+    'browser_reclaim', 'resume_upload', 'resume_parser_recheck', 'semantic_boolean_commit',
+    'custom_select_commit', 'multi_step_navigation', 'free_text_voice',
+    'required_error_sweep', 'final_consent', 'handoff_reclaim',
+    'critical_contact_integrity', 'manual_submit_boundary',
+  ]);
+  assert.deepEqual(contract.constants.applyBrowserSurfaces, [
+    'codex_in_app', 'chrome_extension', 'claude_in_chrome',
+  ]);
+  assert.match(source, /const APPLY_SCENARIO_CODES = APPLY_CONTRACT\.constants\.applyScenarioCodes/);
+  assert.match(source, /const APPLY_BROWSER_SURFACES = APPLY_CONTRACT\.constants\.applyBrowserSurfaces/);
+});
+
+test('Apply skill emits value-free beta evidence for contact integrity and the manual-submit boundary', () => {
+  const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
+  const coverage = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'scenario-coverage.md'), 'utf8');
+
+  assert.match(skill, /`critical_contact_integrity`/);
+  assert.match(skill, /`manual_submit_boundary`/);
+  assert.match(skill, /report both universal evidence scenarios before every `review_ready` outcome/);
+  assert.match(coverage, /never include email, phone, applicant name, answer values, page text, or local paths/);
 });
 
 test('local MCP has no uncontracted Trackly Apply tools', () => {
@@ -198,12 +222,29 @@ test('Apply MCP prompt gates resume preparation on the same browser binding', ()
   assert.match(source.slice(browserGate, prepare), /browser_ready attestation/);
 });
 
-test('Apply skill 4.0 requires compatible protocol major 3 and skill major 4', () => {
+test('Apply MCP evidence preserves custom bounds and prompt rejects pre-3.1 protocols', () => {
+  const evidenceRegion = source.slice(
+    source.indexOf("'trackly_get_apply_evidence'"),
+    source.indexOf("'trackly_get_apply_protocol'"),
+  );
+  const promptRegion = source.slice(
+    source.indexOf("server.registerPrompt('trackly-apply'"),
+    source.indexOf("server.registerResource('trackly-apply-protocol'"),
+  );
+
+  assert.match(evidenceRegion, /const query = qs\.toString\(\)/);
+  assert.match(evidenceRegion, /const suffix = query \? `\?\$\{query\}` : ''/);
+  assert.match(promptRegion, /before starting a new run, require the fetched Trackly Apply protocol to be version 3\.1\.0 or newer/);
+  assert.match(promptRegion, /After trackly_start_apply_run returns, or before resuming an existing run, require the returned or stored run\.protocolVersion to be version 3\.1\.0 or newer/);
+});
+
+test('Apply skill 4.1 requires protocol 3.1 or newer and skill major 4', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
-  assert.match(skill, /Skill 4\.0 requires protocol major 3 \(version 3\.0\.0 or newer\)/);
+  assert.match(skill, /Skill 4\.1 requires protocol major 3 \(version 3\.1\.0 or newer\)/);
   assert.match(skill, /`compatibleSkillMajor: 4`/);
-  assert.match(skill, /pre-guided-mode skill or run/);
-  assert.match(skill, /resumed run may retain an older compatible 3\.x patch\/minor version/);
+  assert.match(skill, /pre-evidence skill or run/);
+  assert.match(skill, /Never continue a pre-evidence 3\.0\.x run under skill 4\.1/);
+  assert.match(skill, /Preserve that run instead of starting a replacement/);
 });
 
 test('Apply skill consumes backend ATS capabilities and enforces guided stop conditions', () => {

@@ -171,6 +171,7 @@ Then use natural language in any of these clients:
 | trackly_get_profile_onboarding | Get schema plus missing questions |
 | trackly_update_application_profile | Save scoped answers with optimistic concurrency |
 | trackly_start_apply_run | Start a manual-submit browser run |
+| trackly_get_apply_evidence | Get aggregate, value-free beta evidence and release readiness |
 | trackly_get_apply_protocol | Get current workflow and compatibility rules |
 | trackly_report_apply_observation | Send redacted ATS mechanics feedback |
 | trackly_record_application_outcome | Record review or confirmed submission outcome |
@@ -249,7 +250,7 @@ Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly l
 
 **What MCP servers exist for job searching?**
 
-trackly-cli includes a built-in MCP server with 21 tools for job search, company lookup, application tracking, profile onboarding, and manual-submit form preparation. Run `trackly mcp` or use `trackly agent setup --client claude`.
+trackly-cli includes a built-in MCP server with 22 tools for job search, company lookup, application tracking, profile onboarding, beta evidence, and manual-submit form preparation. Run `trackly mcp` or use `trackly agent setup --client claude`.
 
 **How do I use Claude Code for job hunting?**
 

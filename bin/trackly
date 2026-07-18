@@ -39,6 +39,8 @@ const VALUE_FLAGS = new Set([
   'sort',
   'status',
   'url',
+  'window-days',
+  'target-reviewed-runs',
 ]);
 
 // Flags accepted on ANY command. `api-key`/`base-url` are global overrides consumed
@@ -75,7 +77,7 @@ const COMMAND_FLAGS = {
   'request-company': ['url', 'notes'],
   'api-key': ['name'],
   config: ['api-key', 'base-url', 'clear-api-key', 'clear-base-url'],
-  agent: ['client'],
+  agent: ['client', 'window-days', 'target-reviewed-runs'],
 };
 const AUTH_HELP_TEXT = `Not authenticated.
   Option 1: trackly login                        (Google OAuth)
@@ -995,7 +997,52 @@ async function cmdAgent(args) {
     console.log(report.browserControl.note);
     return;
   }
-  failNow('Unknown agent subcommand. Use: trackly agent setup --client codex|claude|both | trackly agent doctor');
+  if (subcommand === 'evidence') {
+    const parseBoundedInteger = (value, fallback, flag, maximum) => {
+      if (value === undefined) return fallback;
+      if (value === null || !/^\d+$/.test(String(value))) {
+        failNow(`${flag} must be an integer from 1 to ${maximum}.`);
+      }
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > maximum) {
+        failNow(`${flag} must be an integer from 1 to ${maximum}.`);
+      }
+      return parsed;
+    };
+    const windowDays = parseBoundedInteger(args['window-days'], 90, '--window-days', 365);
+    const targetReviewedRuns = parseBoundedInteger(
+      args['target-reviewed-runs'],
+      20,
+      '--target-reviewed-runs',
+      1000,
+    );
+    try {
+      const result = await apiRequest(
+        'GET',
+        `/api/jobscout/apply/evidence?windowDays=${windowDays}&targetReviewedRuns=${targetReviewedRuns}`,
+      );
+      if (isJSON()) return printJson(result);
+      const report = result.report;
+      console.log(color('bold', 'Trackly Apply evidence'));
+      console.log(`Window: last ${report.windowDays} days`);
+      console.log(`Reviewed: ${report.summary.reviewedRuns}/${report.targetReviewedRuns}; submitted=${report.summary.submittedRuns}; blocked=${report.summary.blockedRuns}`);
+      if (report.summary.excludedLegacyRuns) {
+        console.log(`Excluded pre-evidence runs: ${report.summary.excludedLegacyRuns}`);
+      }
+      console.log(`Critical contact integrity: ${report.evidence.criticalContact.coveragePercent}% (${report.evidence.criticalContact.verifiedRuns}/${report.summary.reviewedRuns}); corrected=${report.evidence.criticalContact.correctedRuns}; unresolved=${report.evidence.criticalContact.unresolvedFailureRuns}`);
+      console.log(`Manual-submit boundary: ${report.evidence.manualSubmitBoundary.coveragePercent}% (${report.evidence.manualSubmitBoundary.verifiedRuns}/${report.summary.reviewedRuns}); violations=${report.evidence.manualSubmitBoundary.violationRuns}`);
+      for (const provider of report.providers) {
+        console.log(`${provider.provider}: reviewed=${provider.reviewedRuns}; submitted=${provider.submittedRuns}; blocked=${provider.blockedRuns}`);
+      }
+      console.log(`Release gate: ${color(report.releaseGate.ready ? 'green' : 'yellow', report.releaseGate.ready ? 'ready' : 'not ready')}`);
+      if (report.releaseGate.blockers.length) console.log(`Blockers: ${report.releaseGate.blockers.join(', ')}`);
+      return;
+    } catch (error) {
+      setApiErrorExit(error, 'Failed to fetch Trackly Apply evidence');
+      return;
+    }
+  }
+  failNow('Unknown agent subcommand. Use: trackly agent setup --client codex|claude|both | trackly agent doctor | trackly agent evidence');
 }
 
 function showHelp() {
@@ -1036,6 +1083,7 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'mcp')}                  Start MCP server
   ${color('cyan', 'agent setup')}          Install Trackly Apply for Codex/Claude (--client codex|claude|both)
   ${color('cyan', 'agent doctor')}         Verify auth, MCP, skill, profile, resume, and compatibility
+  ${color('cyan', 'agent evidence')}       Show value-free beta evidence (--window-days, --target-reviewed-runs)
 
 ${color('bold', 'Flags:')}
   --api-key <key>       Use an API key for this command

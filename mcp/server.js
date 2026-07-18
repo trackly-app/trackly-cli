@@ -7,16 +7,13 @@ const { z } = require('zod');
 const { apiRequest, hasAuth, maintenanceOutput } = require('../lib/client');
 const { prepareResume, verifyPreparedResume } = require('../lib/agent');
 const { version: PACKAGE_VERSION } = require('../package.json');
+const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
 const MCP_MAINTENANCE_ERROR_CODE = -32002;
 const AUTH_HINT = 'Run `trackly login` or set TRACKLY_API_KEY. Get a key at https://usetrackly.app (sign in → Settings → API Keys).';
-const APPLY_BROWSER_SURFACES = ['codex_in_app', 'chrome_extension', 'claude_in_chrome'];
-const APPLY_SCENARIO_CODES = [
-  'browser_reclaim', 'resume_upload', 'resume_parser_recheck', 'semantic_boolean_commit',
-  'custom_select_commit', 'multi_step_navigation', 'free_text_voice',
-  'required_error_sweep', 'final_consent', 'handoff_reclaim',
-];
+const APPLY_BROWSER_SURFACES = APPLY_CONTRACT.constants.applyBrowserSurfaces;
+const APPLY_SCENARIO_CODES = APPLY_CONTRACT.constants.applyScenarioCodes;
 const SAFE_OBSERVATION_CODE = /^[a-z0-9][a-z0-9_:-]{0,99}$/;
 
 // Mirrors `granola-followup-app/src/services/region-classifier.ts:8` REGION_TAGS.
@@ -438,6 +435,23 @@ function createServer() {
   );
 
   server.tool(
+    'trackly_get_apply_evidence',
+    'Get the authenticated user\'s aggregate, value-free Apply beta evidence and release gate. The report never returns answers, contact values, addresses, or page text.',
+    {
+      windowDays: z.number().int().min(1).max(365).optional(),
+      targetReviewedRuns: z.number().int().min(1).max(1000).optional(),
+    },
+    wrapTool(async ({ windowDays, targetReviewedRuns }) => {
+      const qs = new URLSearchParams();
+      if (windowDays !== undefined) qs.set('windowDays', String(windowDays));
+      if (targetReviewedRuns !== undefined) qs.set('targetReviewedRuns', String(targetReviewedRuns));
+      const query = qs.toString();
+      const suffix = query ? `?${query}` : '';
+      return apiRequest('GET', `/api/jobscout/apply/evidence${suffix}`, null, false, false, MCP_USER_AGENT);
+    }, 'Failed to fetch apply evidence')
+  );
+
+  server.tool(
     'trackly_get_apply_protocol',
     'Get the current browser workflow, ATS support matrix, integrity rules, and compatible public-skill major version. Fetch at the start of every run and again after maintenance before resuming the existing run.',
     {},
@@ -512,7 +526,13 @@ function createServer() {
       role: 'user',
       content: {
         type: 'text',
-        text: 'Fetch the Trackly Apply protocol, profile onboarding, profile, and approved queue. Resolve missing answers with me. Before starting anything, stop on every non-null executionBlocker and every manual_only item. Start only the selected approved queue item, require major(run.protocolVersion) === major(protocol.version), require protocol.compatibleSkillMajor === 4, preserve the stored version for a resumed run, and require its provider, atsCapability, required scenarios, and originPolicy to match the queue preflight. Reclaim semantic browser control, verify the exact job/run/tab binding, hash that value-free binding, and report the same-run browser_ready attestation with committed=true. Before entering private data, normalize every page, redirect, and data-receiving iframe URL; accept an exact authorized origin or hostname only when host === allowedDomain or host.endsWith("." + allowedDomain), never by substring or page text. For vendor-hosted ATS pages, execute the backend-owned originPolicy.tenantRule exactly after every redirect or data-receiving iframe change, including its extraction, exact-host-depth, locale, percent-decoding, normalization, and fail-closed semantics, then require the normalized result to equal originPolicy.verifiedAtsTenant; never invent or reinterpret a strategy token. Obey every capability stop condition. Determine whether the form has a semantically identified Resume or CV attachment control. Only when that specific control exists, prepare the run-bound resume locally with that browser surface and binding hash, show me its exact path, filename, size, SHA-256, run, and expiration, and obtain my explicit confirmation. Treat cover-letter, portfolio, transcript, and other supporting-document controls separately according to the profile and protocol; never upload a resume to them. Immediately before attaching the resume, use the local verifier to validate the signed proof, recompute hash and size, check expiration, and lock the file read-only. Fill the form through semantic controls, verify committed values and every required error, and report a same-run passed or corrected scenario_coverage observation with committed=true for every backend-required scenario except browser_reclaim, which is satisfied only by browser_ready with the binding hash. If a required scenario cannot pass, record blocked rather than review_ready. Stop before Submit. If maintenance interrupts the run, retain the run and browser context, wait for the advertised window, refetch protocol, queue, and profile state, and resume the existing agent_browser run. Never start a duplicate run, blindly retry a mutation, enter credentials or verification codes, evade human verification, or click Submit.',
+        text: 'Compatibility gate: before starting a new run, require the fetched Trackly Apply protocol to be version 3.1.0 or newer. After trackly_start_apply_run returns, or before resuming an existing run, require the returned or stored run.protocolVersion to be version 3.1.0 or newer. Never continue or replace a pre-evidence 3.0.x run; preserve it, record it blocked when possible, and stop for supported lifecycle cleanup.',
+      },
+    }, {
+      role: 'user',
+      content: {
+        type: 'text',
+        text: 'Fetch the Trackly Apply protocol, profile onboarding, profile, and approved queue. Resolve missing answers with me. Treat required completeness separately from optional reusable coverage and employer-specific contextual questions. Before starting anything, stop on every non-null executionBlocker and every manual_only item. Start only the selected approved queue item, require major(run.protocolVersion) === major(protocol.version), require protocol.compatibleSkillMajor === 4, preserve the stored version for a resumed run, and require its provider, atsCapability, required scenarios, and originPolicy to match the queue preflight. Reclaim semantic browser control, verify the exact job/run/tab binding, hash that value-free binding, and report the same-run browser_ready attestation with committed=true. Before entering private data, normalize every page, redirect, and data-receiving iframe URL; accept an exact authorized origin or hostname only when host === allowedDomain or host.endsWith("." + allowedDomain), never by substring or page text. For vendor-hosted ATS pages, execute the backend-owned originPolicy.tenantRule exactly after every redirect or data-receiving iframe change, including its extraction, exact-host-depth, locale, percent-decoding, normalization, and fail-closed semantics, then require the normalized result to equal originPolicy.verifiedAtsTenant; never invent or reinterpret a strategy token. Obey every capability stop condition. Determine whether the form has a semantically identified Resume or CV attachment control. Only when that specific control exists, prepare the run-bound resume locally with that browser surface and binding hash, show me its exact path, filename, size, SHA-256, run, and expiration, and obtain my explicit confirmation. Treat cover-letter, portfolio, transcript, and other supporting-document controls separately according to the profile and protocol; never upload a resume to them. Immediately before attaching the resume, use the local verifier to validate the signed proof, recompute hash and size, check expiration, and lock the file read-only. Fill the form through semantic controls, verify committed values and every required error, and report a same-run passed or corrected scenario_coverage observation with committed=true for every backend-required scenario except browser_reclaim, which is satisfied only by browser_ready with the binding hash. Before every review_ready outcome, also report value-free committed critical_contact_integrity and manual_submit_boundary evidence; never include contact values, answers, page text, or local paths. If a required or universal review scenario cannot pass, record blocked rather than review_ready. Stop before Submit. If maintenance interrupts the run, retain the run and browser context, wait for the advertised window, refetch protocol, queue, and profile state, and resume the existing agent_browser run. Never start a duplicate run, blindly retry a mutation, enter credentials or verification codes, evade human verification, or click Submit.',
       },
     }],
   }));

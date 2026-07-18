@@ -35,6 +35,7 @@ Run this gate after each semantic selection and again across the entire form bef
 - Read both DOM input state and macOS accessibility state.
 - Reject duplicate or concatenated values, autofill overlays, placeholder-only text, and values present only in a custom wrapper.
 - Recheck when navigation, resume parsing, or a correction banner rerenders the form.
+- Before review, inventory every email, phone, country-code, and required contact control. Pass `critical_contact_integrity` only when all present canonical values are exact and no required contact field was omitted. A form with no contact control passes only after the whole-form inventory confirms none exists or is required.
 
 ## Final sweep
 
@@ -44,6 +45,8 @@ Run this gate after each semantic selection and again across the entire form bef
 4. Search for correction banners, inline errors, invalid attributes, and error summaries.
 5. Verify resume filename, education dates, links, and all critical contact fields again.
 6. Confirm the Submit button is present but do not click it.
+
+After the final sweep, pass `manual_submit_boundary` only when the live final-review state is observable and no Submit-equivalent control was activated. Report both universal evidence scenarios with value-free metadata before recording `review_ready`.
 
 If any field’s committed state cannot be observed, fail the gate and explain which field needs manual review.
 

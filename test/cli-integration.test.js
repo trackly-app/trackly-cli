@@ -278,10 +278,37 @@ test('agent doctor JSON exits non-zero when setup is not ready', async (t) => {
   assert.equal(JSON.parse(result.stdout).ok, false);
 });
 
+test('agent evidence returns the authenticated value-free beta report', async (t) => {
+  const report = {
+    windowDays: 90,
+    targetReviewedRuns: 20,
+    summary: { totalRuns: 4, reviewedRuns: 3, submittedRuns: 2, blockedRuns: 1, failedRuns: 0, activeRuns: 1, excludedLegacyRuns: 2 },
+    providers: [{ provider: 'greenhouse', totalRuns: 4, reviewedRuns: 3, submittedRuns: 2, blockedRuns: 1 }],
+    evidence: {
+      criticalContact: { verifiedRuns: 3, correctedRuns: 1, unresolvedFailureRuns: 0, coveragePercent: 100 },
+      manualSubmitBoundary: { verifiedRuns: 3, violationRuns: 0, coveragePercent: 100 },
+    },
+    releaseGate: { ready: false, blockers: ['reviewed_target_not_met'] },
+  };
+  const { requests, result } = await runAgainstMock(
+    t,
+    ['agent', 'evidence', '--window-days', '90', '--target-reviewed-runs', '20', '--json'],
+    () => ({ status: 200, json: { success: true, report } }),
+  );
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url.split('?')[0], '/api/jobscout/apply/evidence');
+  const params = query(requests);
+  assert.equal(params.get('windowDays'), '90');
+  assert.equal(params.get('targetReviewedRuns'), '20');
+  assert.deepEqual(JSON.parse(result.stdout).report, report);
+});
+
 test('agent doctor never mints a placeholder run to prepare a resume', async (t) => {
   const { requests, result } = await runAgainstMock(t, ['agent', 'doctor', '--json'], (req) => {
     if (req.url === '/api/jobscout/apply/protocol') {
-      return { json: { protocol: { compatibleSkillMajor: 4, version: '3.0.0' } } };
+      return { json: { protocol: { compatibleSkillMajor: 4, version: '3.1.0' } } };
     }
     if (req.url === '/api/jobscout/application-profile') {
       return { json: { profile: { revision: 1, completeness: { percent: 100, missingKeys: [] }, defaultResume: { id: 7, fileName: 'Resume.pdf' } } } };
@@ -298,7 +325,7 @@ test('agent doctor never mints a placeholder run to prepare a resume', async (t)
 test('agent doctor explains that exact resume validation is deferred to a real Apply run', async (t) => {
   const { result } = await runAgainstMock(t, ['agent', 'doctor'], (req) => {
     if (req.url === '/api/jobscout/apply/protocol') {
-      return { json: { protocol: { compatibleSkillMajor: 4, version: '3.0.0' } } };
+      return { json: { protocol: { compatibleSkillMajor: 4, version: '3.1.0' } } };
     }
     if (req.url === '/api/jobscout/application-profile') {
       return { json: { profile: { revision: 1, completeness: { percent: 100, missingKeys: [] }, defaultResume: { id: 7, fileName: 'Resume.pdf' } } } };
