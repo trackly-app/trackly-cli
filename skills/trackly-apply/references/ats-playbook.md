@@ -40,7 +40,7 @@ This group includes SmartRecruiters, Workable, BambooHR, Recruitee, Jobvite, Tea
 
 ## Unknown employer-hosted form
 
-- Use only when the protocol resolves the run to `generic_web_form` in guided mode and supplies `originPolicy.authorized: true` with `verification: verified_employer_domain`.
+- Use only when the protocol resolves the run to `generic_web_form` in guided mode and supplies `originPolicy.authorized: true` with `verification: verified_employer_domain` or `trackly_employer_source_exact_origin`. The latter authorizes only the exact stored origin.
 - Inventory every step, origin transition, control type, required error, file input, and review/submit boundary before any upload.
 - Never claim provider support from visual similarity. Stop if any critical control cannot be observed semantically.
 

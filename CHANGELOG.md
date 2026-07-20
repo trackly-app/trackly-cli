@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-07-20
+
+### Fixed
+
+- Trackly Apply skill 4.1.1 no longer recreates the obsolete company-ownership timestamp gate. Protocol 3.2 can authorize the exact HTTPS origin of a job ingested directly from an employer careers source while still failing closed on redirects, iframe origin changes, unknown sources, aggregators, and explicit ATS tenant contradictions.
+- Browser identity checks now require the run-bound company and role, plus the requisition identifier when the stored job URL exposes one, before private profile data is entered.
+
 ## [0.7.1] - 2026-07-17
 
 ### Added

@@ -47,7 +47,7 @@ function toolArguments(name) {
 const normalizeSchema = (schema) => schema.replace(/\s+/g, '').replace(/,([}\]])/g, '$1');
 
 test('local MCP Apply schemas match each complete versioned input schema', () => {
-  assert.equal(contract.contractVersion, '3.1.0');
+  assert.equal(contract.contractVersion, '3.2.0');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
     const localSchema = typeof expectedSchema === 'string' ? expectedSchema : expectedSchema.local;
     assert.equal(normalizeSchema(toolArguments(name)[2]), localSchema, `${name} schema drifted`);
@@ -59,7 +59,7 @@ test('versioned contract owns the exact Apply scenario and browser-surface enums
     'browser_reclaim', 'resume_upload', 'resume_parser_recheck', 'semantic_boolean_commit',
     'custom_select_commit', 'multi_step_navigation', 'free_text_voice',
     'required_error_sweep', 'final_consent', 'handoff_reclaim',
-    'critical_contact_integrity', 'manual_submit_boundary',
+    'critical_contact_integrity', 'manual_submit_boundary', 'job_identity_match',
   ]);
   assert.deepEqual(contract.constants.applyBrowserSurfaces, [
     'codex_in_app', 'chrome_extension', 'claude_in_chrome',
@@ -74,6 +74,9 @@ test('Apply skill emits value-free beta evidence for contact integrity and the m
 
   assert.match(skill, /`critical_contact_integrity`/);
   assert.match(skill, /`manual_submit_boundary`/);
+  assert.match(skill, /`job_identity_match`/);
+  assert.match(skill, /after every navigation or redirect and before entering any additional private data/);
+  assert.match(skill, /require both `originPolicy\.tenantRule` and `originPolicy\.verifiedAtsTenant` to be non-null/);
   assert.match(skill, /report both universal evidence scenarios before every `review_ready` outcome/);
   assert.match(coverage, /never include email, phone, applicant name, answer values, page text, or local paths/);
 });
@@ -260,6 +263,8 @@ test('Apply skill consumes backend ATS capabilities and enforces guided stop con
   assert.match(skill, /originPolicy\.tenantRule/);
   assert.match(skill, /originPolicy\.verifiedAtsTenant/);
   assert.match(skill, /never invent or reinterpret a strategy token/);
+  assert.match(skill, /`trackly_employer_source_exact_origin`/);
+  assert.match(skill, /never convert it into a hostname suffix or carry it across a redirect or iframe origin change/);
   assert.match(playbook, /Guided enterprise ATS/);
   assert.match(playbook, /Guided mid-market ATS/);
   assert.match(playbook, /Unknown employer-hosted form/);
