@@ -75,6 +75,7 @@ test('Apply skill emits value-free beta evidence for contact integrity and the m
   assert.match(skill, /`critical_contact_integrity`/);
   assert.match(skill, /`manual_submit_boundary`/);
   assert.match(skill, /`job_identity_match`/);
+  assert.match(skill, /after every navigation or redirect and before entering any additional private data/);
   assert.match(skill, /report both universal evidence scenarios before every `review_ready` outcome/);
   assert.match(coverage, /never include email, phone, applicant name, answer values, page text, or local paths/);
 });
