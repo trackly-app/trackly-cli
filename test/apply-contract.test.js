@@ -47,7 +47,7 @@ function toolArguments(name) {
 const normalizeSchema = (schema) => schema.replace(/\s+/g, '').replace(/,([}\]])/g, '$1');
 
 test('local MCP Apply schemas match each complete versioned input schema', () => {
-  assert.equal(contract.contractVersion, '3.1.0');
+  assert.equal(contract.contractVersion, '3.2.0');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
     const localSchema = typeof expectedSchema === 'string' ? expectedSchema : expectedSchema.local;
     assert.equal(normalizeSchema(toolArguments(name)[2]), localSchema, `${name} schema drifted`);
@@ -260,6 +260,8 @@ test('Apply skill consumes backend ATS capabilities and enforces guided stop con
   assert.match(skill, /originPolicy\.tenantRule/);
   assert.match(skill, /originPolicy\.verifiedAtsTenant/);
   assert.match(skill, /never invent or reinterpret a strategy token/);
+  assert.match(skill, /`trackly_employer_source_exact_origin`/);
+  assert.match(skill, /never convert it into a hostname suffix or carry it across a redirect or iframe origin change/);
   assert.match(playbook, /Guided enterprise ATS/);
   assert.match(playbook, /Guided mid-market ATS/);
   assert.match(playbook, /Unknown employer-hosted form/);

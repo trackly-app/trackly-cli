@@ -36,7 +36,7 @@ function withTempAgentHome(run) {
 test('agent setup installs one canonical skill and links both clients', () => {
   withTempAgentHome(() => {
     const result = agent.setupAgent('both');
-    assert.equal(result.skillVersion, '4.1.0');
+    assert.equal(result.skillVersion, '4.1.1');
     assert.ok(fs.existsSync(path.join(result.canonical, 'SKILL.md')));
     assert.equal(result.clients.length, 2);
     for (const client of result.clients) {
@@ -59,7 +59,7 @@ test('clean temporary homes install Codex, Claude, and both client targets', () 
   }
 });
 
-test('Apply evidence mode makes managed skill 4.0.0 stale and setup installs 4.1.0', () => {
+test('Apply evidence mode makes managed skill 4.0.0 stale and setup installs 4.1.1', () => {
   withTempAgentHome(() => {
     const target = agent.clientSkillDir('codex');
     fs.mkdirSync(target, { recursive: true });
@@ -75,10 +75,10 @@ test('Apply evidence mode makes managed skill 4.0.0 stale and setup installs 4.1
     assert.equal(before.installedSkillVersion, '4.0.0');
 
     const setup = agent.setupAgent('codex');
-    assert.equal(setup.skillVersion, '4.1.0');
+    assert.equal(setup.skillVersion, '4.1.1');
     const after = agent.inspectClient('codex');
     assert.equal(after.installed, true);
-    assert.equal(after.installedSkillVersion, '4.1.0');
+    assert.equal(after.installedSkillVersion, '4.1.1');
     const installedSkill = fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8');
     assert.match(installedSkill, /Resume after maintenance/);
     assert.match(installedSkill, /Do not call `trackly_start_apply_run` again/);

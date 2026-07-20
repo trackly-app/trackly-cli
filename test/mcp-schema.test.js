@@ -179,6 +179,8 @@ test('local MCP prompt includes the complete run-bound resume proof gate', () =>
   assert.match(promptRegion, /every manual_only item/);
   assert.match(promptRegion, /provider, atsCapability, required scenarios, and originPolicy/);
   assert.match(promptRegion, /host === allowedDomain or host\.endsWith/);
+  assert.match(promptRegion, /trackly_employer_source_exact_origin/);
+  assert.match(promptRegion, /never promote it to a host suffix/);
   assert.match(promptRegion, /backend-owned originPolicy\.tenantRule/);
   assert.match(promptRegion, /originPolicy\.verifiedAtsTenant/);
   assert.match(promptRegion, /never invent or reinterpret a strategy token/);
