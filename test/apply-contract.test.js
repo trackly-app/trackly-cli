@@ -59,7 +59,7 @@ test('versioned contract owns the exact Apply scenario and browser-surface enums
     'browser_reclaim', 'resume_upload', 'resume_parser_recheck', 'semantic_boolean_commit',
     'custom_select_commit', 'multi_step_navigation', 'free_text_voice',
     'required_error_sweep', 'final_consent', 'handoff_reclaim',
-    'critical_contact_integrity', 'manual_submit_boundary',
+    'critical_contact_integrity', 'manual_submit_boundary', 'job_identity_match',
   ]);
   assert.deepEqual(contract.constants.applyBrowserSurfaces, [
     'codex_in_app', 'chrome_extension', 'claude_in_chrome',
@@ -74,6 +74,7 @@ test('Apply skill emits value-free beta evidence for contact integrity and the m
 
   assert.match(skill, /`critical_contact_integrity`/);
   assert.match(skill, /`manual_submit_boundary`/);
+  assert.match(skill, /`job_identity_match`/);
   assert.match(skill, /report both universal evidence scenarios before every `review_ready` outcome/);
   assert.match(coverage, /never include email, phone, applicant name, answer values, page text, or local paths/);
 });

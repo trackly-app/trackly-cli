@@ -32,8 +32,9 @@ For each exercised scenario, call `trackly_report_apply_observation` with:
 - `handoff_reclaim`: the browser tab was reclaimed after a context or control handoff.
 - `critical_contact_integrity`: every present canonical contact control was exact after parsing/autofill and the form inventory proved that no required contact field was omitted.
 - `manual_submit_boundary`: the agent reached an observable final review boundary and stopped without activating Submit or its equivalent.
+- `job_identity_match`: on an exact-origin fallback run, the visible company, role, and available requisition identity matched the frozen Trackly job before private data entry.
 
-The last two codes are universal review proofs and must be reported for every review-ready run. Their observations are value-free: never include email, phone, applicant name, answer values, page text, or local paths.
+`critical_contact_integrity` and `manual_submit_boundary` are universal review proofs and must be reported for every review-ready run. Their observations are value-free: never include email, phone, applicant name, answer values, page text, or local paths. `job_identity_match` is required only when the queue/run includes it; its value-free observation must also omit company, role, URL, and requisition.
 
 ## Final reporting
 
