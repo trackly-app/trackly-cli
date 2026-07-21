@@ -3,6 +3,7 @@
 
 const {
   DEFAULT_BASE_URL,
+  TRACKLY_ACCESS_GUIDANCE,
   apiRequest,
   clearConfig,
   getApiKey,
@@ -80,15 +81,23 @@ const COMMAND_FLAGS = {
   agent: ['client', 'window-days', 'target-reviewed-runs'],
 };
 const AUTH_HELP_TEXT = `Not authenticated.
-  Option 1: trackly login                        (Google OAuth)
-  Option 2: trackly config --api-key trk_xxx     (get key at usetrackly.app)
-  Option 3: TRACKLY_API_KEY=trk_xxx trackly ...  (environment variable)`;
+  Existing member: trackly login                 (Google OAuth)
+  Existing API key: trackly config --api-key trk_xxx
+  New member: Trackly is in a limited rollout. Request access at
+              https://usetrackly.app/early-access`;
 const STATUS_LABELS = {
   applied: 'applied',
   saved: 'saved',
   dismissed: 'dismissed',
 };
 const WORK_ARRANGEMENT_VALUES = ['remote', 'hybrid', 'in_person', 'unspecified'];
+
+function loginAccessError(code) {
+  const normalized = String(code || '').trim().toUpperCase();
+  return normalized === 'INVITATION_REQUIRED' || normalized === 'ACCESS_BATCH_FULL'
+    ? TRACKLY_ACCESS_GUIDANCE
+    : null;
+}
 
 function parseArgs(args) {
   const result = { _: [], command: null };
@@ -348,6 +357,19 @@ async function cmdLogin() {
 
           const token = url.searchParams.get('token');
           const refreshToken = url.searchParams.get('refreshToken');
+          const accessMessage = loginAccessError(url.searchParams.get('error'));
+          if (accessMessage) {
+            res.writeHead(403, {
+              'Content-Type': 'text/html',
+              'Referrer-Policy': 'no-referrer',
+              'Cache-Control': 'no-store',
+            });
+            res.end('<html><body><h2>Trackly access is limited right now.</h2><p>Return to your terminal for next steps.</p></body></html>');
+            const accessError = new Error(accessMessage);
+            accessError.code = 'INVITATION_REQUIRED';
+            settle(accessError);
+            return;
+          }
           if (token) {
             const config = loadConfig();
             const hadApiKey = Boolean(config.apiKey);
@@ -405,10 +427,12 @@ p{color:#a1a1aa;font-size:15px;line-height:1.5}
 
         const finish = () => {
           if (error) {
-            console.log('\nLogin failed. Try API key auth instead:');
-            console.log('  1. Sign in at https://usetrackly.app');
-            console.log('  2. Go to Settings → API Keys → Create');
-            console.log('  3. Run: trackly config --api-key <your-key>');
+            if (error.code !== 'INVITATION_REQUIRED') {
+              console.log('\nLogin failed. Existing members can try API key auth:');
+              console.log('  1. Sign in at https://usetrackly.app');
+              console.log('  2. Go to Settings → API Keys → Create');
+              console.log('  3. Run: trackly config --api-key <your-key>');
+            }
             reject(error);
           } else {
             resolve();
@@ -1280,6 +1304,7 @@ module.exports = {
   getPublicConfig,
   hasJobListFilters,
   levenshtein,
+  loginAccessError,
   main,
   nearestFlag,
   normalizeBaseUrlValue,

@@ -45,6 +45,15 @@ test('normalizeBaseUrlValue trims trailing slashes', () => {
   assert.equal(cli.normalizeBaseUrlValue('https://closeai.mba/'), 'https://closeai.mba');
 });
 
+test('limited-rollout OAuth errors explain invitations and the access page', () => {
+  const message = cli.loginAccessError('invitation_required');
+
+  assert.match(message, /limited rollout/i);
+  assert.match(message, /private invite/i);
+  assert.match(message, /https:\/\/usetrackly\.app\/early-access/);
+  assert.equal(cli.loginAccessError('auth_failed'), null);
+});
+
 test('nearestFlag suggests the closest valid flag within edit distance 2', () => {
   const allowed = new Set(['region', 'function', 'status', 'limit']);
   assert.equal(cli.nearestFlag('regoin', allowed), 'region');
