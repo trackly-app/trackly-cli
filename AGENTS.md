@@ -74,7 +74,8 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 | GET | `/api/jobscout/jobs/:id` | Job detail |
 | GET | `/api/jobscout/companies` | List companies |
 | GET | `/api/jobscout/companies/search` | Semantic company search |
-| GET | `/api/jobscout/me` | User stats |
+| GET | `/api/jobscout/me` | User stats and discovery preferences |
+| PUT | `/api/jobscout/preferences` | Atomic discovery-preference updates |
 | GET | `/api/jobscout/ask` | Natural language search (20/day limit) |
 | POST | `/api/jobscout/tracker/jobs/:id/stage` | Update job tracker stage (applied/backlog/discarded) |
 | POST | `/api/jobscout/companies/request` | Request a company be added (rate-limited) |

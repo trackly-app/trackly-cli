@@ -89,6 +89,19 @@ function createErrorResult(error, fallbackMessage, extra = {}) {
     payload.status = error.status;
   }
 
+  if (
+    error?.code === 'experience_filter_v2_unavailable'
+    || error?.code === 'invalid_preference_revision'
+  ) {
+    payload.code = error.code;
+  }
+
+  if (error?.status === 409 && error?.error === 'preference_revision_conflict') {
+    payload.preferences = error.preferences;
+    payload.discoveryPreferenceRevision = error.discoveryPreferenceRevision;
+    payload.hint = 'Preferences changed elsewhere. Refetch with trackly_get_preferences, reconcile with the user, and never retry blindly with the newer revision.';
+  }
+
   if (error?.status === 429 && !payload.hint) {
     payload.hint = 'Daily limit reached (20 natural language queries per day).';
   }
@@ -156,6 +169,17 @@ function wrapTool(handler, fallbackMessage) {
         error?.status === 401 ? { hint: AUTH_HINT } : {}
       );
     }
+  };
+}
+
+function projectPreferenceResponse(result, experienceFilterV2Available = null) {
+  const user = result?.user || {};
+  return {
+    success: result?.success === true,
+    experienceFilterV2Available: experienceFilterV2Available === null
+      ? user.experienceFilterV2Available === true
+      : experienceFilterV2Available === true,
+    preferences: user.preferences || result?.preferences || {},
   };
 }
 
@@ -270,6 +294,62 @@ function createServer() {
     wrapTool(async () => {
       return apiRequest('GET', '/api/jobscout/me', null, false, false, MCP_USER_AGENT);
     }, 'Failed to fetch stats')
+  );
+
+  server.tool(
+    'trackly_get_preferences',
+    'Read the authenticated user\'s discovery preferences, including selected and effective job functions, role-specific experience limits and active state, and the discoveryPreferenceRevision required for a safe update.',
+    {},
+    wrapTool(async () => {
+      const result = await apiRequest('GET', '/api/jobscout/me', null, false, false, MCP_USER_AGENT);
+      return projectPreferenceResponse(result);
+    }, 'Failed to fetch preferences')
+  );
+
+  server.tool(
+    'trackly_update_experience_limits',
+    'Atomically replace the complete role-specific experience-limit map. Each value is the highest stated minimum years requirement the user wants for that job function. When Trackly enforcement is active, a job is included when its stated minimum is less than or equal to the limit. Jobs with no stated minimum remain visible. An empty object clears the saved limits. experienceFilterV2Available reports edit capability, not enforcement state. Read discoveryPreferenceRevision with trackly_get_preferences first. If the backend returns a revision conflict, refetch and reconcile with the user; never retry blindly with the newer revision.',
+    {
+      experienceLimitsByJobFunction: z.record(z.enum(JOB_FUNCTIONS), z.number().int().min(0).max(60)).describe(
+        'Complete replacement map from canonical job-function slug to maximum acceptable stated minimum years. Use {} to turn role-specific experience filtering off.'
+      ),
+      expectedPreferenceRevision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).describe(
+        'The non-negative safe-integer discoveryPreferenceRevision returned by the latest trackly_get_preferences call. A stale revision is rejected instead of overwriting newer choices.'
+      ),
+    },
+    wrapTool(async ({ experienceLimitsByJobFunction, expectedPreferenceRevision }) => {
+      const current = await apiRequest('GET', '/api/jobscout/me', null, false, false, MCP_USER_AGENT);
+      if (current?.user?.experienceFilterV2Available !== true) {
+        throw {
+          status: 403,
+          code: 'experience_filter_v2_unavailable',
+          error: 'Role-specific experience preferences are not available for this account yet. No changes were saved.',
+        };
+      }
+      const currentPreferences = current?.user?.preferences || {};
+      const currentRevision = currentPreferences.discoveryPreferenceRevision;
+      if (!Number.isSafeInteger(currentRevision) || currentRevision < 0) {
+        throw {
+          status: 502,
+          code: 'invalid_preference_revision',
+          error: 'Trackly did not return a valid preference revision. No changes were saved.',
+        };
+      }
+      if (currentRevision !== expectedPreferenceRevision) {
+        throw {
+          status: 409,
+          error: 'preference_revision_conflict',
+          preferences: currentPreferences,
+          discoveryPreferenceRevision: currentRevision,
+        };
+      }
+      const result = await apiRequest('PUT', '/api/jobscout/preferences', {
+        experienceLimitsByJobFunction,
+        experienceFilterVersion: 2,
+        expectedPreferenceRevision,
+      }, false, false, MCP_USER_AGENT);
+      return projectPreferenceResponse(result, true);
+    }, 'Failed to update experience limits')
   );
 
   server.tool(

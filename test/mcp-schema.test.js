@@ -19,7 +19,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
 const path = require('node:path');
+const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+const { createServer } = require('../mcp/server');
 
 const SERVER_SRC = fs.readFileSync(
   path.join(__dirname, '..', 'mcp', 'server.js'),
@@ -47,6 +51,177 @@ test('MCP JOB_FUNCTIONS has 14 canonical values including partnerships', () => {
   for (const v of ['product', 'engineering', 'design', 'data', 'marketing', 'sales', 'partnerships', 'finance', 'strategy', 'operations', 'people', 'legal', 'support', 'other']) {
     assert.ok(fns.includes(v), `missing canonical function value: ${v}`);
   }
+});
+
+test('local MCP preference tools use the authoritative V2 and revision contracts', () => {
+  const getRegion = SERVER_SRC.slice(
+    SERVER_SRC.indexOf("'trackly_get_preferences'"),
+    SERVER_SRC.indexOf("'trackly_update_experience_limits'"),
+  );
+  const updateRegion = SERVER_SRC.slice(
+    SERVER_SRC.indexOf("'trackly_update_experience_limits'"),
+    SERVER_SRC.indexOf("'trackly_update_status'"),
+  );
+
+  assert.match(getRegion, /apiRequest\(\s*['"]GET['"]\s*,\s*['"]\/api\/jobscout\/me['"]/);
+  assert.match(
+    updateRegion,
+    /experienceLimitsByJobFunction:\s*z\.record\(z\.enum\(JOB_FUNCTIONS\),\s*z\.number\(\)\.int\(\)\.min\(0\)\.max\(60\)\)/,
+  );
+  assert.match(
+    updateRegion,
+    /expectedPreferenceRevision:\s*z\.number\(\)\.int\(\)\.min\(0\)\.max\(Number\.MAX_SAFE_INTEGER\)/,
+  );
+  assert.match(getRegion, /projectPreferenceResponse/);
+  assert.match(updateRegion, /experienceFilterV2Available !== true/);
+  assert.match(updateRegion, /apiRequest\(\s*['"]GET['"]\s*,\s*['"]\/api\/jobscout\/me['"]/);
+  assert.ok(
+    updateRegion.indexOf("apiRequest('GET', '/api/jobscout/me'")
+      < updateRegion.indexOf("apiRequest('PUT', '/api/jobscout/preferences'"),
+    'MCP update must check capability before PUT',
+  );
+  assert.match(updateRegion, /apiRequest\(\s*['"]PUT['"]\s*,\s*['"]\/api\/jobscout\/preferences['"]/);
+  assert.match(updateRegion, /experienceFilterVersion:\s*2/);
+  assert.match(updateRegion, /expectedPreferenceRevision/);
+  assert.match(updateRegion, /Jobs with no stated minimum remain visible/i);
+  assert.match(updateRegion, /never retry blindly/i);
+  assert.match(SERVER_SRC, /error\?\.status === 409 && error\?\.error === ['"]preference_revision_conflict['"]/);
+  assert.match(SERVER_SRC, /payload\.preferences = error\.preferences/);
+  assert.match(SERVER_SRC, /payload\.discoveryPreferenceRevision = error\.discoveryPreferenceRevision/);
+});
+
+test('local MCP projects preference reads and refuses unavailable V2 updates before PUT', async (t) => {
+  const requests = [];
+  let capabilityAvailable = false;
+  const httpServer = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      requests.push({ method: req.method, url: req.url, body });
+      res.setHeader('Content-Type', 'application/json');
+      if (req.method === 'PUT') {
+        res.end(JSON.stringify({
+          success: true,
+          preferences: {
+            experienceLimitsByJobFunction: { product: 2 },
+            discoveryPreferenceRevision: 4,
+          },
+          discoveryPreferenceRevision: 4,
+        }));
+        return;
+      }
+      res.end(JSON.stringify({
+        success: true,
+        user: {
+          email: 'must-not-leak@example.com',
+          experienceFilterV2Available: capabilityAvailable,
+          preferences: {
+            experienceLimitsByJobFunction: {},
+            discoveryPreferenceRevision: 3,
+          },
+        },
+      }));
+    });
+  });
+  await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+  t.after(() => httpServer.close());
+
+  const originalApiKey = process.env.TRACKLY_API_KEY;
+  const originalBaseUrl = process.env.TRACKLY_BASE_URL;
+  process.env.TRACKLY_API_KEY = 'trk_test_preference_capability';
+  process.env.TRACKLY_BASE_URL = `http://127.0.0.1:${httpServer.address().port}`;
+  t.after(() => {
+    if (originalApiKey === undefined) delete process.env.TRACKLY_API_KEY;
+    else process.env.TRACKLY_API_KEY = originalApiKey;
+    if (originalBaseUrl === undefined) delete process.env.TRACKLY_BASE_URL;
+    else process.env.TRACKLY_BASE_URL = originalBaseUrl;
+  });
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const server = createServer();
+  const client = new Client({ name: 'preference-capability-test', version: '1.0.0' });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  t.after(async () => {
+    await client.close().catch(() => {});
+    await server.close().catch(() => {});
+  });
+
+  const tools = await client.listTools();
+  const updateTool = tools.tools.find((tool) => tool.name === 'trackly_update_experience_limits');
+  assert.equal(
+    updateTool.inputSchema.properties.expectedPreferenceRevision.maximum,
+    Number.MAX_SAFE_INTEGER,
+  );
+
+  const readResult = await client.callTool({ name: 'trackly_get_preferences', arguments: {} });
+  assert.deepEqual(JSON.parse(readResult.content[0].text), {
+    success: true,
+    experienceFilterV2Available: false,
+    preferences: {
+      experienceLimitsByJobFunction: {},
+      discoveryPreferenceRevision: 3,
+    },
+  });
+
+  const updateResult = await client.callTool({
+    name: 'trackly_update_experience_limits',
+    arguments: {
+      experienceLimitsByJobFunction: { product: 2 },
+      expectedPreferenceRevision: 3,
+    },
+  });
+  assert.equal(updateResult.isError, true);
+  assert.match(updateResult.content[0].text, /not available/i);
+  assert.equal(
+    JSON.parse(updateResult.content[0].text).code,
+    'experience_filter_v2_unavailable',
+  );
+  assert.deepEqual(requests.map(({ method, url }) => ({ method, url })), [
+    { method: 'GET', url: '/api/jobscout/me' },
+    { method: 'GET', url: '/api/jobscout/me' },
+  ], 'MCP capability denial must not send a PUT');
+
+  capabilityAvailable = true;
+  const conflictResult = await client.callTool({
+    name: 'trackly_update_experience_limits',
+    arguments: {
+      experienceLimitsByJobFunction: { product: 2 },
+      expectedPreferenceRevision: 2,
+    },
+  });
+  assert.equal(conflictResult.isError, true);
+  const conflict = JSON.parse(conflictResult.content[0].text);
+  assert.equal(conflict.discoveryPreferenceRevision, 3);
+  assert.deepEqual(requests.map(({ method }) => method), ['GET', 'GET', 'GET']);
+
+  const successResult = await client.callTool({
+    name: 'trackly_update_experience_limits',
+    arguments: {
+      experienceLimitsByJobFunction: { product: 2 },
+      expectedPreferenceRevision: 3,
+    },
+  });
+  assert.deepEqual(JSON.parse(successResult.content[0].text), {
+    success: true,
+    experienceFilterV2Available: true,
+    preferences: {
+      experienceLimitsByJobFunction: { product: 2 },
+      discoveryPreferenceRevision: 4,
+    },
+  });
+  assert.deepEqual(requests.map(({ method, url }) => ({ method, url })), [
+    { method: 'GET', url: '/api/jobscout/me' },
+    { method: 'GET', url: '/api/jobscout/me' },
+    { method: 'GET', url: '/api/jobscout/me' },
+    { method: 'GET', url: '/api/jobscout/me' },
+    { method: 'PUT', url: '/api/jobscout/preferences' },
+  ]);
+  assert.deepEqual(JSON.parse(requests[4].body), {
+    experienceLimitsByJobFunction: { product: 2 },
+    experienceFilterVersion: 2,
+    expectedPreferenceRevision: 3,
+  });
 });
 
 test('MCP JOB_MODALITIES matches backend is_internship column semantics', () => {

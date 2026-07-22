@@ -141,6 +141,24 @@ test('COMMAND_FLAGS keeps deprecated jobs flags so they reach the migration mess
   assert.deepEqual(cli.COMMAND_FLAGS.job, [], 'job detail accepts no filter flags');
 });
 
+test('parseExperienceLimits accepts the canonical role=years contract and clear', () => {
+  assert.deepEqual(
+    cli.parseExperienceLimits(['product=2', 'strategy=5']),
+    { product: 2, strategy: 5 },
+  );
+  assert.deepEqual(cli.parseExperienceLimits(['clear']), {});
+});
+
+test('parseExperienceLimits rejects ambiguous, invalid, and out-of-range values', () => {
+  assert.throws(() => cli.parseExperienceLimits([]), /at least one role limit or `clear`/i);
+  assert.throws(() => cli.parseExperienceLimits(['clear', 'product=2']), /cannot be combined/i);
+  assert.throws(() => cli.parseExperienceLimits(['product']), /role=years/i);
+  assert.throws(() => cli.parseExperienceLimits(['unknown=2']), /unknown job function/i);
+  assert.throws(() => cli.parseExperienceLimits(['product=2.5']), /integer from 0 to 60/i);
+  assert.throws(() => cli.parseExperienceLimits(['product=61']), /integer from 0 to 60/i);
+  assert.throws(() => cli.parseExperienceLimits(['product=2', 'product=3']), /duplicate limit/i);
+});
+
 test('trackly --version prints the package version', () => {
   const result = spawnSync(process.execPath, [BIN_PATH, '--version'], {
     encoding: 'utf8',

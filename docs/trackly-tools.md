@@ -87,6 +87,12 @@ API-key creation attempts.
 - **trackly_search_companies** — Semantic company search
 - **trackly_list_companies** — List all tracked companies with job counts
 - **trackly_get_stats** — Job tracker metrics dashboard
+- **trackly_get_preferences** — Read a bounded preference response containing only `success`, `experienceFilterV2Available`, and the authenticated user's discovery `preferences`, including selected roles, saved role-specific limits, and the revision required for a safe update. Availability authorizes editing; it does not report feed or alert enforcement.
+- **trackly_update_experience_limits** — Atomically replace the complete role-specific experience-limit map.
+  - `experienceLimitsByJobFunction`: object whose keys are the 14 canonical job-function values and whose values are integer years from `0` through `60`. An empty object turns this filter off.
+  - `expectedPreferenceRevision`: non-negative safe integer from the latest `trackly_get_preferences` result. A stale revision is rejected; refetch and reconcile with the user rather than retrying blindly.
+  - The tool checks `experienceFilterV2Available` immediately before writing and refuses without a PUT unless it is exactly `true`.
+  - When server-side enforcement is active, a job remains visible when its stated minimum is less than or equal to that role's limit. Jobs with no stated minimum remain visible.
 - **trackly_update_status** — Mark a job as applied, saved, or dismissed
 - **trackly_ask** — Natural language job search (20/day limit)
 - **trackly_get_job_brief** — Get network brief for a job (company signal, top contact, actions)
@@ -119,4 +125,5 @@ REST, refresh, download, CLI, and local/hosted MCP surfaces use canonical `code:
 - "What remote engineering roles are available?"
 - "Show me jobs at Stripe"
 - "Mark job 1234 as applied"
+- "Show my Trackly preferences, then set Product to up to 2 years and Strategy to up to 5 years"
 - "Use Trackly Apply to fill my next saved application and stop before Submit"

@@ -35,7 +35,7 @@ trackly jobs --function product
 
 ## At a Glance
 
-1,900+ companies | 128K+ jobs | 40+ ATS types | CLI + MCP | 21 local MCP tools
+1,900+ companies | 128K+ jobs | 40+ ATS types | CLI + MCP | 24 local MCP tools
 
 ## CLI Commands
 
@@ -54,6 +54,9 @@ trackly companies search "fintech"    # Semantic company search
 trackly search "fintech"              # Alias for semantic company search
 trackly stats                         # Show metrics
 trackly status                        # Alias for stats
+trackly preferences                   # Show discovery preferences and experience limits
+trackly preferences experience product=2 strategy=5  # Replace role-specific limits
+trackly preferences experience clear # Turn role-specific experience filtering off
 trackly apply 1234                    # Mark as applied
 trackly save 1234                     # Save a job
 trackly dismiss 1234                  # Dismiss a job
@@ -77,6 +80,8 @@ trackly agent doctor                 # Verify setup, profile, resume, and compat
 ```
 
 Add `--json` to any command for JSON output. Use `--api-key <key>` or `--base-url <url>` as one-off global flags when needed.
+
+`trackly preferences --json` returns only `success`, `experienceFilterV2Available`, and `preferences`. The availability flag controls whether this client may edit role-specific limits; it does not claim that feed or alert enforcement is active. Every update checks that flag and the latest preference revision before writing.
 
 ## MCP Server Setup
 
@@ -160,6 +165,8 @@ Then use natural language in any of these clients:
 | trackly_search_companies | Semantic company search |
 | trackly_list_companies | List all tracked companies |
 | trackly_get_stats | Job tracker metrics and status counts |
+| trackly_get_preferences | Read bounded discovery preferences, edit availability, and save revision |
+| trackly_update_experience_limits | Atomically replace role-specific limits on a job's stated minimum years |
 | trackly_update_status | Mark jobs as applied, saved, or dismissed |
 | trackly_ask | Natural language job search (20/day) |
 | trackly_get_job_brief | Get network brief for a job (company signal, top contact, actions) |
@@ -256,7 +263,7 @@ Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly l
 
 **What MCP servers exist for job searching?**
 
-trackly-cli includes a built-in MCP server with 22 tools for job search, company lookup, application tracking, profile onboarding, beta evidence, and manual-submit form preparation. Run `trackly mcp` or use `trackly agent setup --client claude`.
+trackly-cli includes a built-in MCP server with 24 tools for job search, company lookup, discovery preferences, application tracking, profile onboarding, beta evidence, and manual-submit form preparation. Run `trackly mcp` or use `trackly agent setup --client claude`.
 
 **How do I use Claude Code for job hunting?**
 
