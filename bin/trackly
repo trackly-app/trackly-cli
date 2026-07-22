@@ -97,7 +97,11 @@ function loginAccessError(code) {
 }
 
 function writeLoginProgress(message) {
-  if (!isJSON()) console.log(message);
+  if (isJSON()) {
+    console.error(message);
+  } else {
+    console.log(message);
+  }
 }
 
 function parseArgs(args) {
@@ -336,7 +340,7 @@ function getPublicConfig() {
 
 // -- Commands --
 
-async function cmdLogin() {
+async function cmdLogin({ openUrl = openExternalUrl } = {}) {
   const baseUrl = getBaseUrl();
   const state = crypto.randomBytes(16).toString('hex');
 
@@ -470,7 +474,7 @@ p{color:#a1a1aa;font-size:15px;line-height:1.5}
         }
         writeLoginProgress(color('dim', `Callback server on port ${port}`));
         const loginUrl = `${baseUrl}/auth/google/cli?port=${port}&state=${state}`;
-        if (!openExternalUrl(loginUrl)) {
+        if (!openUrl(loginUrl)) {
           writeLoginProgress(`Open this URL in your browser:\n${loginUrl}`);
         }
       });
@@ -493,6 +497,7 @@ p{color:#a1a1aa;font-size:15px;line-height:1.5}
   process.on('SIGINT', onSigint);
   try {
     await tryLogin();
+    if (isJSON()) printJson({ success: true, authMethod: 'oauth' });
   } finally {
     process.removeListener('SIGINT', onSigint);
   }
@@ -1308,6 +1313,7 @@ if (require.main === module) {
 module.exports = {
   COMMAND_FLAGS,
   UNIVERSAL_FLAGS,
+  cmdLogin,
   formatMaintenanceForHuman,
   getPublicConfig,
   hasJobListFilters,

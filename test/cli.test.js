@@ -3,6 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const http = require('node:http');
+const os = require('node:os');
 const path = require('path');
 const { spawnSync } = require('node:child_process');
 
@@ -61,21 +63,67 @@ test('limited-rollout OAuth errors explain invitations and the access page', () 
   assert.equal(cli.loginAccessError('auth_failed'), null);
 });
 
-test('login progress is silent when stdout requires JSON', () => {
+test('login progress keeps JSON stdout clean while remaining visible on stderr', () => {
   const originalLog = console.log;
+  const originalError = console.error;
   const originalTTY = process.stdout.isTTY;
-  const writes = [];
-  console.log = (value) => writes.push(value);
+  const stdoutWrites = [];
+  const stderrWrites = [];
+  console.log = (value) => stdoutWrites.push(value);
+  console.error = (value) => stderrWrites.push(value);
   Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: false });
 
   try {
     cli.writeLoginProgress('human progress');
   } finally {
     console.log = originalLog;
+    console.error = originalError;
     Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: originalTTY });
   }
 
-  assert.deepEqual(writes, []);
+  assert.deepEqual(stdoutWrites, []);
+  assert.deepEqual(stderrWrites, ['human progress']);
+});
+
+test('non-interactive OAuth login returns structured success and keeps the fallback URL on stderr', async (t) => {
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trackly-cli-login-test-'));
+  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
+  const originalConfigDir = process.env.TRACKLY_CONFIG_DIR;
+  const originalTTY = process.stdout.isTTY;
+  const originalLog = console.log;
+  const originalError = console.error;
+  const stdoutWrites = [];
+  const stderrWrites = [];
+  process.env.TRACKLY_CONFIG_DIR = configDir;
+  Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: false });
+  console.log = (value) => stdoutWrites.push(value);
+  console.error = (value) => stderrWrites.push(value);
+  t.after(() => {
+    if (originalConfigDir === undefined) delete process.env.TRACKLY_CONFIG_DIR;
+    else process.env.TRACKLY_CONFIG_DIR = originalConfigDir;
+    Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: originalTTY });
+    console.log = originalLog;
+    console.error = originalError;
+  });
+
+  await cli.cmdLogin({
+    openUrl(loginUrl) {
+      const authorizeUrl = new URL(loginUrl);
+      const callbackUrl = new URL('http://127.0.0.1/callback');
+      callbackUrl.port = authorizeUrl.searchParams.get('port');
+      callbackUrl.searchParams.set('state', authorizeUrl.searchParams.get('state'));
+      callbackUrl.searchParams.set('token', 'test-access-token');
+      callbackUrl.searchParams.set('refreshToken', 'test-refresh-token');
+      setImmediate(() => http.get(callbackUrl, (response) => response.resume()));
+      return false;
+    },
+  });
+
+  assert.equal(stdoutWrites.length, 1);
+  assert.deepEqual(JSON.parse(stdoutWrites[0]), { success: true, authMethod: 'oauth' });
+  assert.doesNotMatch(stdoutWrites[0], /test-access-token|test-refresh-token/);
+  assert.match(stderrWrites.join('\n'), /Open this URL in your browser/);
+  assert.match(stderrWrites.join('\n'), /\/auth\/google\/cli\?/);
 });
 
 test('nearestFlag suggests the closest valid flag within edit distance 2', () => {

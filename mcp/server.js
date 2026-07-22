@@ -11,6 +11,8 @@ const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
 const MCP_MAINTENANCE_ERROR_CODE = -32002;
+const MCP_ACCESS_ERROR_CODE = -32003;
+const MCP_AUTH_ERROR_CODE = -32004;
 const AUTH_HINT =
   'Existing members: run `trackly login` or set TRACKLY_API_KEY. ' +
   'New members need a private invite during the limited rollout; request access at https://usetrackly.app/early-access.';
@@ -112,6 +114,25 @@ function throwMcpResourceError(error) {
       MCP_MAINTENANCE_ERROR_CODE,
       normalizedMaintenance.message,
       normalizedMaintenance,
+    );
+  }
+  const normalizedAccess = createTracklyAccessError(error, error?.status);
+  if (normalizedAccess) {
+    throw new McpError(
+      MCP_ACCESS_ERROR_CODE,
+      normalizedAccess.message,
+      {
+        status: normalizedAccess.status,
+        code: normalizedAccess.code,
+        retryable: normalizedAccess.retryable,
+      },
+    );
+  }
+  if (error?.status === 401) {
+    throw new McpError(
+      MCP_AUTH_ERROR_CODE,
+      error?.message || 'Not authenticated',
+      { status: 401, hint: AUTH_HINT },
     );
   }
   throw error;
