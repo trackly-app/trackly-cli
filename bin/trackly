@@ -93,7 +93,11 @@ const STATUS_LABELS = {
 const WORK_ARRANGEMENT_VALUES = ['remote', 'hybrid', 'in_person', 'unspecified'];
 
 function loginAccessError(code) {
-  return createTracklyAccessError({ code }, 403);
+  return createTracklyAccessError({ code });
+}
+
+function writeLoginProgress(message) {
+  if (!isJSON()) console.log(message);
 }
 
 function parseArgs(args) {
@@ -237,7 +241,7 @@ function setApiErrorExit(error, fallbackMessage, exitCode = 1) {
       status: accessError.status,
       code: accessError.code,
       message: accessError.message,
-      retryable: false,
+      retryable: accessError.retryable,
     });
   } else if (maintenance && isJSON()) {
     printJson(maintenance);
@@ -336,7 +340,7 @@ async function cmdLogin() {
   const baseUrl = getBaseUrl();
   const state = crypto.randomBytes(16).toString('hex');
 
-  console.log(color('cyan', 'Opening browser for Google login...'));
+  writeLoginProgress(color('cyan', 'Opening browser for Google login...'));
 
   let activeServer = null;
 
@@ -369,6 +373,8 @@ async function cmdLogin() {
             res.end('<html><body><h2>Trackly access is limited right now.</h2><p>Return to your terminal for next steps.</p></body></html>');
             const loginError = new Error(accessError.message);
             loginError.code = accessError.code;
+            loginError.status = accessError.status;
+            loginError.retryable = accessError.retryable;
             settle(loginError);
             return;
           }
@@ -406,9 +412,9 @@ p{color:#a1a1aa;font-size:15px;line-height:1.5}
 </div>
 </body>
 </html>`);
-            console.log(color('green', 'Login successful!'));
+            writeLoginProgress(color('green', 'Login successful!'));
             if (hadApiKey) {
-              console.log('Switched to OAuth. Stored API key cleared.');
+              writeLoginProgress('Switched to OAuth. Stored API key cleared.');
             }
             settle();
           } else {
@@ -430,10 +436,10 @@ p{color:#a1a1aa;font-size:15px;line-height:1.5}
         const finish = () => {
           if (error) {
             if (!createTracklyAccessError(error, 403)) {
-              console.log('\nLogin failed. Existing members can try API key auth:');
-              console.log('  1. Sign in at https://usetrackly.app');
-              console.log('  2. Go to Settings → API Keys → Create');
-              console.log('  3. Run: trackly config --api-key <your-key>');
+              writeLoginProgress('\nLogin failed. Existing members can try API key auth:');
+              writeLoginProgress('  1. Sign in at https://usetrackly.app');
+              writeLoginProgress('  2. Go to Settings → API Keys → Create');
+              writeLoginProgress('  3. Run: trackly config --api-key <your-key>');
             }
             reject(error);
           } else {
@@ -462,10 +468,10 @@ p{color:#a1a1aa;font-size:15px;line-height:1.5}
           settle(new Error(`OS assigned an out-of-range callback port (${port}); expected 1024-65535.`));
           return;
         }
-        console.log(color('dim', `Callback server on port ${port}`));
+        writeLoginProgress(color('dim', `Callback server on port ${port}`));
         const loginUrl = `${baseUrl}/auth/google/cli?port=${port}&state=${state}`;
         if (!openExternalUrl(loginUrl)) {
-          console.log(`Open this URL in your browser:\n${loginUrl}`);
+          writeLoginProgress(`Open this URL in your browser:\n${loginUrl}`);
         }
       });
 
@@ -1313,4 +1319,5 @@ module.exports = {
   openExternalUrl,
   parseArgs,
   parseJobId,
+  writeLoginProgress,
 };

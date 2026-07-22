@@ -55,7 +55,27 @@ test('limited-rollout OAuth errors explain invitations and the access page', () 
   assert.ok(cli.loginAccessError('invitation_redeemed'));
   assert.ok(cli.loginAccessError('signup_intent_expired'));
   assert.ok(cli.loginAccessError('access_batch_full'));
+  assert.equal(cli.loginAccessError('access_check_unavailable').status, 503);
+  assert.equal(cli.loginAccessError('access_check_unavailable').retryable, true);
+  assert.match(cli.loginAccessError('access_check_unavailable').message, /try again/i);
   assert.equal(cli.loginAccessError('auth_failed'), null);
+});
+
+test('login progress is silent when stdout requires JSON', () => {
+  const originalLog = console.log;
+  const originalTTY = process.stdout.isTTY;
+  const writes = [];
+  console.log = (value) => writes.push(value);
+  Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: false });
+
+  try {
+    cli.writeLoginProgress('human progress');
+  } finally {
+    console.log = originalLog;
+    Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: originalTTY });
+  }
+
+  assert.deepEqual(writes, []);
 });
 
 test('nearestFlag suggests the closest valid flag within edit distance 2', () => {

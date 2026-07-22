@@ -11,7 +11,7 @@ const { once } = require('node:events');
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
 const { createErrorResult, createServer, throwMcpResourceError } = require('../mcp/server');
-const { createMaintenanceError } = require('../lib/client');
+const { createMaintenanceError, createTracklyAccessError } = require('../lib/client');
 
 const BIN_PATH = path.join(__dirname, '..', 'bin', 'trackly');
 
@@ -55,6 +55,28 @@ test('local MCP error results preserve bounded canonical maintenance context', (
   assert.equal(payload.requestId, 'req-local-mcp');
   assert.equal(payload.retryable, false);
   assert.match(payload.guidance, /never create a duplicate/i);
+});
+
+test('local MCP preserves permanent and transient controlled-access errors', () => {
+  const invitation = createErrorResult(
+    createTracklyAccessError({ code: 'INVITATION_REDEEMED' }, 403),
+    'Access denied',
+  );
+  const invitationPayload = JSON.parse(invitation.content[0].text);
+  assert.equal(invitationPayload.code, 'INVITATION_REDEEMED');
+  assert.equal(invitationPayload.status, 403);
+  assert.equal(invitationPayload.retryable, false);
+  assert.match(invitationPayload.message, /private invite/i);
+
+  const unavailable = createErrorResult(
+    createTracklyAccessError({ code: 'ACCESS_CHECK_UNAVAILABLE' }, 503),
+    'Access unavailable',
+  );
+  const unavailablePayload = JSON.parse(unavailable.content[0].text);
+  assert.equal(unavailablePayload.code, 'ACCESS_CHECK_UNAVAILABLE');
+  assert.equal(unavailablePayload.status, 503);
+  assert.equal(unavailablePayload.retryable, true);
+  assert.match(unavailablePayload.message, /try again/i);
 });
 
 test('local MCP resource errors use JSON-RPC -32002 with structured maintenance data', () => {

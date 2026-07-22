@@ -4,7 +4,7 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { McpError } = require('@modelcontextprotocol/sdk/types.js');
 const { z } = require('zod');
-const { apiRequest, hasAuth, maintenanceOutput } = require('../lib/client');
+const { apiRequest, createTracklyAccessError, hasAuth, maintenanceOutput } = require('../lib/client');
 const { prepareResume, verifyPreparedResume } = require('../lib/agent');
 const { version: PACKAGE_VERSION } = require('../package.json');
 const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
@@ -62,16 +62,26 @@ const ACTION_TO_STAGE = { applied: 'applied', saved: 'backlog', dismissed: 'disc
 
 function createErrorResult(error, fallbackMessage, extra = {}) {
   const normalizedMaintenance = maintenanceOutput(error);
+  const normalizedAccess = createTracklyAccessError(error, error?.status);
   const payload = normalizedMaintenance
     ? {
         ...normalizedMaintenance,
         error: error?.error || error?.message || fallbackMessage,
         ...extra,
       }
-    : {
-        error: error?.error || error?.message || fallbackMessage,
-        ...extra,
-      };
+    : normalizedAccess
+      ? {
+          error: normalizedAccess.error,
+          message: normalizedAccess.message,
+          status: normalizedAccess.status,
+          code: normalizedAccess.code,
+          retryable: normalizedAccess.retryable,
+          ...extra,
+        }
+      : {
+          error: error?.error || error?.message || fallbackMessage,
+          ...extra,
+        };
 
   if (error?.status) {
     payload.status = error.status;
