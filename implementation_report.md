@@ -54,7 +54,7 @@
 
 ## Verification
 
-- Full Node test suite: 164 passed, 0 failed.
+- Full Node test suite: 168 passed, 0 failed.
 - Local MCP stdio smoke and CLI help smoke: passed.
 - `git diff --check`: passed.
 
