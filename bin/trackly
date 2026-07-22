@@ -3,9 +3,9 @@
 
 const {
   DEFAULT_BASE_URL,
-  TRACKLY_ACCESS_GUIDANCE,
   apiRequest,
   clearConfig,
+  createTracklyAccessError,
   getApiKey,
   getAuthMethod,
   getBaseUrl,
@@ -93,10 +93,7 @@ const STATUS_LABELS = {
 const WORK_ARRANGEMENT_VALUES = ['remote', 'hybrid', 'in_person', 'unspecified'];
 
 function loginAccessError(code) {
-  const normalized = String(code || '').trim().toUpperCase();
-  return normalized === 'INVITATION_REQUIRED' || normalized === 'ACCESS_BATCH_FULL'
-    ? TRACKLY_ACCESS_GUIDANCE
-    : null;
+  return createTracklyAccessError({ code }, 403);
 }
 
 function parseArgs(args) {
@@ -234,15 +231,20 @@ function formatMaintenanceForHuman(maintenance) {
 
 function setApiErrorExit(error, fallbackMessage, exitCode = 1) {
   const maintenance = maintenanceOutput(error);
-  if (!maintenance) {
-    setErrorExit(error?.error || error?.message || fallbackMessage, exitCode);
-    return;
-  }
-
-  if (isJSON()) {
+  const accessError = createTracklyAccessError(error, error?.status);
+  if (isJSON() && accessError) {
+    printJson({
+      status: accessError.status,
+      code: accessError.code,
+      message: accessError.message,
+      retryable: false,
+    });
+  } else if (maintenance && isJSON()) {
     printJson(maintenance);
-  } else {
+  } else if (maintenance) {
     outputError(formatMaintenanceForHuman(maintenance));
+  } else {
+    outputError(error?.error || error?.message || fallbackMessage);
   }
   process.exitCode = exitCode;
 }
@@ -357,17 +359,17 @@ async function cmdLogin() {
 
           const token = url.searchParams.get('token');
           const refreshToken = url.searchParams.get('refreshToken');
-          const accessMessage = loginAccessError(url.searchParams.get('error'));
-          if (accessMessage) {
+          const accessError = loginAccessError(url.searchParams.get('error'));
+          if (accessError) {
             res.writeHead(403, {
               'Content-Type': 'text/html',
               'Referrer-Policy': 'no-referrer',
               'Cache-Control': 'no-store',
             });
             res.end('<html><body><h2>Trackly access is limited right now.</h2><p>Return to your terminal for next steps.</p></body></html>');
-            const accessError = new Error(accessMessage);
-            accessError.code = 'INVITATION_REQUIRED';
-            settle(accessError);
+            const loginError = new Error(accessError.message);
+            loginError.code = accessError.code;
+            settle(loginError);
             return;
           }
           if (token) {
@@ -427,7 +429,7 @@ p{color:#a1a1aa;font-size:15px;line-height:1.5}
 
         const finish = () => {
           if (error) {
-            if (error.code !== 'INVITATION_REQUIRED') {
+            if (!createTracklyAccessError(error, 403)) {
               console.log('\nLogin failed. Existing members can try API key auth:');
               console.log('  1. Sign in at https://usetrackly.app');
               console.log('  2. Go to Settings → API Keys → Create');

@@ -195,6 +195,22 @@ test('--json preserves canonical maintenance status, retry, ETA, and request ID'
   assert.match(parsed.guidance, /resume the existing agent_browser run/);
 });
 
+test('--json emits structured rollout denials on stdout', async (t) => {
+  const { result } = await runAgainstMock(t, ['jobs', '--json'], () => ({
+    status: 403,
+    json: { code: 'INVITATION_REDEEMED', error: 'backend wording' },
+  }));
+
+  assert.notEqual(result.code, 0);
+  assert.equal(result.stderr, '');
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.status, 403);
+  assert.equal(parsed.code, 'INVITATION_REDEEMED');
+  assert.equal(parsed.retryable, false);
+  assert.match(parsed.message, /limited rollout/i);
+  assert.match(parsed.message, /https:\/\/usetrackly\.app\/early-access/);
+});
+
 test('Apply maintenance emits resume guidance and never retries the mutation', async (t) => {
   let responseCount = 0;
   const { requests, result } = await runAgainstMock(t, ['apply', '1234', '--json'], () => {

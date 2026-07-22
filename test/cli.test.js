@@ -46,11 +46,15 @@ test('normalizeBaseUrlValue trims trailing slashes', () => {
 });
 
 test('limited-rollout OAuth errors explain invitations and the access page', () => {
-  const message = cli.loginAccessError('invitation_required');
+  const error = cli.loginAccessError('invitation_invalid');
 
-  assert.match(message, /limited rollout/i);
-  assert.match(message, /private invite/i);
-  assert.match(message, /https:\/\/usetrackly\.app\/early-access/);
+  assert.equal(error.code, 'INVITATION_INVALID');
+  assert.match(error.message, /limited rollout/i);
+  assert.match(error.message, /private invite/i);
+  assert.match(error.message, /https:\/\/usetrackly\.app\/early-access/);
+  assert.ok(cli.loginAccessError('invitation_redeemed'));
+  assert.ok(cli.loginAccessError('signup_intent_expired'));
+  assert.ok(cli.loginAccessError('access_batch_full'));
   assert.equal(cli.loginAccessError('auth_failed'), null);
 });
 
