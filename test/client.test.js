@@ -63,6 +63,57 @@ test('apiRequest rejects insecure non-localhost credential transport', async () 
   });
 });
 
+test('Trackly access errors share actionable CLI and MCP rollout guidance', () => {
+  const error = client.createTracklyAccessError(
+    { code: 'INVITATION_REQUIRED', error: 'backend wording' },
+    403,
+  );
+
+  assert.equal(error.code, 'INVITATION_REQUIRED');
+  assert.equal(error.status, 403);
+  assert.match(error.message, /limited rollout/i);
+  assert.match(error.message, /private invite/i);
+  assert.match(error.message, /https:\/\/usetrackly\.app\/early-access/);
+  assert.equal(client.createTracklyAccessError({ code: 'UNRELATED' }, 403), null);
+
+  const unavailable = client.createTracklyAccessError({ code: 'ACCESS_CHECK_UNAVAILABLE' }, 503);
+  assert.equal(unavailable.retryable, true);
+  assert.match(unavailable.message, /try again/i);
+  assert.doesNotMatch(unavailable.message, /private invite/i);
+
+  const pending = client.createTracklyAccessError({ code: 'ALREADY_REQUESTED' }, 409);
+  assert.equal(pending.retryable, false);
+  assert.match(pending.message, /already pending/i);
+  assert.doesNotMatch(pending.message, /request access at/i);
+});
+
+test('apiRequest normalizes a structured invitation denial', async (t) => {
+  const configDir = createTempConfigDir();
+  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
+
+  const server = http.createServer((req, res) => {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ code: 'INVITATION_REQUIRED', error: 'backend wording' }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: undefined,
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '1000',
+  }, async () => {
+    await assert.rejects(
+      client.apiRequest('GET', '/api/jobscout/me', undefined, true),
+      (error) => error.code === 'INVITATION_REQUIRED'
+        && error.status === 403
+        && /private invite/i.test(error.message),
+    );
+  });
+});
+
 // ─── refreshAccessToken behavior (PR #20) ─────────────────────────────────────
 // Covers the three branches: 4xx from /api/auth/refresh clears the config, a
 // 2xx-with-no-token response also clears (CodeRabbit/Cursor/Copilot caught this
@@ -693,6 +744,27 @@ test('downloadFile surfaces canonical maintenance instead of a generic file erro
     assert.equal(caught.retryAfterSeconds, 300);
     assert.equal(caught.estimatedReturn, '9:50 AM PT');
     assert.match(caught.message, /Resume storage is paused/);
+  });
+});
+
+test('downloadFile preserves a structured controlled-access denial', async (t) => {
+  const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
+    res.statusCode = 403;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ code: 'INVITATION_REDEEMED', error: 'backend wording' }));
+  });
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: 'trk_k',
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '1000',
+  }, async () => {
+    const caught = await client.downloadFile('/api/jobscout/application-profile/default-resume').catch((error) => error);
+    assert.equal(caught.code, 'INVITATION_REDEEMED');
+    assert.equal(caught.status, 403);
+    assert.equal(caught.retryable, false);
+    assert.match(caught.message, /private invite/i);
   });
 });
 

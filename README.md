@@ -188,9 +188,15 @@ trackly login
 
 Opens your browser for Google sign-in. Tokens are stored locally at `~/.trackly/config.json`.
 
+Trackly is currently opening new memberships through a limited, invite-based
+rollout. Existing members can keep using OAuth and API keys normally. If a new
+account is not yet eligible, the CLI returns an invitation-specific message
+instead of suggesting repeated login attempts; request a future seat at
+[usetrackly.app/early-access](https://usetrackly.app/early-access).
+
 ### Option 2: API Key
 
-If OAuth doesn't work (firewalls, headless servers, CI), use an API key instead:
+Existing members can use an API key for firewalls, headless servers, or CI:
 
 1. Sign in at [usetrackly.app](https://usetrackly.app)
 2. Go to **Settings → API Keys → Create**

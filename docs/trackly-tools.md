@@ -65,6 +65,11 @@ trackly config --api-key trk_xxxxxxxxxxxxxxxxxxxx
 
 You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 
+Existing memberships work across the CLI and local MCP server. New memberships
+are invite-only during the limited rollout; access errors link to
+https://usetrackly.app/early-access instead of recommending repeated OAuth or
+API-key creation attempts.
+
 ### Available Tools
 
 - **trackly_search_jobs** — Search/filter jobs.

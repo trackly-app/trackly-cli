@@ -4,14 +4,18 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { McpError } = require('@modelcontextprotocol/sdk/types.js');
 const { z } = require('zod');
-const { apiRequest, hasAuth, maintenanceOutput } = require('../lib/client');
+const { apiRequest, createTracklyAccessError, hasAuth, maintenanceOutput } = require('../lib/client');
 const { prepareResume, verifyPreparedResume } = require('../lib/agent');
 const { version: PACKAGE_VERSION } = require('../package.json');
 const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
 const MCP_MAINTENANCE_ERROR_CODE = -32002;
-const AUTH_HINT = 'Run `trackly login` or set TRACKLY_API_KEY. Get a key at https://usetrackly.app (sign in → Settings → API Keys).';
+const MCP_ACCESS_ERROR_CODE = -32003;
+const MCP_AUTH_ERROR_CODE = -32004;
+const AUTH_HINT =
+  'Existing members: run `trackly login` or set TRACKLY_API_KEY. ' +
+  'New members need a private invite during the limited rollout; request access at https://usetrackly.app/early-access.';
 const APPLY_BROWSER_SURFACES = APPLY_CONTRACT.constants.applyBrowserSurfaces;
 const APPLY_SCENARIO_CODES = APPLY_CONTRACT.constants.applyScenarioCodes;
 const SAFE_OBSERVATION_CODE = /^[a-z0-9][a-z0-9_:-]{0,99}$/;
@@ -60,16 +64,26 @@ const ACTION_TO_STAGE = { applied: 'applied', saved: 'backlog', dismissed: 'disc
 
 function createErrorResult(error, fallbackMessage, extra = {}) {
   const normalizedMaintenance = maintenanceOutput(error);
+  const normalizedAccess = createTracklyAccessError(error, error?.status);
   const payload = normalizedMaintenance
     ? {
         ...normalizedMaintenance,
         error: error?.error || error?.message || fallbackMessage,
         ...extra,
       }
-    : {
-        error: error?.error || error?.message || fallbackMessage,
-        ...extra,
-      };
+    : normalizedAccess
+      ? {
+          error: normalizedAccess.error,
+          message: normalizedAccess.message,
+          status: normalizedAccess.status,
+          code: normalizedAccess.code,
+          retryable: normalizedAccess.retryable,
+          ...extra,
+        }
+      : {
+          error: error?.error || error?.message || fallbackMessage,
+          ...extra,
+        };
 
   if (error?.status) {
     payload.status = error.status;
@@ -100,6 +114,25 @@ function throwMcpResourceError(error) {
       MCP_MAINTENANCE_ERROR_CODE,
       normalizedMaintenance.message,
       normalizedMaintenance,
+    );
+  }
+  const normalizedAccess = createTracklyAccessError(error, error?.status);
+  if (normalizedAccess) {
+    throw new McpError(
+      MCP_ACCESS_ERROR_CODE,
+      normalizedAccess.message,
+      {
+        status: normalizedAccess.status,
+        code: normalizedAccess.code,
+        retryable: normalizedAccess.retryable,
+      },
+    );
+  }
+  if (error?.status === 401) {
+    throw new McpError(
+      MCP_AUTH_ERROR_CODE,
+      error?.message || 'Not authenticated',
+      { status: 401, hint: AUTH_HINT },
     );
   }
   throw error;

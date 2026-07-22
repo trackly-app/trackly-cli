@@ -5,6 +5,7 @@ const {
   DEFAULT_BASE_URL,
   apiRequest,
   clearConfig,
+  createTracklyAccessError,
   getApiKey,
   getAuthMethod,
   getBaseUrl,
@@ -80,15 +81,28 @@ const COMMAND_FLAGS = {
   agent: ['client', 'window-days', 'target-reviewed-runs'],
 };
 const AUTH_HELP_TEXT = `Not authenticated.
-  Option 1: trackly login                        (Google OAuth)
-  Option 2: trackly config --api-key trk_xxx     (get key at usetrackly.app)
-  Option 3: TRACKLY_API_KEY=trk_xxx trackly ...  (environment variable)`;
+  Existing member: trackly login                 (Google OAuth)
+  Existing API key: trackly config --api-key trk_xxx
+  New member: Trackly is in a limited rollout. Request access at
+              https://usetrackly.app/early-access`;
 const STATUS_LABELS = {
   applied: 'applied',
   saved: 'saved',
   dismissed: 'dismissed',
 };
 const WORK_ARRANGEMENT_VALUES = ['remote', 'hybrid', 'in_person', 'unspecified'];
+
+function loginAccessError(code) {
+  return createTracklyAccessError({ code });
+}
+
+function writeLoginProgress(message) {
+  if (isJSON()) {
+    console.error(message);
+  } else {
+    console.log(message);
+  }
+}
 
 function parseArgs(args) {
   const result = { _: [], command: null };
@@ -225,15 +239,20 @@ function formatMaintenanceForHuman(maintenance) {
 
 function setApiErrorExit(error, fallbackMessage, exitCode = 1) {
   const maintenance = maintenanceOutput(error);
-  if (!maintenance) {
-    setErrorExit(error?.error || error?.message || fallbackMessage, exitCode);
-    return;
-  }
-
-  if (isJSON()) {
+  const accessError = createTracklyAccessError(error, error?.status);
+  if (isJSON() && accessError) {
+    printJson({
+      status: accessError.status,
+      code: accessError.code,
+      message: accessError.message,
+      retryable: accessError.retryable,
+    });
+  } else if (maintenance && isJSON()) {
     printJson(maintenance);
-  } else {
+  } else if (maintenance) {
     outputError(formatMaintenanceForHuman(maintenance));
+  } else {
+    outputError(error?.error || error?.message || fallbackMessage);
   }
   process.exitCode = exitCode;
 }
@@ -321,11 +340,11 @@ function getPublicConfig() {
 
 // -- Commands --
 
-async function cmdLogin() {
+async function cmdLogin({ openUrl = openExternalUrl } = {}) {
   const baseUrl = getBaseUrl();
   const state = crypto.randomBytes(16).toString('hex');
 
-  console.log(color('cyan', 'Opening browser for Google login...'));
+  writeLoginProgress(color('cyan', 'Opening browser for Google login...'));
 
   let activeServer = null;
 
@@ -348,6 +367,21 @@ async function cmdLogin() {
 
           const token = url.searchParams.get('token');
           const refreshToken = url.searchParams.get('refreshToken');
+          const accessError = loginAccessError(url.searchParams.get('error'));
+          if (accessError) {
+            res.writeHead(403, {
+              'Content-Type': 'text/html',
+              'Referrer-Policy': 'no-referrer',
+              'Cache-Control': 'no-store',
+            });
+            res.end('<html><body><h2>Trackly access is limited right now.</h2><p>Return to your terminal for next steps.</p></body></html>');
+            const loginError = new Error(accessError.message);
+            loginError.code = accessError.code;
+            loginError.status = accessError.status;
+            loginError.retryable = accessError.retryable;
+            settle(loginError);
+            return;
+          }
           if (token) {
             const config = loadConfig();
             const hadApiKey = Boolean(config.apiKey);
@@ -382,9 +416,9 @@ p{color:#a1a1aa;font-size:15px;line-height:1.5}
 </div>
 </body>
 </html>`);
-            console.log(color('green', 'Login successful!'));
+            writeLoginProgress(color('green', 'Login successful!'));
             if (hadApiKey) {
-              console.log('Switched to OAuth. Stored API key cleared.');
+              writeLoginProgress('Switched to OAuth. Stored API key cleared.');
             }
             settle();
           } else {
@@ -405,10 +439,12 @@ p{color:#a1a1aa;font-size:15px;line-height:1.5}
 
         const finish = () => {
           if (error) {
-            console.log('\nLogin failed. Try API key auth instead:');
-            console.log('  1. Sign in at https://usetrackly.app');
-            console.log('  2. Go to Settings → API Keys → Create');
-            console.log('  3. Run: trackly config --api-key <your-key>');
+            if (!createTracklyAccessError(error, 403)) {
+              writeLoginProgress('\nLogin failed. Existing members can try API key auth:');
+              writeLoginProgress('  1. Sign in at https://usetrackly.app');
+              writeLoginProgress('  2. Go to Settings → API Keys → Create');
+              writeLoginProgress('  3. Run: trackly config --api-key <your-key>');
+            }
             reject(error);
           } else {
             resolve();
@@ -436,10 +472,10 @@ p{color:#a1a1aa;font-size:15px;line-height:1.5}
           settle(new Error(`OS assigned an out-of-range callback port (${port}); expected 1024-65535.`));
           return;
         }
-        console.log(color('dim', `Callback server on port ${port}`));
+        writeLoginProgress(color('dim', `Callback server on port ${port}`));
         const loginUrl = `${baseUrl}/auth/google/cli?port=${port}&state=${state}`;
-        if (!openExternalUrl(loginUrl)) {
-          console.log(`Open this URL in your browser:\n${loginUrl}`);
+        if (!openUrl(loginUrl)) {
+          writeLoginProgress(`Open this URL in your browser:\n${loginUrl}`);
         }
       });
 
@@ -461,6 +497,7 @@ p{color:#a1a1aa;font-size:15px;line-height:1.5}
   process.on('SIGINT', onSigint);
   try {
     await tryLogin();
+    if (isJSON()) printJson({ success: true, authMethod: 'oauth' });
   } finally {
     process.removeListener('SIGINT', onSigint);
   }
@@ -1276,14 +1313,17 @@ if (require.main === module) {
 module.exports = {
   COMMAND_FLAGS,
   UNIVERSAL_FLAGS,
+  cmdLogin,
   formatMaintenanceForHuman,
   getPublicConfig,
   hasJobListFilters,
   levenshtein,
+  loginAccessError,
   main,
   nearestFlag,
   normalizeBaseUrlValue,
   openExternalUrl,
   parseArgs,
   parseJobId,
+  writeLoginProgress,
 };

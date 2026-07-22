@@ -36,3 +36,27 @@
 - Merge and release the backend and CLI changes together so protocol, hosted MCP, local MCP, and bundled skill stay aligned.
 - Existing managed 3.x skills become stale and are upgraded by `trackly agent setup` to `4.0.0`; protocol `compatibleSkillMajor: 4` prevents older clients and pre-3.0 runs from entering guided execution.
 - No npm publish, production deployment, application submission, or job-state mutation was performed in this implementation task.
+
+---
+
+# Controlled-access rollout guidance — CLI and local MCP
+
+## Outcome
+
+- Google OAuth now renders a specific limited-rollout response when the backend
+  returns an invitation denial, while preserving the callback CSRF check.
+- CLI API calls and local MCP tools normalize every structured invitation and
+  access-capacity failure to the same actionable guidance and early-access URL.
+- Unauthenticated help distinguishes existing-member OAuth/API-key options
+  from the private-invite path for new members.
+- README and MCP tool documentation describe the controlled rollout without
+  implying that repeated sign-in or API-key creation can bypass enrollment.
+
+## Verification
+
+- Full Node test suite: 173 passed, 0 failed.
+- Local MCP stdio smoke and CLI help smoke: passed.
+- `git diff --check`: passed.
+
+No package version was bumped and no npm publish was run; release remains a
+separate reviewed merge-to-main action.
