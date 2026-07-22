@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-07-22
+
+### Added
+
+- `trackly preferences` and the local MCP tools `trackly_get_preferences` and `trackly_update_experience_limits` expose bounded role-specific experience preferences with canonical job functions and clear inclusive wording.
+
+### Fixed
+
+- Preference updates require the server capability flag and an exact safe revision, preventing unavailable or stale clients from overwriting newer choices. Preference output no longer implies that saved limits are already enforced.
+
 ## [0.7.2] - 2026-07-20
 
 ### Fixed

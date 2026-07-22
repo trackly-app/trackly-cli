@@ -66,6 +66,7 @@ const COMMAND_FLAGS = {
   search: [],
   stats: [],
   status: [],
+  preferences: [],
   apply: [],
   save: [],
   dismiss: [],
@@ -91,6 +92,10 @@ const STATUS_LABELS = {
   dismissed: 'dismissed',
 };
 const WORK_ARRANGEMENT_VALUES = ['remote', 'hybrid', 'in_person', 'unspecified'];
+const JOB_FUNCTIONS = [
+  'product', 'engineering', 'design', 'data', 'marketing', 'sales', 'partnerships',
+  'finance', 'strategy', 'operations', 'people', 'legal', 'support', 'other',
+];
 
 function loginAccessError(code) {
   return createTracklyAccessError({ code });
@@ -269,6 +274,39 @@ function parseJobId(value) {
   if (!Number.isSafeInteger(id) || id <= 0) return null;
 
   return id;
+}
+
+function parseExperienceLimits(values) {
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new Error('Provide at least one role limit or `clear` (for example, `product=2 strategy=5`).');
+  }
+  if (values.includes('clear')) {
+    if (values.length !== 1) throw new Error('`clear` cannot be combined with role limits.');
+    return {};
+  }
+
+  const limits = {};
+  for (const value of values) {
+    const match = /^([^=]+)=([^=]+)$/.exec(String(value));
+    if (!match) throw new Error(`Invalid limit "${value}". Use role=years (for example, product=2).`);
+    const jobFunction = match[1].trim().toLowerCase();
+    const rawYears = match[2].trim();
+    if (!JOB_FUNCTIONS.includes(jobFunction)) {
+      throw new Error(`Unknown job function "${jobFunction}". Use: ${JOB_FUNCTIONS.join(', ')}.`);
+    }
+    if (Object.prototype.hasOwnProperty.call(limits, jobFunction)) {
+      throw new Error(`Duplicate limit for ${jobFunction}. Provide each job function once.`);
+    }
+    if (!/^\d+$/.test(rawYears)) {
+      throw new Error(`Limit for ${jobFunction} must be an integer from 0 to 60.`);
+    }
+    const years = Number(rawYears);
+    if (!Number.isInteger(years) || years < 0 || years > 60) {
+      throw new Error(`Limit for ${jobFunction} must be an integer from 0 to 60.`);
+    }
+    limits[jobFunction] = years;
+  }
+  return limits;
 }
 
 // Flags deprecated in the API-docs-plan fixup. Still accepted by parseArgs so old
@@ -646,6 +684,119 @@ async function cmdStats() {
     outputStats(result);
   } catch (e) {
     setApiErrorExit(e, 'Failed to fetch stats');
+  }
+}
+
+function renderPreferences(result) {
+  const user = result?.user || {};
+  const preferences = user.preferences || result?.preferences || {};
+  const limits = preferences.experienceLimitsByJobFunction || {};
+
+  console.log(color('bold', 'Discovery preferences'));
+  const selected = Array.isArray(preferences.wantedJobFunctions)
+    ? preferences.wantedJobFunctions
+    : [];
+  console.log(`  Target roles: ${selected.length > 0 ? selected.join(', ') : 'All roles'}`);
+  console.log(`  Experience limits: ${Object.keys(limits).length > 0 ? 'Configured' : 'Not configured'}`);
+  for (const [jobFunction, years] of Object.entries(limits)) {
+    console.log(`    ${jobFunction}: Up to ${years} year${years === 1 ? '' : 's'} required`);
+  }
+  console.log(color('dim', '  Jobs with no stated minimum remain visible.'));
+  console.log(color('dim', '  This confirms what you saved; it does not show whether Trackly is currently applying the limits.'));
+  if (Number.isSafeInteger(preferences.discoveryPreferenceRevision)) {
+    console.log(color('dim', `  Revision: ${preferences.discoveryPreferenceRevision}`));
+  }
+}
+
+function projectPreferenceResponse(result, experienceFilterV2Available = null) {
+  const user = result?.user || {};
+  return {
+    success: result?.success === true,
+    experienceFilterV2Available: experienceFilterV2Available === null
+      ? user.experienceFilterV2Available === true
+      : experienceFilterV2Available === true,
+    preferences: user.preferences || result?.preferences || {},
+  };
+}
+
+function handlePreferenceConflict(error) {
+  const message = 'Preferences changed on another device. Review `trackly preferences`, then run the update again.';
+  if (isJSON()) {
+    printJson({
+      status: error.status,
+      code: error.error,
+      message,
+      preferences: error.preferences,
+      discoveryPreferenceRevision: error.discoveryPreferenceRevision,
+    });
+  } else {
+    outputError(message);
+  }
+  process.exitCode = 1;
+}
+
+async function cmdPreferences(args) {
+  if (!hasAuth()) failNow(AUTH_HELP_TEXT);
+
+  const subcommand = args._[0];
+  if (subcommand == null || subcommand === 'show') {
+    if (args._.length > (subcommand === 'show' ? 1 : 0)) {
+      failNow('Usage: trackly preferences [show]');
+    }
+    try {
+      const result = await apiRequest('GET', '/api/jobscout/me');
+      if (isJSON()) return printJson(projectPreferenceResponse(result));
+      renderPreferences(result);
+      return;
+    } catch (error) {
+      setApiErrorExit(error, 'Failed to fetch preferences');
+      return;
+    }
+  }
+
+  if (subcommand !== 'experience') {
+    failNow('Unknown preferences subcommand. Use: trackly preferences [show] | trackly preferences experience <role=years...|clear>');
+  }
+
+  let experienceLimitsByJobFunction;
+  try {
+    experienceLimitsByJobFunction = parseExperienceLimits(args._.slice(1));
+  } catch (error) {
+    failNow(error.message);
+  }
+
+  try {
+    // Read immediately before the write and send the authoritative revision.
+    // The backend rejects a stale value with 409 instead of letting this
+    // process overwrite a newer iOS, web, macOS, CLI, or MCP save.
+    const current = await apiRequest('GET', '/api/jobscout/me');
+    if (current?.user?.experienceFilterV2Available !== true) {
+      failNow('Role-specific experience preferences are not available for this account yet. No changes were saved.');
+    }
+    const expectedPreferenceRevision = current?.user?.preferences?.discoveryPreferenceRevision;
+    if (!Number.isSafeInteger(expectedPreferenceRevision) || expectedPreferenceRevision < 0) {
+      failNow('Trackly did not return a valid preference revision. No changes were saved.');
+    }
+
+    const result = await apiRequest('PUT', '/api/jobscout/preferences', {
+      experienceLimitsByJobFunction,
+      experienceFilterVersion: 2,
+      expectedPreferenceRevision,
+    });
+    if (isJSON()) return printJson(projectPreferenceResponse(result, true));
+    console.log(color(
+      'green',
+      Object.keys(experienceLimitsByJobFunction).length > 0
+        ? 'Role-specific experience limits updated.'
+        : 'Role-specific experience filtering turned off.',
+    ));
+    renderPreferences(result);
+  } catch (error) {
+    if (error?.status === 409 && error?.error === 'preference_revision_conflict') {
+      handlePreferenceConflict(error);
+      return;
+    }
+    setApiErrorExit(error, 'Failed to update experience limits');
   }
 }
 
@@ -1101,6 +1252,8 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'search <query>')}       Semantic company search
   ${color('cyan', 'stats')}                Show metrics dashboard
   ${color('cyan', 'status')}               Alias for stats
+  ${color('cyan', 'preferences')}          Show discovery preferences
+  ${color('cyan', 'preferences experience')} Replace role limits (role=years; clear turns off)
   ${color('cyan', 'apply <id>')}           Mark job as applied
   ${color('cyan', 'save <id>')}            Save a job
   ${color('cyan', 'dismiss <id>')}         Dismiss a job
@@ -1132,6 +1285,10 @@ ${color('bold', 'Flags:')}
 ${color('bold', 'Filter values:')}
   --function       product, engineering, design, data, marketing, sales, partnerships,
                    finance, strategy, operations, people, legal, support, other (comma-separated)
+  experience limits use the same role values, for example:
+                   trackly preferences experience product=2 strategy=5
+                   When enforcement is active, includes jobs whose stated minimum is up to the limit.
+                   Jobs with no stated minimum remain visible.
   --region         us, non_us, all, or a region tag (europe, canada, remote, ...)
                    Use a comma-separated list of region tags for multiple regions;
                    us/non_us/all cannot be combined.
@@ -1245,6 +1402,9 @@ async function main() {
     case 'status':
       await cmdStats();
       break;
+    case 'preferences':
+      await cmdPreferences(args);
+      break;
     case 'apply':
       await cmdUpdateStatus(args._[0], 'applied');
       break;
@@ -1324,6 +1484,7 @@ module.exports = {
   normalizeBaseUrlValue,
   openExternalUrl,
   parseArgs,
+  parseExperienceLimits,
   parseJobId,
   writeLoginProgress,
 };

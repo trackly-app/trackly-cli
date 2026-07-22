@@ -142,6 +142,232 @@ test('request-company POSTs source:"cli" and the company name', async (t) => {
   assert.equal(sent.company_url, 'https://builtrobotics.com');
 });
 
+test('preferences --json reads the authenticated discovery preferences', async (t) => {
+  const response = {
+    success: true,
+    user: {
+      email: 'must-not-leak@example.com',
+      experienceFilterV2Available: true,
+      preferences: {
+        wantedJobFunctions: ['product', 'strategy'],
+        experienceLimitsByJobFunction: { product: 2, strategy: 5 },
+        experienceFilterVersion: 2,
+        experienceFilterV2Active: true,
+        discoveryPreferenceRevision: 7,
+      },
+    },
+  };
+  const { requests, result } = await runAgainstMock(
+    t,
+    ['preferences', '--json'],
+    () => ({ status: 200, json: response }),
+  );
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(requests.map(({ method, url }) => ({ method, url })), [
+    { method: 'GET', url: '/api/jobscout/me' },
+  ]);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    success: true,
+    experienceFilterV2Available: true,
+    preferences: response.user.preferences,
+  });
+});
+
+test('preferences human output explains inclusive role limits and unstated requirements', async (t) => {
+  const { result } = await runAgainstMock(
+    t,
+    ['preferences'],
+    () => ({
+      status: 200,
+      json: {
+        success: true,
+        user: {
+          experienceFilterV2Available: true,
+          preferences: {
+            wantedJobFunctions: ['product'],
+            experienceLimitsByJobFunction: { product: 2 },
+            experienceFilterV2Active: true,
+            discoveryPreferenceRevision: 7,
+          },
+        },
+      },
+    }),
+    { NODE_OPTIONS: `--require=${path.join(__dirname, 'force-tty.js')}` },
+  );
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /Experience limits: Configured/);
+  assert.match(result.stdout, /product: Up to 2 years required/);
+  assert.match(result.stdout, /Jobs with no stated minimum remain visible\./);
+  assert.doesNotMatch(result.stdout, /filter:\s*(?:On|Off)/i);
+});
+
+test('preferences experience atomically replaces role limits using the latest revision', async (t) => {
+  const { requests, result } = await runAgainstMock(
+    t,
+    ['preferences', 'experience', 'product=2', 'strategy=5', '--json'],
+    (req) => {
+      if (req.method === 'GET') {
+        return {
+          status: 200,
+          json: {
+            success: true,
+            user: {
+              experienceFilterV2Available: true,
+              preferences: { discoveryPreferenceRevision: 11 },
+            },
+          },
+        };
+      }
+      return {
+        status: 200,
+        json: {
+          success: true,
+          preferences: {
+            experienceLimitsByJobFunction: { product: 2, strategy: 5 },
+            experienceFilterVersion: 2,
+            experienceFilterV2Active: true,
+            discoveryPreferenceRevision: 12,
+          },
+          discoveryPreferenceRevision: 12,
+        },
+      };
+    },
+  );
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(
+    requests.map(({ method, url }) => ({ method, url })),
+    [
+      { method: 'GET', url: '/api/jobscout/me' },
+      { method: 'PUT', url: '/api/jobscout/preferences' },
+    ],
+  );
+  assert.deepEqual(JSON.parse(requests[1].body), {
+    experienceLimitsByJobFunction: { product: 2, strategy: 5 },
+    experienceFilterVersion: 2,
+    expectedPreferenceRevision: 11,
+  });
+  assert.deepEqual(JSON.parse(result.stdout), {
+    success: true,
+    experienceFilterV2Available: true,
+    preferences: {
+      experienceLimitsByJobFunction: { product: 2, strategy: 5 },
+      experienceFilterVersion: 2,
+      experienceFilterV2Active: true,
+      discoveryPreferenceRevision: 12,
+    },
+  });
+});
+
+test('preferences experience clear sends an empty V2 map and retains revision safety', async (t) => {
+  const { requests, result } = await runAgainstMock(
+    t,
+    ['preferences', 'experience', 'clear', '--json'],
+    (req) => req.method === 'GET'
+      ? {
+          status: 200,
+          json: {
+            success: true,
+            user: {
+              experienceFilterV2Available: true,
+              preferences: { discoveryPreferenceRevision: 4 },
+            },
+          },
+        }
+      : {
+          status: 200,
+          json: {
+            success: true,
+            preferences: {
+              experienceLimitsByJobFunction: {},
+              experienceFilterVersion: 2,
+              experienceFilterV2Active: false,
+              discoveryPreferenceRevision: 5,
+            },
+            discoveryPreferenceRevision: 5,
+          },
+        },
+  );
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(JSON.parse(requests[1].body), {
+    experienceLimitsByJobFunction: {},
+    experienceFilterVersion: 2,
+    expectedPreferenceRevision: 4,
+  });
+});
+
+test('preferences experience rejects invalid limits before making a request', async (t) => {
+  const { requests, result } = await runAgainstMock(
+    t,
+    ['preferences', 'experience', 'product=61'],
+  );
+
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /integer from 0 to 60/i);
+  assert.equal(requests.length, 0);
+});
+
+test('preferences experience refuses the write when V2 capability is unavailable', async (t) => {
+  const { requests, result } = await runAgainstMock(
+    t,
+    ['preferences', 'experience', 'product=2'],
+    () => ({
+      status: 200,
+      json: {
+        success: true,
+        user: {
+          experienceFilterV2Available: false,
+          preferences: { discoveryPreferenceRevision: 8 },
+        },
+      },
+    }),
+  );
+
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /not available/i);
+  assert.deepEqual(requests.map(({ method, url }) => ({ method, url })), [
+    { method: 'GET', url: '/api/jobscout/me' },
+  ], 'capability denial must not send a PUT');
+});
+
+test('preferences experience never retries a revision conflict', async (t) => {
+  const { requests, result } = await runAgainstMock(
+    t,
+    ['preferences', 'experience', 'product=2', '--json'],
+    (req) => req.method === 'GET'
+      ? {
+          status: 200,
+          json: {
+            success: true,
+            user: {
+              experienceFilterV2Available: true,
+              preferences: { discoveryPreferenceRevision: 8 },
+            },
+          },
+        }
+      : {
+          status: 409,
+          json: {
+            success: false,
+            error: 'preference_revision_conflict',
+            preferences: { discoveryPreferenceRevision: 9 },
+            discoveryPreferenceRevision: 9,
+          },
+        },
+  );
+
+  assert.notEqual(result.code, 0);
+  assert.equal(requests.length, 2, 'the mutation must not retry with a newer revision');
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.code, 'preference_revision_conflict');
+  assert.equal(output.discoveryPreferenceRevision, 9);
+});
+
 test('ask sends the natural-language query to the /ask endpoint (url-encoded)', async (t) => {
   // Note: the CLI's jobsUrl allowlist-follow runs only in human/TTY mode; under a
   // piped child stdout (non-TTY) `ask` returns the raw JSON result, so this test
