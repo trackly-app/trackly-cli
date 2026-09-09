@@ -613,3 +613,36 @@ test('branding validates SVG XML, dimensions, and raster extension agreement', a
     assert.equal(s.errors.length === 0, valid, `${name}: ${s.errors.join('; ')}`);
   }
 });
+
+test('credential scan rejects standard npm token and password assignments', () => {
+  for (const assignment of ['//registry.npmjs.org/:_authToken=synthetic-value', '_password=synthetic-value', 'NPM_ACCESS_TOKEN=synthetic-value']) {
+    let read = false;
+    const content = Buffer.from(assignment);
+    const api = load({ 'node:fs': { ...fs, openSync: () => -123, closeSync: () => {}, readSync(fd, buffer) {
+      if (read) return 0; read = true; content.copy(buffer); return content.length;
+    } } });
+    assert.equal(api.containsCredentialAssignment('synthetic'), true, assignment.split('=')[0]);
+  }
+});
+
+test('optional OAuth scopes metadata must be an array of strings', async () => {
+  for (const scopes of [undefined, ['jobs:read'], 'jobs:read', [42]]) {
+    const api = load({ 'node:https': network(o => {
+      if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
+      if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token', scopes_supported: scopes }) };
+      return { status: 404 };
+    }) });
+    const s = state(); await api.runLive(s, { checkPublicPages: false });
+    assert.equal(s.errors.length === 0, scopes === undefined || (Array.isArray(scopes) && scopes.every(scope => typeof scope === 'string')), String(scopes));
+  }
+});
+
+test('positive reviewer fixtures require nonempty string safety assertions', () => {
+  for (const mustNot of [undefined, [], 'submit', [42], ['']]) {
+    const fixtures = json('plugins/trackly/listing/submission-tests.json');
+    fixtures.positive[0].mustNot = mustNot;
+    const s = state(); load().validateSubmissionTests(s, fixtures);
+    assert(s.errors.length > 0, JSON.stringify(mustNot));
+  }
+});

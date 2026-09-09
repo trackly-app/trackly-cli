@@ -24,6 +24,7 @@ const zlib = require('node:zlib');
 const sharp = require('sharp');
 const { SaxesParser } = require('saxes');
 const { TextDecoder } = require('node:util');
+const { OAuthMetadataSchema } = require('@modelcontextprotocol/sdk/shared/auth.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const PLUGIN = path.join(ROOT, 'plugins', 'trackly');
@@ -388,18 +389,23 @@ function validateSkills(state) {
 }
 
 function containsCredentialAssignment(file) {
-  const names = ['MCP_REVIEW_LOGIN_PASSWORD', 'NODE_AUTH_TOKEN', 'NPM_TOKEN', 'OPENAI_API_KEY'];
+  const names = ['MCP_REVIEW_LOGIN_PASSWORD', 'NODE_AUTH_TOKEN', 'NPM_TOKEN', 'NPM_ACCESS_TOKEN', 'OPENAI_API_KEY', '_authToken', '_auth', '_password'];
   const fd = fs.openSync(file, 'r');
   const buffer = Buffer.alloc(64 * 1024);
   const decoder = new StringDecoder('utf8');
   let prefix = '';
   let phase = 'name';
   let quote;
+  let matchedName = '';
   let boundary = true;
   try {
     let bytes;
     while ((bytes = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) {
       for (const char of decoder.write(buffer.subarray(0, bytes))) {
+        if (phase === 'equals' && names.some(name => name.startsWith(matchedName + char))) {
+          phase = 'name';
+          prefix = matchedName;
+        }
         const whitespace = /\s/.test(char);
         if ((phase === 'equals' || phase === 'delimiter') && whitespace) { boundary = true; continue; }
         if (phase === 'equals' && (char === '"' || char === "'")) { phase = 'delimiter'; continue; }
@@ -413,7 +419,7 @@ function containsCredentialAssignment(file) {
         if (phase !== 'name') { phase = 'name'; prefix = ''; }
         if (prefix || boundary) {
           prefix += char;
-          if (names.includes(prefix)) { phase = 'equals'; prefix = ''; }
+          if (names.includes(prefix)) { matchedName = prefix; phase = 'equals'; prefix = ''; }
           else if (!names.some((name) => name.startsWith(prefix))) prefix = '';
         }
         boundary = !/[\p{ID_Continue}$]/u.test(char);
@@ -609,6 +615,9 @@ function validateSubmissionTests(state, fixtures) {
   }
   for (const item of positive) {
     checkString(state, item?.fixture, `${item?.id || '<unknown>'}.fixture`);
+    check(state, Array.isArray(item?.mustNot) && item.mustNot.length > 0
+      && item.mustNot.every(value => typeof value === 'string' && value.trim()),
+    `${item?.id || '<unknown>'}.mustNot must be a non-empty string array`);
     check(state, Array.isArray(item?.expected) && item.expected.length > 0, `${item?.id || '<unknown>'}.expected must be non-empty`);
     check(state, Array.isArray(item?.expectedResultShape) && item.expectedResultShape.length > 0, `${item?.id || '<unknown>'}.expectedResultShape must be non-empty`);
     check(state, Boolean(item?.prompt || (Array.isArray(item?.turns) && item.turns.some((turn) => turn?.role === 'user'))), `${item?.id || '<unknown>'} must have a reviewer prompt`);
@@ -872,6 +881,13 @@ async function runLive(state, {
         }
         check(state, isObject(asMetadata), 'authorization-server metadata must be a JSON object');
         if (isObject(asMetadata)) {
+          const schemaResult = OAuthMetadataSchema.safeParse(asMetadata);
+          if (!schemaResult.success) {
+            // Report field paths only; remote metadata values may contain sensitive data.
+            for (const issue of schemaResult.error.issues) {
+              addError(state, `authorization-server metadata has invalid ${issue.path.join('.') || 'shape'} (MCP SDK OAuthMetadataSchema)`);
+            }
+          }
           check(state, typeof asMetadata.issuer === 'string', 'authorization-server metadata must include issuer');
           check(state, asMetadata.issuer === authorizationServer, `issuer must exactly equal protected authorization_servers entry (issuer=${asMetadata.issuer}, advertised=${authorizationServer})`);
           check(state, Array.isArray(asMetadata.response_types_supported) && asMetadata.response_types_supported.includes('code'), 'authorization-server metadata must advertise authorization-code response type code');
