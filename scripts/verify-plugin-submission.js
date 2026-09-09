@@ -475,7 +475,8 @@ function sameOrParentOrigin(candidate, child) {
   const candidateHost = candidateUrl.hostname.toLowerCase();
   const childHost = childUrl.hostname.toLowerCase();
   return candidateUrl.port === childUrl.port
-    && (candidateHost === childHost || childHost.endsWith(`.${candidateHost}`));
+    && (candidateHost === childHost
+      || (candidateHost === 'usetrackly.app' && childHost.endsWith('.usetrackly.app')));
 }
 
 function request(url, options = {}) {

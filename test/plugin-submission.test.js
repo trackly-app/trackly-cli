@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '..');
 const script = path.join(root, 'scripts/verify-plugin-submission.js');
 function load(overrides = {}) {
   const sandbox = { require: (name) => overrides[name] || require(name), module: { exports: {} }, __dirname: path.dirname(script), process, console, Buffer, setTimeout, clearTimeout };
-  vm.runInNewContext(fs.readFileSync(script, 'utf8') + '\nmodule.exports.containsCredentialAssignment = containsCredentialAssignment; module.exports.request = request; module.exports.main = main; module.exports.validateAssetsAndTree = validateAssetsAndTree;', sandbox);
+  vm.runInNewContext(fs.readFileSync(script, 'utf8') + '\nmodule.exports.sameOrParentOrigin = sameOrParentOrigin; module.exports.containsCredentialAssignment = containsCredentialAssignment; module.exports.request = request; module.exports.main = main; module.exports.validateAssetsAndTree = validateAssetsAndTree;', sandbox);
   return sandbox.module.exports;
 }
 const state = () => ({ errors: [], warnings: [] });
@@ -150,5 +150,15 @@ test('known credentials are detected in JSON and YAML assignments', () => {
 test('live-only flags require explicit live mode', async () => {
   for (const flag of ['--strict-origins', '--require-challenge', '--challenge-base-url=https://example.com']) {
     assert.equal(await load().main(['--json', flag]), 1, flag);
+  }
+});
+
+test('challenge origin accepts only the MCP host or approved Trackly parent', () => {
+  const api = load();
+  const child = 'https://mcp.usetrackly.app/api/plugin/trackly/mcp';
+  assert.equal(api.sameOrParentOrigin('https://mcp.usetrackly.app', child), true);
+  assert.equal(api.sameOrParentOrigin('https://usetrackly.app', child), true);
+  for (const candidate of ['https://app', 'https://unrelated.app', 'https://usetrackly.app:8443']) {
+    assert.equal(api.sameOrParentOrigin(candidate, child), false, candidate);
   }
 });
