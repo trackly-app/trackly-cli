@@ -365,7 +365,10 @@ function validateAssetsAndTree(state, manifest = readJson(MANIFEST_PATH)) {
       const relative = relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name;
       const segments = relative.split('/');
       check(state, !segments.includes('') && !segments.includes('.') && !segments.includes('..'), `unsafe plugin path: ${relative}`);
-      check(state, segments.length <= 20, `plugin path is too deep: ${relative}`);
+      if (segments.length > 20) {
+        addError(state, `plugin path is too deep: ${relative}`);
+        continue;
+      }
       if (entry.isDirectory()) {
         walk(absolute, relative);
       } else if (entry.isFile()) {

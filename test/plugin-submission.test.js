@@ -162,3 +162,17 @@ test('challenge origin accepts only the MCP host or approved Trackly parent', ()
     assert.equal(api.sameOrParentOrigin(candidate, child), false, candidate);
   }
 });
+
+test('tree walk stops at the rejected depth boundary', () => {
+  let deepestRead = 0;
+  const pluginRoot = path.join(root, 'plugins/trackly');
+  const api = load({ 'node:fs': { ...fs, readdirSync(dir) {
+    const depth = path.relative(pluginRoot, dir).split(path.sep).filter(Boolean).length;
+    deepestRead = Math.max(deepestRead, depth);
+    assert(depth <= 20, 'must not read a directory already rejected as too deep');
+    return [{ name: 'nested', isDirectory: () => true, isFile: () => false }];
+  } } });
+  const s = state(); api.validateAssetsAndTree(s);
+  assert(s.errors.some(error => /too deep/.test(error)));
+  assert.equal(deepestRead, 20);
+});
