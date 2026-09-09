@@ -646,3 +646,52 @@ test('positive reviewer fixtures require nonempty string safety assertions', () 
     assert(s.errors.length > 0, JSON.stringify(mustNot));
   }
 });
+
+test('protected-resource optional scopes metadata must be an array of strings', async () => {
+  for (const scopes of [undefined, ['jobs:read'], 'jobs:read', [42]]) {
+    const api = load({ 'node:https': network(o => {
+      if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
+      if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'], scopes_supported: scopes }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
+      return { status: 404 };
+    }) });
+    const s = state(); await api.runLive(s, { checkPublicPages: false });
+    assert.equal(s.errors.length === 0, scopes === undefined || (Array.isArray(scopes) && scopes.every(scope => typeof scope === 'string')), String(scopes));
+  }
+});
+
+test('negative reviewer fixtures require nonempty string forbidden actions', () => {
+  for (const forbidden of [[null], [''], [42]]) {
+    const fixtures = json('plugins/trackly/listing/submission-tests.json'); fixtures.negative[0].forbidden = forbidden;
+    const s = state(); load().validateSubmissionTests(s, fixtures);
+    assert(s.errors.length > 0, JSON.stringify(forbidden));
+  }
+});
+
+test('positive expected actions and result shapes require nonempty string entries', () => {
+  for (const field of ['expected', 'expectedResultShape']) {
+    for (const value of [[42], ['']]) {
+      const fixtures = json('plugins/trackly/listing/submission-tests.json'); fixtures.positive[0][field] = value;
+      const s = state(); load().validateSubmissionTests(s, fixtures);
+      assert(s.errors.length > 0, `${field}: ${JSON.stringify(value)}`);
+    }
+  }
+});
+
+test('internal reviewer cases validate supplied prompts and conversation turns', () => {
+  for (const mutate of [
+    item => { item.prompt = 42; },
+    item => { delete item.prompt; item.turns = [{ role: 'user' }]; },
+    item => { item.turns = []; },
+    item => { item.turns = 'invalid'; },
+    item => { item.turns = [{ role: 'system', content: 'Synthetic prompt' }]; },
+    item => { item.turns = [{ role: 'user', content: '', expected: [] }]; },
+    item => { item.turns = [{ role: 'assistant', content: 'Synthetic answer', expected: [42] }]; },
+  ]) {
+    const fixtures = json('plugins/trackly/listing/submission-tests.json'); mutate(fixtures.positive.find(item => item.id === 'resume-apply'));
+    const s = state(); load().validateSubmissionTests(s, fixtures); assert(s.errors.length > 0);
+  }
+  const fixtures = json('plugins/trackly/listing/submission-tests.json');
+  fixtures.positive.find(item => item.id === 'resume-apply').turns = [{ role: 'assistant', content: 'Synthetic answer', expected: [] }];
+  const s = state(); load().validateSubmissionTests(s, fixtures); assert.deepEqual(s.errors, []);
+});

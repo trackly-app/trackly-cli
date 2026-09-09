@@ -24,7 +24,7 @@ const zlib = require('node:zlib');
 const sharp = require('sharp');
 const { SaxesParser } = require('saxes');
 const { TextDecoder } = require('node:util');
-const { OAuthMetadataSchema } = require('@modelcontextprotocol/sdk/shared/auth.js');
+const { OAuthMetadataSchema, OAuthProtectedResourceMetadataSchema } = require('@modelcontextprotocol/sdk/shared/auth.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const PLUGIN = path.join(ROOT, 'plugins', 'trackly');
@@ -618,16 +618,36 @@ function validateSubmissionTests(state, fixtures) {
     check(state, Array.isArray(item?.mustNot) && item.mustNot.length > 0
       && item.mustNot.every(value => typeof value === 'string' && value.trim()),
     `${item?.id || '<unknown>'}.mustNot must be a non-empty string array`);
-    check(state, Array.isArray(item?.expected) && item.expected.length > 0, `${item?.id || '<unknown>'}.expected must be non-empty`);
-    check(state, Array.isArray(item?.expectedResultShape) && item.expectedResultShape.length > 0, `${item?.id || '<unknown>'}.expectedResultShape must be non-empty`);
-    check(state, Boolean(item?.prompt || (Array.isArray(item?.turns) && item.turns.some((turn) => turn?.role === 'user'))), `${item?.id || '<unknown>'} must have a reviewer prompt`);
+    for (const key of ['expected', 'expectedResultShape']) {
+      check(state, Array.isArray(item?.[key]) && item[key].length > 0
+        && item[key].every(value => typeof value === 'string' && value.trim()),
+      `${item?.id || '<unknown>'}.${key} must be a non-empty string array`);
+    }
+    if (item?.prompt !== undefined) checkString(state, item.prompt, `${item?.id || '<unknown>'}.prompt`);
+    if (item?.turns !== undefined) {
+      check(state, Array.isArray(item.turns) && item.turns.length > 0, `${item?.id || '<unknown>'}.turns must be a non-empty array`);
+      if (Array.isArray(item.turns)) for (const [index, turn] of item.turns.entries()) {
+        const label = `${item?.id || '<unknown>'}.turns[${index}]`;
+        check(state, ['user', 'assistant'].includes(turn?.role), `${label}.role must be user or assistant`);
+        checkString(state, turn?.content, `${label}.content`);
+        if (turn?.expected !== undefined) {
+          check(state, Array.isArray(turn.expected) && turn.expected.every(value => typeof value === 'string' && value.trim()),
+            `${label}.expected must be a string array`);
+        }
+      }
+    }
+    check(state, (typeof item?.prompt === 'string' && Boolean(item.prompt.trim()))
+      || (Array.isArray(item?.turns) && item.turns.some(turn => turn?.role === 'user' && typeof turn.content === 'string' && turn.content.trim())),
+    `${item?.id || '<unknown>'} must have a reviewer prompt`);
   }
   for (const item of negative) {
     checkString(state, item?.fixture, `${item?.id || '<unknown>'}.fixture`);
     checkString(state, item?.prompt, `${item?.id || '<unknown>'}.prompt`);
     checkString(state, item?.expectedResponse, `${item?.id || '<unknown>'}.expectedResponse`);
     checkString(state, item?.whyOutOfScope, `${item?.id || '<unknown>'}.whyOutOfScope`);
-    check(state, Array.isArray(item?.forbidden) && item.forbidden.length > 0, `${item?.id || '<unknown>'}.forbidden must be non-empty`);
+    check(state, Array.isArray(item?.forbidden) && item.forbidden.length > 0
+      && item.forbidden.every(value => typeof value === 'string' && value.trim()),
+    `${item?.id || '<unknown>'}.forbidden must be a non-empty string array`);
   }
   const environment = fixtures.reviewEnvironment;
   check(state, isObject(environment), 'reviewEnvironment must be an object');
@@ -856,6 +876,12 @@ async function runLive(state, {
   }
   check(state, isObject(protectedMetadata), 'protected-resource metadata must be a JSON object');
   if (isObject(protectedMetadata)) {
+    const schemaResult = OAuthProtectedResourceMetadataSchema.safeParse(protectedMetadata);
+    if (!schemaResult.success) {
+      for (const issue of schemaResult.error.issues) {
+        addError(state, `protected-resource metadata has invalid ${issue.path.join('.') || 'shape'} (MCP SDK OAuthProtectedResourceMetadataSchema)`);
+      }
+    }
     check(state, protectedMetadata.resource === mcpUrl, 'protected-resource metadata resource must exactly match the plugin MCP URL');
     const servers = protectedMetadata.authorization_servers;
     let serversValid = Array.isArray(servers) && servers.length > 0;
