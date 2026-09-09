@@ -317,8 +317,9 @@ function containsCredentialAssignment(file) {
     while ((bytes = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) {
       for (const char of decoder.write(buffer.subarray(0, bytes))) {
         const whitespace = /\s/.test(char);
-        if (phase === 'equals' && whitespace) { boundary = true; continue; }
-        if (phase === 'equals' && char === '=') { phase = 'value'; continue; }
+        if ((phase === 'equals' || phase === 'delimiter') && whitespace) { boundary = true; continue; }
+        if (phase === 'equals' && (char === '"' || char === "'")) { phase = 'delimiter'; continue; }
+        if ((phase === 'equals' || phase === 'delimiter') && (char === '=' || char === ':')) { phase = 'value'; continue; }
         if (phase === 'value' && whitespace) continue;
         if (phase === 'quoted' && char !== quote) return true;
         if (phase === 'value') {
@@ -728,6 +729,9 @@ async function main(argv = process.argv.slice(2)) {
   }
   if ((challengeFlag !== undefined || challengeIndex >= 0) && (!challengeBaseUrl || challengeBaseUrl.startsWith('--'))) {
     addError(state, '--challenge-base-url requires an HTTPS origin value');
+  }
+  if (!live && (strictOrigins || requireChallenge || challengeFlag !== undefined || challengeIndex >= 0)) {
+    addError(state, '--strict-origins, --require-challenge, and --challenge-base-url require --live');
   }
   if (challengeBaseUrl) {
     try {

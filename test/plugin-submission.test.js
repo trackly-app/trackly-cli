@@ -134,3 +134,21 @@ test('rejected challenge origin is never probed', async () => {
   assert(s.errors.some((error) => /parent-domain/.test(error)));
   assert.equal(contacted.includes('unrelated.example'), false);
 });
+
+test('known credentials are detected in JSON and YAML assignments', () => {
+  for (const prefix of ['"OPENAI_API_KEY": ', "'MCP_REVIEW_LOGIN_PASSWORD': ", 'NPM_TOKEN: ']) {
+    for (const value of ['"synthetic-value"', 'synthetic-value', '""']) {
+      let read = false;
+      const content = Buffer.from(prefix + value);
+      const api = load({ 'node:fs': { ...fs, openSync: () => -123, closeSync: () => {}, readSync(fd, buffer) {
+        if (read) return 0; read = true; content.copy(buffer); return content.length;
+      } } });
+      assert.equal(api.containsCredentialAssignment('synthetic'), value !== '""', prefix + value);
+    }
+  }
+});
+test('live-only flags require explicit live mode', async () => {
+  for (const flag of ['--strict-origins', '--require-challenge', '--challenge-base-url=https://example.com']) {
+    assert.equal(await load().main(['--json', flag]), 1, flag);
+  }
+});
