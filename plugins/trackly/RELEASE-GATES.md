@@ -28,7 +28,13 @@ These gates govern OpenAI submission and publication of the plugin listing. Repo
 
 The source preflight uses development-only YAML and PNG/JPEG parsers. It checks
 actual screenshot dimensions and decoding, required reviewer-environment fields,
-authorization-code discovery, and legal-URL parity. The installed Codex validator
+authorization-code discovery, and legal-URL parity. The reviewed manual-submit
+sentence is pinned verbatim (apart from Unicode/whitespace normalization); changing that safety claim
+requires reviewing and updating the contract, not just retaining a keyword.
+Non-empty screenshot lists require one image per starter prompt, and portal
+prompts must match their corresponding synthetic fixtures. Skill companion YAML,
+manifest placeholders, strict absolute HTTPS URLs and safe asset paths are
+validated against the existing ingestion contract. The installed Codex validator
 accepts `defaultPrompt` and `default_prompt`; conflicting aliases fail. It rejects
 manifest `supportURL`, so keep that URL in listing metadata and the portal even
 though the public portal documentation lists it as an interface field.

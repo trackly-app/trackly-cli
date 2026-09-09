@@ -294,6 +294,7 @@ test('screenshots decode PNG/JPEG and enforce 706 by 400..860 pixels', () => {
     const target = path.join(root, 'plugins/trackly/assets/synthetic-screenshot.' + (type === 'jpeg' ? 'jpg' : 'png'));
     const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
     manifest.interface.screenshots = ['./assets/' + path.basename(target)];
+    manifest.interface.defaultPrompt = ['Find remote jobs'];
     const api = load({ 'node:fs': { ...fs,
       existsSync: file => file === target || fs.existsSync(file),
       statSync: file => file === target ? { size: data.length, isFile: () => true } : fs.statSync(file),
@@ -314,6 +315,7 @@ test('skill frontmatter uses YAML scalar strings and rejects malformed or missin
     ['name: "unterminated\ndescription: valid', false],
     ['name:\ndescription: valid', false],
     ['description: valid', false],
+    ...['disable-model-invocation', 'disable_model_invocation'].flatMap(key => [[`name: synthetic\ndescription: valid\n${key}: false`, true], [`name: synthetic\ndescription: valid\n${key}: true`, false], [`name: synthetic\ndescription: valid\n${key}: \"false\"`, false]]),
   ];
   for (const [frontmatter, valid] of cases) {
     const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) {
@@ -382,6 +384,7 @@ test('unsafe PNG headers and interlaced inflation stop before the image decoder 
     const target = path.join(root, 'plugins/trackly/assets/unsafe-synthetic.png');
     const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
     manifest.interface.screenshots = ['./assets/unsafe-synthetic.png'];
+    manifest.interface.defaultPrompt = ['Find remote jobs'];
     let decoderCalls = 0;
     const api = load({
       pngjs: { PNG: { sync: { read() { decoderCalls += 1; return { width: 706, height: 400 }; } } } },
@@ -403,4 +406,132 @@ test('both prompt aliases must have valid types even when they normalize identic
   manifest.interface.default_prompt = [42];
   const s = state(); load().validateManifest(s, manifest, json('plugins/trackly/listing/metadata.json'));
   assert(s.errors.length > 0);
+});
+
+test('author rejects unknown keys and optional manifest id must be a nonempty string', () => {
+  for (const mutate of [m => { m.author.unrecognized = 'value'; }, m => { m.id = ''; }, m => { m.id = 123; }]) {
+    const manifest = json('plugins/trackly/.codex-plugin/plugin.json'); mutate(manifest);
+    const s = state(); load().validateManifest(s, manifest, json('plugins/trackly/listing/metadata.json'));
+    assert(s.errors.length > 0);
+  }
+  const manifest = json('plugins/trackly/.codex-plugin/plugin.json'); manifest.id = 'trackly';
+  const s = state(); load().validateManifest(s, manifest, json('plugins/trackly/listing/metadata.json'));
+  assert.deepEqual(s.errors, []);
+});
+
+test('OAuth authorization and token endpoints reject URL fragments', async () => {
+  for (const field of ['authorization_endpoint', 'token_endpoint']) {
+    const api = load({ 'node:https': network(o => {
+      if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
+      if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token', [field]: 'https://example.com/endpoint#fragment' }) };
+      return { status: 404 };
+    }) });
+    const s = state(); await api.runLive(s, { checkPublicPages: false });
+    assert(s.errors.some(error => /fragment/.test(error)), field);
+  }
+});
+
+test('nonempty screenshot count must match normalized prompt count', () => {
+  const { PNG } = require('pngjs');
+  const data = PNG.sync.write({ width: 706, height: 400, data: Buffer.alloc(706 * 400 * 4, 255) });
+  const target = path.join(root, 'plugins/trackly/assets/synthetic-count.png');
+  const api = load({ 'node:fs': { ...fs,
+    existsSync: file => file === target || fs.existsSync(file),
+    statSync: file => file === target ? { size: data.length, isFile: () => true } : fs.statSync(file),
+    readFileSync: (file, ...args) => file === target ? data : fs.readFileSync(file, ...args),
+  } });
+  for (const [screenshots, prompts, valid] of [[[], ['One'], true], [['./assets/synthetic-count.png'], 'One', true], [['./assets/synthetic-count.png'], ['One', 'Two'], false]]) {
+    const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
+    manifest.interface.screenshots = screenshots; manifest.interface.defaultPrompt = prompts;
+    const s = state(); api.validateManifest(s, manifest, json('plugins/trackly/listing/metadata.json')); api.validateAssetsAndTree(s, manifest);
+    assert.equal(s.errors.length === 0, valid, s.errors.join('; '));
+  }
+});
+
+test('portal briefs match their identified fixture prompt including first user turns', () => {
+  for (const id of ['search-recent-product', 'search-monitored-remote']) {
+    const fixtures = json('plugins/trackly/listing/submission-tests.json');
+    const brief = fixtures.reviewEnvironment.portalCaseBriefs.find(item => item.id === id);
+    brief.prompt = 'An unrelated reviewer request.';
+    const invalid = state(); load().validateSubmissionTests(invalid, fixtures);
+    assert(invalid.errors.length > 0, id);
+    const fixture = fixtures.positive.find(item => item.id === id);
+    const original = fixture.prompt || fixture.turns.find(turn => turn.role === 'user').content;
+    brief.prompt = '  ' + original.replace(/ /g, '  ') + '  ';
+    const valid = state(); load().validateSubmissionTests(valid, fixtures);
+    assert.deepEqual(valid.errors, []);
+  }
+});
+
+test('listing requires user manual submission wording and an account', () => {
+  for (const boundary of ['The user never submits manually.', 'The agent reviews and submits every application manually.']) {
+    const metadata = json('plugins/trackly/listing/metadata.json'); metadata.submissionBoundary = boundary;
+    const s = state(); load().validateMetadata(s, metadata); assert(s.errors.length > 0);
+  }
+  for (const accountRequired of [undefined, false, 'true']) {
+    const metadata = json('plugins/trackly/listing/metadata.json'); metadata.accountRequired = accountRequired;
+    const s = state(); load().validateMetadata(s, metadata); assert(s.errors.length > 0);
+  }
+  const metadata = json('plugins/trackly/listing/metadata.json'); metadata.submissionBoundary = '  The user reviews and submits every application   manually.  ';
+  const s = state(); load().validateMetadata(s, metadata); assert.deepEqual(s.errors, []);
+});
+
+test('static and live URLs require explicit absolute HTTPS syntax', async () => {
+  for (const url of ['https:example.com', 'https:/example.com', 'https:///example.com']) {
+    const metadata = json('plugins/trackly/listing/metadata.json'); metadata.supportURL = url;
+    const s = state(); load().validateMetadata(s, metadata); assert(s.errors.length > 0, url);
+    let contacted = false;
+    const api = load({ 'node:https': network(() => { contacted = true; return { status: 200 }; }) });
+    await assert.rejects(api.request(url)); assert.equal(contacted, false);
+  }
+});
+
+test('manifest rejects nested TODO placeholders', () => {
+  const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
+  manifest.author.name = '[TODO: developer]'; manifest.interface.developerName = manifest.author.name;
+  const s = state(); load().validateManifest(s, manifest, json('plugins/trackly/listing/metadata.json'));
+  assert(s.errors.some(error => /TODO/.test(error)));
+});
+
+test('MCP configuration rejects unknown top-level fields', () => {
+  const config = json('plugins/trackly/.mcp.json'); config.unrecognized = true;
+  const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) { return String(file).endsWith('/.mcp.json') ? JSON.stringify(config) : fs.readFileSync(file, ...args); } } });
+  const s = state(); api.validateMcpConfig(s, json('plugins/trackly/listing/metadata.json'));
+  assert(s.errors.length > 0);
+});
+
+test('asset paths reject parent segments even when normalization stays within plugin', () => {
+  const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
+  manifest.interface.logo = './assets/../' + manifest.interface.logo.slice(2);
+  const s = state(); load().validateAssetsAndTree(s, manifest);
+  assert(s.errors.length > 0);
+});
+
+test('existing skill companion YAML validates mappings, fields, policies, and icon paths', () => {
+  const valid = 'interface:\n  display_name: Synthetic\n  short_description: Test description\n';
+  const cases = [
+    [valid, true],
+    ['interface: [unterminated', false],
+    ['[]', false],
+    ['interface: null', false],
+    ['interface:\n  display_name: Synthetic\n', false],
+    [valid + 'unknown: true\n', false],
+    [valid + '  unknown: value\n', false],
+    [valid + 'policy: []\n', false],
+    [valid + 'policy:\n  allow_implicit_invocation: "true"\n', false],
+    [valid + 'policy:\n  allow_implicit_invocation: yes\n', true],
+    [valid + 'dependencies: []\n', false],
+    [valid + 'dependencies:\n  unknown: []\n', false],
+    [valid + '  icon_small: ./missing.png\n', false],
+    [valid + '  icon_large: ../outside.png\n', false],
+    ['interface:\n  display_name: yes\n  short_description: Test\n', false],
+  ];
+  for (const [source, expected] of cases) {
+    const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) {
+      return String(file).endsWith('/agents/openai.yaml') ? source : fs.readFileSync(file, ...args);
+    } } });
+    const s = state(); assert.doesNotThrow(() => api.validateSkills(s));
+    assert.equal(s.errors.length === 0, expected, `${source}: ${s.errors.join('; ')}`);
+  }
 });

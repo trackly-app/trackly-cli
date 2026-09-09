@@ -180,7 +180,7 @@ function validateHttpsUrl(state, value, label, { max = 1024 } = {}) {
     addError(state, `${label} must be a valid HTTPS URL`);
     return;
   }
-  check(state, parsed.protocol === 'https:', `${label} must use HTTPS`);
+  check(state, /^https:\/\/[^/\\\s?#]/i.test(value) && parsed.protocol === 'https:', `${label} must use an absolute HTTPS URL`);
   check(state, parsed.username === '' && parsed.password === '', `${label} must not contain URL credentials`);
 }
 
@@ -188,6 +188,8 @@ function validateManifest(state, manifest, metadata) {
   check(state, isObject(manifest), 'plugin manifest must be a JSON object');
   if (!isObject(manifest)) return;
   rejectUnknownKeys(state, manifest, ALLOWED_MANIFEST_KEYS, 'manifest');
+  check(state, !/\[TODO[: ]/i.test(JSON.stringify(manifest)), 'manifest must not contain TODO placeholders');
+  if (Object.hasOwn(manifest, 'id')) checkString(state, manifest.id, 'manifest.id');
   checkString(state, manifest.name, 'manifest.name', { max: 64, oneLine: true });
   check(state, /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(manifest.name || ''), 'manifest.name must use lowercase kebab-case');
   check(state, manifest.name === path.basename(PLUGIN), 'manifest.name must match the plugin directory name');
@@ -197,6 +199,7 @@ function validateManifest(state, manifest, metadata) {
   check(state, !PUBLIC_TRIAL_WORD_RE.test(manifest.description || ''), 'manifest.description must not describe a trial, demo, beta, or pilot');
   check(state, isObject(manifest.author), 'manifest.author must be an object');
   if (isObject(manifest.author)) {
+    rejectUnknownKeys(state, manifest.author, new Set(['name', 'email', 'url']), 'manifest.author');
     checkString(state, manifest.author.name, 'manifest.author.name', { max: 120, oneLine: true });
     if (manifest.author.email !== undefined) checkString(state, manifest.author.email, 'manifest.author.email', { max: 320, oneLine: true });
     if (manifest.author.url !== undefined) validateHttpsUrl(state, manifest.author.url, 'manifest.author.url', { max: 2048 });
@@ -267,11 +270,15 @@ function validateMetadata(state, metadata) {
   check(state, metadata.productionMcpURL === DEFAULT_MCP_URL, 'listing.productionMcpURL must be the dedicated plugin facade URL');
   checkString(state, metadata.pricingClaim, 'listing.pricingClaim', { max: 120, oneLine: true });
   checkString(state, metadata.submissionBoundary, 'listing.submissionBoundary', { max: 4000 });
+  check(state, metadata.accountRequired === true, 'listing.accountRequired must be true for the authenticated plugin');
   check(state, metadata.pricingClaim === 'Free', 'listing.pricingClaim must match the public free-service claim');
   check(state, !PUBLIC_TRIAL_WORD_RE.test(metadata.tagline || ''), 'listing.tagline must not describe a trial, demo, beta, or pilot');
   check(state, !PUBLIC_TRIAL_WORD_RE.test(metadata.pricingClaim || ''), 'listing.pricingClaim must not describe a trial, demo, beta, or pilot');
   check(state, !PUBLIC_TRIAL_WORD_RE.test(metadata.submissionBoundary || ''), 'listing.submissionBoundary must not describe a trial, demo, beta, or pilot');
-  check(state, /manually/i.test(metadata.submissionBoundary || ''), 'listing.submissionBoundary must state manual submission');
+  // Pin the reviewed safety copy; keyword matching cannot validate arbitrary
+  // natural-language negation or distinguish the user from an agent submitter.
+  check(state, normalizePrompt(metadata.submissionBoundary) === 'The user reviews and submits every application manually.',
+    'listing.submissionBoundary must retain the reviewed user-controlled manual submission statement');
 }
 
 function validateMcpConfig(state, metadata) {
@@ -283,6 +290,7 @@ function validateMcpConfig(state, metadata) {
     addError(state, `could not read .mcp.json: ${error.message}`);
     return;
   }
+  rejectUnknownKeys(state, config, new Set(['mcpServers']), '.mcp.json');
   check(state, isObject(config?.mcpServers), '.mcp.json must contain mcpServers');
   if (!isObject(config?.mcpServers)) return;
   check(state, Object.keys(config.mcpServers).length === 1 && Object.hasOwn(config.mcpServers, 'trackly'), '.mcp.json must contain only the trackly server');
@@ -292,6 +300,52 @@ function validateMcpConfig(state, metadata) {
   check(state, server.type === 'http', '.mcp.json trackly transport must be HTTP');
   check(state, server.url === metadata?.productionMcpURL, '.mcp.json URL must match listing.productionMcpURL');
   check(state, !Object.hasOwn(server, 'oauth_resource'), '.mcp.json must not duplicate the OAuth resource parameter');
+}
+
+function parseYaml(source) {
+  const document = YAML.parseDocument(source, { version: '1.1', uniqueKeys: true, prettyErrors: false, logLevel: 'silent' });
+  if (document.errors.length || document.warnings.length) throw new Error('invalid YAML');
+  return document.toJS({ maxAliasCount: 100 });
+}
+
+function validateSkillAgent(state, skillRoot, name) {
+  const file = path.join(skillRoot, 'agents', 'openai.yaml');
+  if (!fs.existsSync(file)) return;
+  const label = `skill ${name} agent`;
+  let payload;
+  try { payload = parseYaml(fs.readFileSync(file, 'utf8')); }
+  catch { addError(state, `${label} must contain valid YAML`); return; }
+  check(state, isObject(payload), `${label} must be an object`);
+  if (!isObject(payload)) return;
+  rejectUnknownKeys(state, payload, new Set(['interface', 'policy', 'dependencies']), label);
+  const iface = payload.interface;
+  check(state, isObject(iface), `${label}.interface must be an object`);
+  if (isObject(iface)) {
+    rejectUnknownKeys(state, iface, new Set(['display_name', 'short_description', 'icon_small', 'icon_large', 'brand_color', 'default_prompt']), `${label}.interface`);
+    for (const key of ['display_name', 'short_description']) checkString(state, iface[key], `${label}.interface.${key}`);
+    if (iface.default_prompt !== undefined) checkString(state, iface.default_prompt, `${label}.interface.default_prompt`);
+    if (iface.brand_color !== undefined) check(state, typeof iface.brand_color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(iface.brand_color), `${label}.interface.brand_color must be a six-digit hex color`);
+    for (const key of ['icon_small', 'icon_large']) {
+      if (iface[key] === undefined) continue;
+      const relative = iface[key];
+      const valid = typeof relative === 'string' && relative.trim() && !path.isAbsolute(relative)
+        && !relative.replace(/\\/g, '/').split('/').includes('..');
+      check(state, Boolean(valid), `${label}.interface.${key} must be a safe relative asset path`);
+      if (!valid) continue;
+      const resolved = path.resolve(skillRoot, relative.replace(/\\/g, '/'));
+      const contained = resolved.startsWith(`${PLUGIN}${path.sep}`);
+      check(state, contained, `${label}.interface.${key} must stay inside the plugin`);
+      if (contained) check(state, fs.existsSync(resolved) && fs.statSync(resolved).isFile(), `${label}.interface.${key} must reference an existing file`);
+    }
+  }
+  for (const [key, allowed] of [['policy', ['allow_implicit_invocation']], ['dependencies', ['tools']]]) {
+    if (payload[key] === undefined) continue;
+    check(state, isObject(payload[key]), `${label}.${key} must be an object`);
+    if (isObject(payload[key])) rejectUnknownKeys(state, payload[key], new Set(allowed), `${label}.${key}`);
+  }
+  if (isObject(payload.policy) && payload.policy.allow_implicit_invocation !== undefined) {
+    check(state, typeof payload.policy.allow_implicit_invocation === 'boolean', `${label}.policy.allow_implicit_invocation must be boolean`);
+  }
 }
 
 function validateSkills(state) {
@@ -312,19 +366,21 @@ function validateSkills(state) {
     const frontmatter = match[1];
     let parsed;
     try {
-      const document = YAML.parseDocument(frontmatter, { uniqueKeys: true, prettyErrors: false, logLevel: 'silent' });
-      if (document.errors.length || document.warnings.length) throw new Error('invalid YAML');
-      parsed = document.toJS({ maxAliasCount: 100 });
+      parsed = parseYaml(frontmatter);
     } catch {
       addError(state, `skill ${entry.name} frontmatter must be valid YAML`);
       continue;
     }
     check(state, isObject(parsed), `skill ${entry.name} frontmatter must be a YAML mapping`);
+    for (const key of ['disable-model-invocation', 'disable_model_invocation']) {
+      if (isObject(parsed) && Object.hasOwn(parsed, key)) check(state, parsed[key] === false, `skill ${entry.name} frontmatter ${key} must be false when present`);
+    }
     const name = isObject(parsed) ? parsed.name : undefined;
     const description = isObject(parsed) ? parsed.description : undefined;
     checkString(state, name, `skill ${entry.name} frontmatter name`, { max: 64, oneLine: true });
     checkString(state, description, `skill ${entry.name} frontmatter description`, { max: 1024, allowNewlines: true });
     check(state, !/\[TODO[: ]/i.test(frontmatter), `skill ${entry.name} frontmatter must not contain TODO placeholders`);
+    validateSkillAgent(state, path.join(skillsPath, entry.name), entry.name);
   }
 }
 
@@ -415,11 +471,20 @@ function validateAssetsAndTree(state, manifest = readJson(MANIFEST_PATH)) {
   const screenshots = manifest?.interface?.screenshots;
   if (screenshots !== undefined) {
     check(state, Array.isArray(screenshots), 'interface.screenshots must be an array');
+    if (Array.isArray(screenshots) && screenshots.length > 0) {
+      const prompts = manifest?.interface?.defaultPrompt ?? manifest?.interface?.default_prompt;
+      const count = typeof prompts === 'string' ? 1 : Array.isArray(prompts) ? prompts.length : 0;
+      check(state, screenshots.length === count, 'interface.screenshots must contain one screenshot per starter prompt');
+    }
     if (Array.isArray(screenshots)) referenced.push(...screenshots.map(relative => ({ relative, branding: false })));
   }
   for (const { relative, branding } of referenced) {
     check(state, typeof relative === 'string' && relative.startsWith('./'), `asset reference must be relative: ${relative}`);
     if (typeof relative !== 'string') continue;
+    if (relative.replace(/\\/g, '/').split('/').includes('..')) {
+      addError(state, `asset reference must not contain parent segments: ${relative}`);
+      continue;
+    }
     const resolved = path.resolve(PLUGIN, relative);
     const contained = resolved.startsWith(`${PLUGIN}${path.sep}`);
     check(state, contained, `asset reference escapes plugin root: ${relative}`);
@@ -484,6 +549,10 @@ function validateSubmissionTests(state, fixtures) {
     check(state, JSON.stringify(briefs.map((item) => item?.id)) === JSON.stringify(expectedBriefIds), 'portal briefs must cover five positives followed by three negatives');
     checkUniqueNormalizedStrings(state, briefs.map((item) => item?.prompt), 'reviewEnvironment.portalCaseBriefs.prompt');
     for (const brief of briefs) {
+      const fixture = [...positive, ...negative].find(item => item?.id === brief?.id);
+      const prompt = fixture?.prompt || (Array.isArray(fixture?.turns) ? fixture.turns.find(turn => turn?.role === 'user')?.content : undefined);
+      check(state, typeof prompt === 'string' && typeof brief?.prompt === 'string' && normalizePrompt(brief.prompt) === normalizePrompt(prompt),
+        `portal brief ${brief?.id || '<unknown>'}.prompt must match its fixture prompt or first user turn`);
       for (const key of ['id', 'prompt', 'fixtureData', 'expectedWorkflow', 'expectedResult']) {
         checkString(state, brief?.[key], `portal brief ${brief?.id || '<unknown>'}.${key}`);
       }
@@ -556,7 +625,7 @@ function parseHttpsUrl(value, label) {
   } catch {
     throw new Error(`${label} is not a valid URL`);
   }
-  if (parsed.protocol !== 'https:') throw new Error(`${label} must use HTTPS`);
+  if (typeof value !== 'string' || !/^https:\/\/[^/\\\s?#]/i.test(value) || parsed.protocol !== 'https:') throw new Error(`${label} must use an absolute HTTPS URL`);
   if (parsed.username || parsed.password) throw new Error(`${label} must not contain URL credentials`);
   return parsed;
 }
@@ -753,7 +822,8 @@ async function runLive(state, {
           check(state, Array.isArray(asMetadata.code_challenge_methods_supported) && asMetadata.code_challenge_methods_supported.includes('S256'), 'authorization-server metadata must advertise PKCE S256');
           for (const endpoint of ['authorization_endpoint', 'token_endpoint']) {
             try {
-              parseHttpsUrl(asMetadata[endpoint], `authorization-server ${endpoint}`);
+              const endpointUrl = parseHttpsUrl(asMetadata[endpoint], `authorization-server ${endpoint}`);
+              check(state, !endpointUrl.hash && !asMetadata[endpoint].includes('#'), `authorization-server ${endpoint} must not contain a fragment`);
             } catch (error) {
               addError(state, error.message);
             }
