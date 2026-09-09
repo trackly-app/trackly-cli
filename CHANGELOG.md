@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   header with planning text. Issue autolinks, trailing prose, and incomplete
   last results still fail closed.
 
+## [0.18.2] - 2026-09-09
+
+### Security
+
+- Pin `hono` to `4.13.7` so a clean packed-consumer `npm run security:audit`
+  closes GHSA-gqvv-2mrq-wpjv (`toSSG()` path traversal), GHSA-g6gw-c38x-mqfc
+  (`parseBody()` memory exhaustion), and GHSA-crvj-82cr-hjcx (query-parser
+  fragment differentials). Patched in 4.13.5+; other dependencies, the stdio
+  MCP transport, and Apply schemas are unchanged. The local MCP server still
+  does not initialize an HTTP server.
+
 ## [0.18.1] - 2026-09-05
 
 ### Fixed
