@@ -125,3 +125,12 @@ test('credential scan rejects quoted shell values without treating empty quotes 
     assert.equal(result, value.length > 2, value);
   }
 });
+
+test('rejected challenge origin is never probed', async () => {
+  const contacted = [];
+  const api = load({ 'node:https': network((options) => { contacted.push(options.hostname); return { status: 401 }; }) });
+  const s = state();
+  await api.runLive(s, { challengeBaseUrl: 'https://unrelated.example', checkPublicPages: false });
+  assert(s.errors.some((error) => /parent-domain/.test(error)));
+  assert.equal(contacted.includes('unrelated.example'), false);
+});

@@ -338,8 +338,7 @@ function containsCredentialAssignment(file) {
   } finally { fs.closeSync(fd); }
 }
 
-function validateAssetsAndTree(state) {
-  const manifest = readJson(MANIFEST_PATH);
+function validateAssetsAndTree(state, manifest = readJson(MANIFEST_PATH)) {
   const referenced = [manifest?.interface?.composerIcon, manifest?.interface?.logo, manifest?.interface?.logoDark];
   for (const relative of referenced) {
     check(state, typeof relative === 'string' && relative.startsWith('./'), `asset reference must be relative: ${relative}`);
@@ -446,7 +445,7 @@ function runStatic() {
   validateMetadata(state, metadata);
   validateMcpConfig(state, metadata);
   validateSkills(state);
-  validateAssetsAndTree(state);
+  validateAssetsAndTree(state, manifest);
   validateSubmissionTests(state, fixtures);
   return state;
 }
@@ -566,7 +565,10 @@ async function runLive(state, {
   let challengeOrigin = mcpParsed.origin;
   if (challengeBaseUrl) {
     try {
-      check(state, sameOrParentOrigin(challengeBaseUrl, mcpUrl), 'challenge base URL must be the MCP origin or a parent-domain origin');
+      if (!sameOrParentOrigin(challengeBaseUrl, mcpUrl)) {
+        addError(state, 'challenge base URL must be the MCP origin or a parent-domain origin');
+        return state;
+      }
       challengeOrigin = parseHttpsUrl(challengeBaseUrl, 'challenge base URL').origin;
     } catch (error) {
       addError(state, error.message);
