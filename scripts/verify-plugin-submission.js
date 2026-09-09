@@ -83,6 +83,7 @@ const ALLOWED_INTERFACE_KEYS = new Set([
   'category',
   'capabilities',
   'websiteURL',
+  'supportURL',
   'privacyPolicyURL',
   'termsOfServiceURL',
   'brandColor',
@@ -91,7 +92,6 @@ const ALLOWED_INTERFACE_KEYS = new Set([
   'logoDark',
   'screenshots',
   'defaultPrompt',
-  'default_prompt',
 ]);
 
 function readJson(filePath) {
@@ -158,10 +158,10 @@ function rejectUnknownKeys(state, value, allowed, label) {
   }
 }
 
-function checkString(state, value, label, { max = Infinity, oneLine = false } = {}) {
+function checkString(state, value, label, { max = Infinity, oneLine = false, allowNewlines = false } = {}) {
   check(state, typeof value === 'string' && value.trim().length > 0, `${label} must be a non-empty string`);
   if (typeof value !== 'string') return;
-  checkSupportedText(state, value, label);
+  checkSupportedText(state, allowNewlines ? value.replace(/\r\n?|\n/g, '') : value, label);
   check(state, value.length <= max, `${label} must be ${max} characters or fewer (got ${value.length})`);
   if (oneLine) check(state, !/[\r\n]/.test(value), `${label} must be one line`);
 }
@@ -206,7 +206,7 @@ function validateManifest(state, manifest, metadata) {
   checkString(state, iface.shortDescription, 'interface.shortDescription', { max: 30, oneLine: true });
   check(state, !PUBLIC_TRIAL_WORD_RE.test(iface.displayName || ''), 'interface.displayName must not describe a trial, demo, beta, or pilot');
   check(state, !PUBLIC_TRIAL_WORD_RE.test(iface.shortDescription || ''), 'interface.shortDescription must not describe a trial, demo, beta, or pilot');
-  checkString(state, iface.longDescription, 'interface.longDescription', { max: 4000 });
+  checkString(state, iface.longDescription, 'interface.longDescription', { max: 4000, allowNewlines: true });
   check(state, !PUBLIC_TRIAL_WORD_RE.test(iface.longDescription || ''), 'interface.longDescription must describe the production service, not a trial/demo/pilot');
   checkString(state, iface.developerName, 'interface.developerName', { max: 80, oneLine: true });
   check(state, iface.developerName === manifest.author?.name, 'interface.developerName must match author.name');
@@ -217,16 +217,18 @@ function validateManifest(state, manifest, metadata) {
     iface.capabilities.forEach((item, index) => checkString(state, item, `interface.capabilities[${index}]`, { max: 120, oneLine: true }));
     checkUniqueNormalizedStrings(state, iface.capabilities, 'interface.capabilities');
   }
-  check(state, Array.isArray(iface.defaultPrompt), 'interface.defaultPrompt must be an array');
-  if (Array.isArray(iface.defaultPrompt)) {
-    check(state, iface.defaultPrompt.length <= 3, 'interface.defaultPrompt must contain at most 3 prompts');
-    checkUniqueNormalizedStrings(state, iface.defaultPrompt, 'interface.defaultPrompt');
-    iface.defaultPrompt.forEach((item, index) => {
+  const prompts = typeof iface.defaultPrompt === 'string' ? [iface.defaultPrompt] : iface.defaultPrompt;
+  check(state, Array.isArray(prompts), 'interface.defaultPrompt must be a string or array');
+  if (Array.isArray(prompts)) {
+    check(state, prompts.length <= 3, 'interface.defaultPrompt must contain at most 3 prompts');
+    checkUniqueNormalizedStrings(state, prompts, 'interface.defaultPrompt');
+    prompts.forEach((item, index) => {
       checkString(state, item, `interface.defaultPrompt[${index}]`, { max: 128, oneLine: true });
       check(state, !/@[A-Za-z0-9_-]+/.test(item || ''), `interface.defaultPrompt[${index}] must not contain an app mention`);
     });
   }
   for (const key of REQUIRED_URL_KEYS) validateHttpsUrl(state, iface[key], `interface.${key}`);
+  if (iface.supportURL !== undefined) validateHttpsUrl(state, iface.supportURL, 'interface.supportURL');
   check(state, iface.brandColor === undefined || /^#[0-9A-Fa-f]{6}$/.test(iface.brandColor), 'interface.brandColor must be a six-digit hex color');
 
   check(state, manifest.skills === './skills/', 'manifest.skills must point to ./skills/');
@@ -332,7 +334,7 @@ function containsCredentialAssignment(file) {
           if (names.includes(prefix)) { phase = 'equals'; prefix = ''; }
           else if (!names.some((name) => name.startsWith(prefix))) prefix = '';
         }
-        boundary = whitespace || char === '"' || char === "'";
+        boundary = !/[\p{ID_Continue}$]/u.test(char);
       }
     }
     return false;
@@ -340,8 +342,14 @@ function containsCredentialAssignment(file) {
 }
 
 function validateAssetsAndTree(state, manifest = readJson(MANIFEST_PATH)) {
-  const referenced = [manifest?.interface?.composerIcon, manifest?.interface?.logo, manifest?.interface?.logoDark];
-  for (const relative of referenced) {
+  const referenced = [manifest?.interface?.composerIcon, manifest?.interface?.logo, manifest?.interface?.logoDark]
+    .map(relative => ({ relative, branding: true }));
+  const screenshots = manifest?.interface?.screenshots;
+  if (screenshots !== undefined) {
+    check(state, Array.isArray(screenshots), 'interface.screenshots must be an array');
+    if (Array.isArray(screenshots)) referenced.push(...screenshots.map(relative => ({ relative, branding: false })));
+  }
+  for (const { relative, branding } of referenced) {
     check(state, typeof relative === 'string' && relative.startsWith('./'), `asset reference must be relative: ${relative}`);
     if (typeof relative !== 'string') continue;
     const resolved = path.resolve(PLUGIN, relative);
@@ -349,7 +357,7 @@ function validateAssetsAndTree(state, manifest = readJson(MANIFEST_PATH)) {
     check(state, contained, `asset reference escapes plugin root: ${relative}`);
     if (!contained) continue;
     check(state, fs.existsSync(resolved) && fs.statSync(resolved).isFile(), `referenced asset is missing: ${relative}`);
-    if (resolved.endsWith('.svg') && fs.existsSync(resolved) && fs.statSync(resolved).isFile() && fs.statSync(resolved).size <= 100 * 1024 * 1024) {
+    if (branding && resolved.endsWith('.svg') && fs.existsSync(resolved) && fs.statSync(resolved).isFile() && fs.statSync(resolved).size <= 100 * 1024 * 1024) {
       const svg = fs.readFileSync(resolved, 'utf8');
       check(state, /^\s*<svg\b/i.test(svg), `${relative} must be valid SVG/XML`);
       const dimensions = svg.match(/viewBox\s*=\s*["']0\s+0\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)["']/i);
@@ -466,8 +474,21 @@ function parseHttpsUrl(value, label) {
   return parsed;
 }
 
+function protectedMetadataChallenge(headers) {
+  const challenge = String(headers['www-authenticate'] || '');
+  if (!/^Bearer\s/i.test(challenge)) throw new Error('401 must advertise a Bearer challenge');
+  const match = challenge.match(/(?:^|[\s,])resource_metadata\s*=\s*(?:"([^"\r\n]+)"|([^,\s]+))/i);
+  if (!match) throw new Error('401 must advertise resource_metadata in WWW-Authenticate');
+  const value = match[1] || match[2];
+  parseHttpsUrl(value, 'resource_metadata');
+  return value;
+}
+
 function wellKnownAuthorizationServerUrl(issuer) {
   const parsed = parseHttpsUrl(issuer, 'authorization server');
+  if (parsed.search || parsed.hash || /[?#]/.test(issuer)) {
+    throw new Error('authorization server issuer must not contain query or fragment components');
+  }
   const issuerPath = parsed.pathname.replace(/\/$/, '');
   return `${parsed.origin}/.well-known/oauth-authorization-server${issuerPath}`;
 }
@@ -553,9 +574,14 @@ async function checkPublicPage(state, url, label) {
 async function runLive(state, {
   strictOrigins = false,
   requireChallenge = false,
+  expectedChallenge = process.env.OPENAI_CHALLENGE_TOKEN,
   challengeBaseUrl = process.env.OPENAI_CHALLENGE_BASE_URL,
   checkPublicPages = true,
 } = {}) {
+  if (requireChallenge && (typeof expectedChallenge !== 'string' || !expectedChallenge || expectedChallenge.length > 4096 || /[\s{}<>]/.test(expectedChallenge))) {
+    addError(state, '--require-challenge requires a valid OPENAI_CHALLENGE_TOKEN from the portal');
+    return state;
+  }
   const metadata = readJson(METADATA_PATH);
   const manifest = readJson(MANIFEST_PATH);
   const mcpUrl = metadata?.productionMcpURL;
@@ -599,10 +625,9 @@ async function runLive(state, {
     return state;
   }
   check(state, unauth.statusCode === 401, `live unauthenticated MCP POST must return 401 (got ${unauth.statusCode})`);
-  const challenge = String(unauth.headers['www-authenticate'] || '');
-  check(state, /resource_metadata=/i.test(challenge), 'live 401 must advertise resource_metadata in WWW-Authenticate');
-  const metadataMatch = challenge.match(/resource_metadata\s*=\s*(?:"([^"]+)"|([^,\s]+))/i);
-  const protectedUrl = metadataMatch?.[1] || metadataMatch?.[2] || `${mcpParsed.origin}/.well-known/oauth-protected-resource`;
+  let protectedUrl;
+  try { protectedUrl = protectedMetadataChallenge(unauth.headers); }
+  catch (error) { addError(state, error.message); return state; }
   let protectedResponse;
   try {
     protectedResponse = await request(protectedUrl);
@@ -673,6 +698,10 @@ async function runLive(state, {
         if (strictOrigins) addError(state, message); else addWarning(state, message);
       } else if (response.statusCode !== 401) {
         (strictOrigins ? addError : addWarning)(state, `origin probe ${origin} returned unexpected HTTP ${response.statusCode}`);
+      } else {
+        try {
+          if (protectedMetadataChallenge(response.headers) !== protectedUrl) throw new Error('resource_metadata must match the originless challenge');
+        } catch (error) { (strictOrigins ? addError : addWarning)(state, `origin probe ${origin}: ${error.message}`); }
       }
     } catch (error) {
       (strictOrigins ? addError : addWarning)(state, `origin probe ${origin} failed: ${error.message}`);
@@ -684,8 +713,7 @@ async function runLive(state, {
     const challengeResponse = await request(challengeUrl);
     if (requireChallenge) {
       check(state, challengeResponse.statusCode === 200, `domain challenge must return 200 when required (got ${challengeResponse.statusCode})`);
-      const token = challengeResponse.body.trim();
-      check(state, token.length > 0 && token.length <= 4096 && !/[\s{}<>]/.test(token), 'domain challenge must return only the token');
+      check(state, challengeResponse.body === expectedChallenge, 'domain challenge body must exactly match the portal-issued token');
     } else if (challengeResponse.statusCode !== 200) {
       addWarning(state, `domain challenge is ${challengeResponse.statusCode}; this is expected until the portal provisions a token`);
     }

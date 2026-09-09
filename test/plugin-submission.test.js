@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, '..');
 const script = path.join(root, 'scripts/verify-plugin-submission.js');
 function load(overrides = {}) {
   const sandbox = { require: (name) => overrides[name] || require(name), module: { exports: {} }, __dirname: path.dirname(script), process, console, Buffer, setTimeout, clearTimeout };
-  vm.runInNewContext(fs.readFileSync(script, 'utf8') + '\nmodule.exports.sameOrParentOrigin = sameOrParentOrigin; module.exports.containsCredentialAssignment = containsCredentialAssignment; module.exports.request = request; module.exports.main = main; module.exports.validateAssetsAndTree = validateAssetsAndTree;', sandbox);
+  vm.runInNewContext(fs.readFileSync(script, 'utf8') + '\nmodule.exports.wellKnownAuthorizationServerUrl = wellKnownAuthorizationServerUrl; module.exports.sameOrParentOrigin = sameOrParentOrigin; module.exports.containsCredentialAssignment = containsCredentialAssignment; module.exports.request = request; module.exports.main = main; module.exports.validateAssetsAndTree = validateAssetsAndTree;', sandbox);
   return sandbox.module.exports;
 }
 const state = () => ({ errors: [], warnings: [] });
@@ -175,4 +175,108 @@ test('tree walk stops at the rejected depth boundary', () => {
   const s = state(); api.validateAssetsAndTree(s);
   assert(s.errors.some(error => /too deep/.test(error)));
   assert.equal(deepestRead, 20);
+});
+
+test('credential names accept punctuation boundaries but exclude longer identifiers', () => {
+  for (const key of ['MCP_REVIEW_LOGIN_PASSWORD', 'NODE_AUTH_TOKEN', 'NPM_TOKEN', 'OPENAI_API_KEY']) {
+    for (const [prefix, suffix, expected] of [['{', '', true], [',', '', true], [';', '', true], ['prefix_', '', false], ['', '_suffix', false]]) {
+      let read = false;
+      const content = Buffer.from(`${prefix}${key}${suffix}=synthetic-value`);
+      const api = load({ 'node:fs': { ...fs, openSync: () => -123, closeSync: () => {}, readSync(fd, buffer) {
+        if (read) return 0; read = true; content.copy(buffer); return content.length;
+      } } });
+      assert.equal(api.containsCredentialAssignment('synthetic'), expected, `${prefix}${key}${suffix}`);
+    }
+  }
+});
+
+test('authorization-server issuer rejects query and fragment rather than dropping them', () => {
+  const api = load();
+  assert.equal(api.wellKnownAuthorizationServerUrl('https://example.com/issuer'), 'https://example.com/.well-known/oauth-authorization-server/issuer');
+  for (const issuer of ['https://example.com/issuer?tenant=a', 'https://example.com/issuer#tenant']) {
+    assert.throws(() => api.wellKnownAuthorizationServerUrl(issuer), /query|fragment/i);
+  }
+});
+
+test('strict origin 401 challenges require matching HTTPS Bearer resource metadata', async () => {
+  const canonical = 'Bearer resource_metadata="https://example.com/resource"';
+  for (const challenge of [undefined, 'Basic realm="Trackly"', 'Bearer resource_metadata="http://example.com/resource"', 'Bearer resource_metadata="https://example.com/other"', canonical]) {
+    const api = load({ 'node:https': network((o) => {
+      if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': o.headers.origin ? challenge : canonical } };
+      if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
+      return { status: 404 };
+    }) });
+    const s = state(); await api.runLive(s, { strictOrigins: true, checkPublicPages: false });
+    assert.equal(s.errors.filter((e) => /origin/i.test(e)).length, challenge === canonical ? 0 : 4, String(challenge));
+  }
+});
+
+test('screenshots reject non-array, missing file, and escaping paths', () => {
+  for (const screenshots of ['not-an-array', ['./assets/does-not-exist.png'], ['../outside.png']]) {
+    const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
+    manifest.interface.screenshots = screenshots;
+    const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) {
+      return String(file).endsWith('/.codex-plugin/plugin.json') ? JSON.stringify(manifest) : fs.readFileSync(file, ...args);
+    } } });
+    const s = state(); api.validateManifest(s, manifest, json('plugins/trackly/listing/metadata.json')); api.validateAssetsAndTree(s);
+    assert(s.errors.some((e) => /screenshot|does-not-exist|outside/.test(e)), JSON.stringify(screenshots));
+  }
+});
+
+test('default prompts accept documented string/list forms and reject undocumented alias', () => {
+  const metadata = json('plugins/trackly/listing/metadata.json');
+  for (const [field, value] of [['defaultPrompt', 'Find remote jobs'], ['defaultPrompt', ['Find remote jobs']]]) {
+    const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
+    delete manifest.interface.defaultPrompt;
+    manifest.interface[field] = value;
+    const s = state(); load().validateManifest(s, manifest, metadata);
+    assert.equal(s.errors.length, 0, s.errors.join('\n'));
+  }
+  const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
+  manifest.interface.default_prompt = 'Find remote jobs';
+  const s = state(); load().validateManifest(s, manifest, metadata);
+  assert(s.errors.some((e) => /default_prompt.*not accepted/.test(e)));
+});
+
+test('required challenge matches the expected token exactly without printing token values', async () => {
+  for (const [expectedChallenge, body, valid] of [['synthetic-expected-token', 'synthetic-expected-token', true], ['synthetic-expected-token', 'synthetic-other-token', false], ['synthetic-expected-token', 'synthetic-expected-token\n', false], ['', 'synthetic-other-token', false]]) {
+    const api = load({ 'node:https': network((o) => {
+      if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
+      if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
+      return { body };
+    }) });
+    const s = state(); await api.runLive(s, { requireChallenge: true, expectedChallenge, checkPublicPages: false });
+    assert.equal(s.errors.length === 0, valid, s.errors.join('\n'));
+    assert.doesNotMatch(JSON.stringify(s), /synthetic-(?:expected|other)-token/);
+  }
+});
+
+test('CLI required challenge without expected token fails before any network request', async () => {
+  let requests = 0;
+  const previous = process.env.OPENAI_CHALLENGE_TOKEN;
+  delete process.env.OPENAI_CHALLENGE_TOKEN;
+  try {
+    const api = load({ 'node:https': network(() => { requests += 1; return { status: 404 }; }) });
+    assert.equal(await api.main(['--json', '--require-challenge', '--live']), 1);
+    assert.equal(requests, 0);
+  } finally {
+    if (previous === undefined) delete process.env.OPENAI_CHALLENGE_TOKEN;
+    else process.env.OPENAI_CHALLENGE_TOKEN = previous;
+  }
+});
+
+test('documented multiline descriptions and optional support URL remain valid', () => {
+  const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
+  const metadata = json('plugins/trackly/listing/metadata.json');
+  manifest.interface.longDescription += '\nA second paragraph.';
+  manifest.interface.supportURL = metadata.supportURL;
+  const valid = state(); load().validateManifest(valid, manifest, metadata);
+  assert.deepEqual(valid.errors, []);
+  manifest.interface.longDescription += '\u0000';
+  manifest.interface.supportURL = 'http://example.com';
+  const invalid = state(); load().validateManifest(invalid, manifest, metadata);
+  assert(invalid.errors.some(error => /longDescription.*unsupported/.test(error)));
+  assert(invalid.errors.some(error => /supportURL.*HTTPS/.test(error)));
 });

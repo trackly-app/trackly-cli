@@ -15,8 +15,7 @@ These gates govern OpenAI submission and publication of the plugin listing. Repo
   the product itself is a trial or demo.
 - Populate and verify the portal Support URL (`https://usetrackly.app/support`)
   alongside the website, privacy-policy, and terms URLs. Keep the support URL in
-  `listing/metadata.json` and enter it explicitly in the portal; the plugin
-  manifest schema does not accept an `interface.supportURL` key.
+  `listing/metadata.json` and enter it explicitly in the portal; portal values must be verified against the current portal schema rather than inferred from the package alone.
 - Verify the submitting OpenAI Platform organization as an individual or business and confirm the submitting account has Apps Management Write (`api.apps.write`) access; read access (`api.apps.read`) is also needed to inspect review status.
 - Create a new **With MCP** draft at `https://platform.openai.com/plugins`. Submit the production MCP from scratch through the portal even if it was previously connected in ChatGPT or Codex.
 - Configure the Universal MCP URL as `https://mcp.usetrackly.app/api/plugin/trackly/mcp` and complete any portal-issued domain verification challenge at the exact required `/.well-known/openai-apps-challenge` path.
@@ -43,7 +42,7 @@ The validation limits follow the [OpenAI submission error reference](https://dev
   checks the public 401 challenge, protected-resource metadata, authorization
   server metadata, PKCE advertisement, exact resource identity, and origin
   behavior. Use `--require-challenge` only after the portal has provisioned the
-  domain-verification token, and use `--strict-origins` only after confirming
+  domain-verification token. For that run, provide the exact public challenge value through `OPENAI_CHALLENGE_TOKEN`; the probe requires a byte-for-byte body match and never prints either value. This is a public domain-verification value, not an OAuth credential. Use `--strict-origins` only after confirming
   which official client origins the target Codex/ChatGPT surface sends.
 
 ### OAuth and MCP protocol gate
