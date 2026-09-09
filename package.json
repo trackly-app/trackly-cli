@@ -11,6 +11,7 @@
     "test:contract-fixture": "node --test test/apply-contract.test.js",
     "test:hosted-contract": "node scripts/verify-hosted-contract.js",
     "test:review-auth-contract": "node scripts/verify-review-auth-contract.js",
+    "test:plugin-submission": "node scripts/verify-plugin-submission.js",
     "security:audit": "node scripts/verify-audit-exceptions.js"
   },
   "files": [
@@ -65,8 +66,8 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
     "@posthog/mcp": "0.11.0",
-    "fast-uri": "3.1.5",
-    "hono": "4.13.0",
+    "fast-uri": "3.1.7",
+    "hono": "4.13.7",
     "ip-address": "10.4.0",
     "posthog-node": "5.48.1",
     "zod": "^3.23.0"
@@ -76,8 +77,9 @@
   },
   "overrides": {
     "@hono/node-server": "2.0.12",
-    "fast-uri": "3.1.5",
-    "ip-address": "10.4.0"
+    "fast-uri": "3.1.7",
+    "ip-address": "10.4.0",
+    "qs": "6.16.0"
   },
   "devDependencies": {
     "@babel/parser": "7.29.8",

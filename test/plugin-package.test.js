@@ -105,6 +105,7 @@ test('review-auth and hosted Apply contracts remain independently targetable', (
   const scripts = json('package.json').scripts;
   assert.equal(scripts['test:hosted-contract'], 'node scripts/verify-hosted-contract.js');
   assert.equal(scripts['test:review-auth-contract'], 'node scripts/verify-review-auth-contract.js');
+  assert.equal(scripts['test:plugin-submission'], 'node scripts/verify-plugin-submission.js');
 });
 
 test('review-auth subprocess diagnostics redact registry and token credentials', () => {
@@ -3674,9 +3675,17 @@ test('plugin manifest is complete, lowercase, and uses the official trackly bran
   const metadata = json('plugins/trackly/listing/metadata.json');
   assert.equal(manifest.name, metadata.pluginName);
   assert.equal(manifest.description, metadata.shortDescription);
+  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
+  assert.ok(manifest.description.length <= 1024);
   assert.equal(manifest.interface.displayName, metadata.pluginName);
   assert.equal(manifest.interface.developerName, metadata.pluginName);
-  assert.equal(manifest.interface.shortDescription, 'Real-time job search and application filling');
+  assert.equal(manifest.interface.shortDescription, 'Find jobs and fill forms');
+  assert.doesNotMatch(manifest.interface.shortDescription, /[\r\n]/);
+  assert.ok(manifest.interface.shortDescription.length <= 30);
+  assert.ok(manifest.interface.longDescription.length <= 4000);
+  assert.ok(manifest.interface.developerName.length <= 80);
+  assert.ok(manifest.interface.capabilities.length <= 20);
+  assert.ok(manifest.interface.capabilities.every((capability) => capability.length <= 120));
   assert.equal(manifest.interface.privacyPolicyURL, metadata.privacyPolicyURL);
   assert.equal(manifest.interface.termsOfServiceURL, metadata.termsOfServiceURL);
   assert.equal(manifest.interface.brandColor, '#000000');
@@ -3686,9 +3695,22 @@ test('plugin manifest is complete, lowercase, and uses the official trackly bran
   assert.equal(fs.existsSync(appPath), false, 'OpenAI portal submissions must not package a developer-mode app ID');
   assert.equal(Object.hasOwn(manifest, 'apps'), false, 'OpenAI portal submissions must not bind a developer-mode app ID');
   assert.equal(manifest.interface.defaultPrompt.length, 3);
-  assert.ok(manifest.interface.defaultPrompt.every((prompt) => prompt.length <= 128));
+  assert.equal(metadata.pricingClaim, 'Free');
+  assert.doesNotMatch(
+    JSON.stringify({ manifest: manifest.interface, metadata }),
+    /\b(?:trial|demo|beta|pilot)\b/i,
+    'public listing copy must describe a production service, not a trial/demo/pilot',
+  );
+  assert.ok(manifest.interface.defaultPrompt.every((prompt) => {
+    assert.doesNotMatch(prompt, /[\r\n]/);
+    assert.doesNotMatch(prompt, /@trackly\b/i);
+    return prompt.length <= 128;
+  }));
   for (const key of ['websiteURL', 'privacyPolicyURL', 'termsOfServiceURL']) {
     assert.match(manifest.interface[key], /^https:\/\//);
+    assert.ok(manifest.interface[key].length <= 1024);
+    assert.equal(new URL(manifest.interface[key]).username, '');
+    assert.equal(new URL(manifest.interface[key]).password, '');
   }
 });
 
@@ -3972,6 +3994,29 @@ test('submission fixtures cover six internal cases and the exact five-case porta
       fixtures.positive.some((item) => item.id === id)),
     'every portal positive case must resolve to a reviewed internal fixture',
   );
+  assert.match(fixtures.reviewEnvironment.identifierPolicy, /opaque continuation handles/i);
+  assert.match(fixtures.reviewEnvironment.identifierPolicy, /never expose private lease/i);
+  assert.match(fixtures.reviewEnvironment.reviewerProtocol.authenticationProof, /PKCE S256/i);
+  assert.match(fixtures.reviewEnvironment.reviewerProtocol.discoveryProbeProof, /200[\s\S]*-32601/);
+  assert.match(fixtures.reviewEnvironment.reviewerProtocol.safetyBoundary, /No case may activate/i);
+  const portalBriefs = fixtures.reviewEnvironment.portalCaseBriefs;
+  assert.equal(portalBriefs.length, 8);
+  assert.deepEqual(
+    portalBriefs.map((item) => item.id),
+    [...fixtures.reviewEnvironment.portalPositiveCaseIds, ...fixtures.negative.map((item) => item.id)],
+    'portal briefs must cover exactly the five positive and three negative cases in order',
+  );
+  for (const brief of portalBriefs) {
+    for (const key of ['id', 'prompt', 'fixtureData', 'expectedWorkflow', 'expectedResult']) {
+      assert.equal(typeof brief[key], 'string');
+      assert.ok(brief[key].trim().length > 0, `${brief.id} must provide ${key}`);
+    }
+    assert.doesNotMatch(JSON.stringify(brief), /(?:password|token|secret|leaseToken)\s*[:=]\s*["']/i);
+  }
+  for (const brief of portalBriefs.filter((item) => item.id.startsWith('no-'))) {
+    assert.equal(typeof brief.whyOutOfScope, 'string');
+    assert.ok(brief.whyOutOfScope.length > 0);
+  }
   assert.match(fixtures.reviewEnvironment.account, /synthetic reviewer account/i);
   assert.deepEqual(fixtures.reviewEnvironment.authentication, {
     mode: 'direct_email_password',
@@ -4007,6 +4052,7 @@ test('submission fixtures cover six internal cases and the exact five-case porta
   );
   assert.ok(monitored.expectedResultShape.includes('userChoice.jobIds'));
   assert.ok(fixtures.negative.every((item) => item.fixture));
+  assert.ok(fixtures.negative.every((item) => item.whyOutOfScope));
   assert.ok(fixtures.positive.some((item) => item.id === 'apply-to-review'));
   const applyToReview = fixtures.positive.find((item) => item.id === 'apply-to-review');
   assert.deepEqual(applyToReview.turns.map((turn) => turn.role), ['user', 'assistant', 'user', 'assistant', 'user', 'assistant']);
@@ -4112,6 +4158,18 @@ test('OpenAI Platform draft and public submission remain explicit release gates'
   assert.match(gates, /Kevin must approve.*immediately before selecting \*\*Submit for Review\*\*/);
   assert.match(gates, /ask Kevin again immediately before selecting \*\*Publish\*\*/);
   assert.match(gates, /portal accepts exactly five positive cases/);
+  assert.match(gates, /shortDescription[\s\S]*30 characters/i);
+  assert.match(gates, /Support URL/);
+  assert.match(gates, /npm run test:plugin-submission/);
+  assert.match(gates, /issuer[\s\S]*authorization_servers/);
+  assert.match(gates, /server\/discover[\s\S]*-32601/);
+  assert.match(gates, /MCP_AUTH_DOMAIN/);
+  assert.match(gates, /reviewer-facing briefs/);
+  assert.match(gates, /only one MCP version in review/);
+  assert.match(gates, /production-ready and free/);
+  assert.match(gates, /Custom UI, CSP, and screenshots/);
+  assert.match(gates, /workspace-domain restrictions disabled/);
+  assert.match(gates, /readOnlyHint/);
   assert.match(gates, /demo covering Trackly's main use cases on ChatGPT web, iOS, and Android/);
 });
 
