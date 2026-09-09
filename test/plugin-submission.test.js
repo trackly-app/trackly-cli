@@ -76,7 +76,7 @@ test('strict origin probes reject non-401 and network failures', async () => {
       if (o.headers.origin) return outcome;
       if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
       if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
-      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
       return { status: 404 };
     }) });
     const s = state(); await api.runLive(s, { strictOrigins: true, checkPublicPages: false });
@@ -204,7 +204,7 @@ test('strict origin 401 challenges require matching HTTPS Bearer resource metada
     const api = load({ 'node:https': network((o) => {
       if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': o.headers.origin ? challenge : canonical } };
       if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
-      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
       return { status: 404 };
     }) });
     const s = state(); await api.runLive(s, { strictOrigins: true, checkPublicPages: false });
@@ -224,9 +224,9 @@ test('screenshots reject non-array, missing file, and escaping paths', () => {
   }
 });
 
-test('default prompts accept documented string/list forms and reject undocumented alias', () => {
+test('default prompts accept string/list aliases and reject conflicting aliases', () => {
   const metadata = json('plugins/trackly/listing/metadata.json');
-  for (const [field, value] of [['defaultPrompt', 'Find remote jobs'], ['defaultPrompt', ['Find remote jobs']]]) {
+  for (const [field, value] of [['defaultPrompt', 'Find remote jobs'], ['defaultPrompt', ['Find remote jobs']], ['default_prompt', 'Find remote jobs'], ['default_prompt', ['Find remote jobs']]]) {
     const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
     delete manifest.interface.defaultPrompt;
     manifest.interface[field] = value;
@@ -236,7 +236,10 @@ test('default prompts accept documented string/list forms and reject undocumente
   const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
   manifest.interface.default_prompt = 'Find remote jobs';
   const s = state(); load().validateManifest(s, manifest, metadata);
-  assert(s.errors.some((e) => /default_prompt.*not accepted/.test(e)));
+  assert(s.errors.some((e) => /defaultPrompt|default_prompt/i.test(e)));
+  manifest.interface.defaultPrompt = ['Find remote jobs'];
+  const equivalent = state(); load().validateManifest(equivalent, manifest, metadata);
+  assert.deepEqual(equivalent.errors, []);
 });
 
 test('required challenge matches the expected token exactly without printing token values', async () => {
@@ -244,7 +247,7 @@ test('required challenge matches the expected token exactly without printing tok
     const api = load({ 'node:https': network((o) => {
       if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
       if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
-      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
       return { body };
     }) });
     const s = state(); await api.runLive(s, { requireChallenge: true, expectedChallenge, checkPublicPages: false });
@@ -267,16 +270,137 @@ test('CLI required challenge without expected token fails before any network req
   }
 });
 
-test('documented multiline descriptions and optional support URL remain valid', () => {
+test('multiline descriptions remain valid and support URL belongs only in listing', () => {
   const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
   const metadata = json('plugins/trackly/listing/metadata.json');
   manifest.interface.longDescription += '\nA second paragraph.';
-  manifest.interface.supportURL = metadata.supportURL;
   const valid = state(); load().validateManifest(valid, manifest, metadata);
   assert.deepEqual(valid.errors, []);
   manifest.interface.longDescription += '\u0000';
   manifest.interface.supportURL = 'http://example.com';
   const invalid = state(); load().validateManifest(invalid, manifest, metadata);
   assert(invalid.errors.some(error => /longDescription.*unsupported/.test(error)));
-  assert(invalid.errors.some(error => /supportURL.*HTTPS/.test(error)));
+  assert(invalid.errors.some(error => /supportURL.*not accepted/.test(error)));
+  const listing = state(); load().validateMetadata(listing, metadata);
+  assert.deepEqual(listing.errors, []);
+});
+
+test('screenshots decode PNG/JPEG and enforce 706 by 400..860 pixels', () => {
+  const { PNG } = require('pngjs');
+  const jpeg = require('jpeg-js');
+  for (const [width, height, type, valid] of [[706, 400, 'png', true], [706, 860, 'jpeg', true], [705, 400, 'png', false], [706, 399, 'jpeg', false], [706, 861, 'png', false], [706, 400, 'corrupt', false]]) {
+    const raw = { width, height, data: Buffer.alloc(width * height * 4, 255) };
+    const data = type === 'png' ? PNG.sync.write(raw) : type === 'jpeg' ? jpeg.encode(raw, 30).data : Buffer.from('not an encoded image');
+    const target = path.join(root, 'plugins/trackly/assets/synthetic-screenshot.' + (type === 'jpeg' ? 'jpg' : 'png'));
+    const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
+    manifest.interface.screenshots = ['./assets/' + path.basename(target)];
+    const api = load({ 'node:fs': { ...fs,
+      existsSync: file => file === target || fs.existsSync(file),
+      statSync: file => file === target ? { size: data.length, isFile: () => true } : fs.statSync(file),
+      readFileSync: (file, ...args) => file === target ? data : fs.readFileSync(file, ...args),
+    } });
+    const s = state(); api.validateAssetsAndTree(s, manifest);
+    assert.equal(s.errors.length === 0, valid, `${width}x${height} ${type}: ${s.errors.join('; ')}`);
+  }
+});
+
+test('skill frontmatter uses YAML scalar strings and rejects malformed or missing fields', () => {
+  const cases = [
+    ['name: synthetic\ndescription: "A quoted description"', true],
+    ['name: synthetic\ndescription: >-\n  A folded description', true],
+    ['name: [synthetic]\ndescription: valid', false],
+    ['name: !unknown synthetic\ndescription: valid', false],
+    ['name: synthetic\ndescription: {text: value}', false],
+    ['name: "unterminated\ndescription: valid', false],
+    ['name:\ndescription: valid', false],
+    ['description: valid', false],
+  ];
+  for (const [frontmatter, valid] of cases) {
+    const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) {
+      return String(file).endsWith('/SKILL.md') ? `---\n${frontmatter}\n---\nBody.\n` : fs.readFileSync(file, ...args);
+    } } });
+    const s = state(); assert.doesNotThrow(() => api.validateSkills(s));
+    assert.equal(s.errors.length === 0, valid, `${frontmatter}: ${s.errors.join('; ')}`);
+  }
+});
+
+test('authorization-server discovery requires the authorization code response type', async () => {
+  for (const responseTypes of [undefined, 'code', ['token'], ['code']]) {
+    const api = load({ 'node:https': network(o => {
+      if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
+      if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: responseTypes, code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
+      return { status: 404 };
+    }) });
+    const s = state(); await api.runLive(s, { checkPublicPages: false });
+    assert.equal(s.errors.length === 0, Array.isArray(responseTypes) && responseTypes.includes('code'), s.errors.join('; '));
+  }
+});
+
+test('review environment requires nested authentication and reviewer protocol fields', () => {
+  for (const field of ['account', 'fixtures', 'submissionPolicy', 'identifierPolicy', 'authentication.mode', 'authentication.surface', 'authentication.credentialSource', 'authentication.requiredEvidence', 'authentication.additionalSetupRequired', 'authentication.thirdPartyIdentityProviderRequired', 'reviewerProtocol.startingState', 'reviewerProtocol.authenticationProof', 'reviewerProtocol.discoveryProbeProof', 'reviewerProtocol.safetyBoundary']) {
+    const fixtures = json('plugins/trackly/listing/submission-tests.json');
+    const parts = field.split('.'); const parent = parts.length === 2 ? fixtures.reviewEnvironment[parts[0]] : fixtures.reviewEnvironment;
+    delete parent[parts.at(-1)];
+    const s = state(); load().validateSubmissionTests(s, fixtures);
+    assert(s.errors.length > 0, `missing ${field} must fail`);
+  }
+});
+
+test('manifest and listing legal URLs must agree', () => {
+  for (const field of ['privacyPolicyURL', 'termsOfServiceURL']) {
+    const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
+    const metadata = json('plugins/trackly/listing/metadata.json');
+    metadata[field] = 'https://example.com/different';
+    const s = state(); load().validateManifest(s, manifest, metadata);
+    assert(s.errors.some(error => error.includes(field)), field);
+  }
+});
+
+function pngChunk(type, payload) {
+  const namedPayload = Buffer.concat([Buffer.from(type), payload]);
+  let crc = 0xffffffff;
+  for (const byte of namedPayload) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  }
+  const header = Buffer.alloc(4); header.writeUInt32BE(payload.length);
+  const checksum = Buffer.alloc(4); checksum.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+  return Buffer.concat([header, namedPayload, checksum]);
+}
+
+test('unsafe PNG headers and interlaced inflation stop before the image decoder allocates', () => {
+  const { PNG } = require('pngjs');
+  const zlib = require('node:zlib');
+  const encoded = PNG.sync.write({ width: 706, height: 400, data: Buffer.alloc(706 * 400 * 4, 255) });
+  const oversizedHeader = Buffer.from(encoded.subarray(16, 29));
+  oversizedHeader.writeUInt32BE(100000, 0); oversizedHeader.writeUInt32BE(100000, 4);
+  const duplicateHeader = Buffer.concat([encoded.subarray(0, 33), pngChunk('IHDR', oversizedHeader), encoded.subarray(33)]);
+  const interlacedHeader = Buffer.from(encoded.subarray(16, 29)); interlacedHeader[12] = 1;
+  const bomb = Buffer.concat([encoded.subarray(0, 8), pngChunk('IHDR', interlacedHeader), pngChunk('IDAT', zlib.deflateSync(Buffer.alloc(8 * 1024 * 1024 + 1))), pngChunk('IEND', Buffer.alloc(0))]);
+  for (const data of [duplicateHeader, bomb]) {
+    const target = path.join(root, 'plugins/trackly/assets/unsafe-synthetic.png');
+    const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
+    manifest.interface.screenshots = ['./assets/unsafe-synthetic.png'];
+    let decoderCalls = 0;
+    const api = load({
+      pngjs: { PNG: { sync: { read() { decoderCalls += 1; return { width: 706, height: 400 }; } } } },
+      'node:fs': { ...fs,
+        existsSync: file => file === target || fs.existsSync(file),
+        statSync: file => file === target ? { size: data.length, isFile: () => true } : fs.statSync(file),
+        readFileSync: (file, ...args) => file === target ? data : fs.readFileSync(file, ...args),
+      },
+    });
+    const s = state(); api.validateAssetsAndTree(s, manifest);
+    assert(s.errors.some(error => /screenshot/.test(error)));
+    assert.equal(decoderCalls, 0, 'unsafe PNG must be rejected before full decoder allocation');
+  }
+});
+
+test('both prompt aliases must have valid types even when they normalize identically', () => {
+  const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
+  manifest.interface.defaultPrompt = ['42'];
+  manifest.interface.default_prompt = [42];
+  const s = state(); load().validateManifest(s, manifest, json('plugins/trackly/listing/metadata.json'));
+  assert(s.errors.length > 0);
 });

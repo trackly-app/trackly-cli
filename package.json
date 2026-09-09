@@ -83,6 +83,9 @@
   },
   "devDependencies": {
     "@babel/parser": "7.29.8",
-    "acorn": "8.18.0"
+    "acorn": "8.18.0",
+    "jpeg-js": "0.4.4",
+    "pngjs": "7.0.0",
+    "yaml": "2.9.0"
   }
 }

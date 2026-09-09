@@ -26,6 +26,13 @@ These gates govern OpenAI submission and publication of the plugin listing. Repo
 
 ### Automated package preflight
 
+The source preflight uses development-only YAML and PNG/JPEG parsers. It checks
+actual screenshot dimensions and decoding, required reviewer-environment fields,
+authorization-code discovery, and legal-URL parity. The installed Codex validator
+accepts `defaultPrompt` and `default_prompt`; conflicting aliases fail. It rejects
+manifest `supportURL`, so keep that URL in listing metadata and the portal even
+though the public portal documentation lists it as an interface field.
+
 The validation limits follow the [OpenAI submission error reference](https://developers.openai.com/plugins/deploy/submission-errors); the portal remains authoritative.
 
 - Run `npm run test:plugin-submission` from this source checkout. This is a

@@ -17,6 +17,10 @@ const path = require('node:path');
 const https = require('node:https');
 const { URL } = require('node:url');
 const { StringDecoder } = require('node:string_decoder');
+const YAML = require('yaml');
+const { PNG } = require('pngjs');
+const jpeg = require('jpeg-js');
+const zlib = require('node:zlib');
 
 const ROOT = path.resolve(__dirname, '..');
 const PLUGIN = path.join(ROOT, 'plugins', 'trackly');
@@ -83,7 +87,6 @@ const ALLOWED_INTERFACE_KEYS = new Set([
   'category',
   'capabilities',
   'websiteURL',
-  'supportURL',
   'privacyPolicyURL',
   'termsOfServiceURL',
   'brandColor',
@@ -92,6 +95,7 @@ const ALLOWED_INTERFACE_KEYS = new Set([
   'logoDark',
   'screenshots',
   'defaultPrompt',
+  'default_prompt',
 ]);
 
 function readJson(filePath) {
@@ -217,18 +221,27 @@ function validateManifest(state, manifest, metadata) {
     iface.capabilities.forEach((item, index) => checkString(state, item, `interface.capabilities[${index}]`, { max: 120, oneLine: true }));
     checkUniqueNormalizedStrings(state, iface.capabilities, 'interface.capabilities');
   }
-  const prompts = typeof iface.defaultPrompt === 'string' ? [iface.defaultPrompt] : iface.defaultPrompt;
-  check(state, Array.isArray(prompts), 'interface.defaultPrompt must be a string or array');
-  if (Array.isArray(prompts)) {
-    check(state, prompts.length <= 3, 'interface.defaultPrompt must contain at most 3 prompts');
-    checkUniqueNormalizedStrings(state, prompts, 'interface.defaultPrompt');
+  const promptFields = ['defaultPrompt', 'default_prompt'].filter(key => Object.hasOwn(iface, key));
+  check(state, promptFields.length > 0, 'interface.defaultPrompt or default_prompt is required');
+  for (const key of promptFields) {
+    const prompts = typeof iface[key] === 'string' ? [iface[key]] : iface[key];
+    check(state, Array.isArray(prompts), `interface.${key} must be a string or array`);
+    if (!Array.isArray(prompts)) continue;
+    check(state, prompts.length <= 3, `interface.${key} must contain at most 3 prompts`);
+    checkUniqueNormalizedStrings(state, prompts, `interface.${key}`);
     prompts.forEach((item, index) => {
-      checkString(state, item, `interface.defaultPrompt[${index}]`, { max: 128, oneLine: true });
-      check(state, !/@[A-Za-z0-9_-]+/.test(item || ''), `interface.defaultPrompt[${index}] must not contain an app mention`);
+      checkString(state, item, `interface.${key}[${index}]`, { max: 128, oneLine: true });
+      check(state, !/@[A-Za-z0-9_-]+/.test(item || ''), `interface.${key}[${index}] must not contain an app mention`);
     });
   }
+  if (promptFields.length === 2) {
+    const normalize = value => (Array.isArray(value) ? value : [value]).map(normalizePrompt);
+    check(state, JSON.stringify(normalize(iface.defaultPrompt)) === JSON.stringify(normalize(iface.default_prompt)), 'interface.defaultPrompt and default_prompt must agree when both are present');
+  }
   for (const key of REQUIRED_URL_KEYS) validateHttpsUrl(state, iface[key], `interface.${key}`);
-  if (iface.supportURL !== undefined) validateHttpsUrl(state, iface.supportURL, 'interface.supportURL');
+  for (const key of ['privacyPolicyURL', 'termsOfServiceURL']) {
+    check(state, iface[key] === metadata?.[key], `interface.${key} and listing.${key} must match`);
+  }
   check(state, iface.brandColor === undefined || /^#[0-9A-Fa-f]{6}$/.test(iface.brandColor), 'interface.brandColor must be a six-digit hex color');
 
   check(state, manifest.skills === './skills/', 'manifest.skills must point to ./skills/');
@@ -293,14 +306,24 @@ function validateSkills(state) {
     check(state, fs.existsSync(skillPath), `skill ${entry.name} must contain SKILL.md`);
     if (!fs.existsSync(skillPath)) continue;
     const source = fs.readFileSync(skillPath, 'utf8');
-    const match = source.match(/^---\n([\s\S]*?)\n---(?:\n|$)/);
+    const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
     check(state, Boolean(match), `skill ${entry.name} must begin with YAML frontmatter`);
     if (!match) continue;
     const frontmatter = match[1];
-    const name = frontmatter.match(/^name:\s*(.+)$/m)?.[1]?.trim();
-    const description = frontmatter.match(/^description:\s*(.+)$/m)?.[1]?.trim();
+    let parsed;
+    try {
+      const document = YAML.parseDocument(frontmatter, { uniqueKeys: true, prettyErrors: false, logLevel: 'silent' });
+      if (document.errors.length || document.warnings.length) throw new Error('invalid YAML');
+      parsed = document.toJS({ maxAliasCount: 100 });
+    } catch {
+      addError(state, `skill ${entry.name} frontmatter must be valid YAML`);
+      continue;
+    }
+    check(state, isObject(parsed), `skill ${entry.name} frontmatter must be a YAML mapping`);
+    const name = isObject(parsed) ? parsed.name : undefined;
+    const description = isObject(parsed) ? parsed.description : undefined;
     checkString(state, name, `skill ${entry.name} frontmatter name`, { max: 64, oneLine: true });
-    checkString(state, description, `skill ${entry.name} frontmatter description`, { max: 1024, oneLine: true });
+    checkString(state, description, `skill ${entry.name} frontmatter description`, { max: 1024, allowNewlines: true });
     check(state, !/\[TODO[: ]/i.test(frontmatter), `skill ${entry.name} frontmatter must not contain TODO placeholders`);
   }
 }
@@ -341,6 +364,51 @@ function containsCredentialAssignment(file) {
   } finally { fs.closeSync(fd); }
 }
 
+function validateScreenshot(state, file, relative) {
+  const extension = path.extname(file).toLowerCase();
+  if (!['.png', '.jpg', '.jpeg'].includes(extension)) {
+    addError(state, `${relative} screenshot must be PNG or JPEG`);
+    return;
+  }
+  // Reuse the archive's per-file admission limit before allocating input bytes.
+  if (fs.statSync(file).size > 100 * 1024 * 1024) return;
+  try {
+    const data = fs.readFileSync(file);
+    let decoded;
+    if (extension === '.png') {
+      if (data.length < 33 || !data.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+        || data.readUInt32BE(8) !== 13 || data.toString('ascii', 12, 16) !== 'IHDR') throw new Error('invalid PNG');
+      const width = data.readUInt32BE(16);
+      const height = data.readUInt32BE(20);
+      if (width !== 706 || height < 400 || height > 860) throw new Error('invalid dimensions');
+      // pngjs accepts repeated IHDR chunks; reject them before a later header
+      // can replace the bounded dimensions used for decompression.
+      let offset = 8;
+      const compressed = [];
+      while (offset < data.length) {
+        if (data.length - offset < 12) throw new Error('truncated PNG chunk');
+        const length = data.readUInt32BE(offset);
+        if (length > data.length - offset - 12) throw new Error('truncated PNG chunk');
+        if (offset !== 8 && data.toString('ascii', offset + 4, offset + 8) === 'IHDR') throw new Error('duplicate PNG header');
+        if (data.toString('ascii', offset + 4, offset + 8) === 'IDAT') compressed.push(data.subarray(offset + 8, offset + 8 + length));
+        offset += length + 12;
+      }
+      // pngjs bounds non-interlaced inflation, but its interlaced path does
+      // not. Verify that output is bounded before entering that decoder path.
+      // 8 MiB exceeds the maximum legal scanlines at these dimensions/depths.
+      if (data[28] === 1) zlib.inflateSync(Buffer.concat(compressed), { maxOutputLength: 8 * 1024 * 1024 });
+      decoded = PNG.sync.read(data, { checkCRC: true });
+    } else {
+      if (data.length < 3 || data[0] !== 0xff || data[1] !== 0xd8 || data[2] !== 0xff) throw new Error('invalid JPEG');
+      decoded = jpeg.decode(data, { useTArray: true, tolerantDecoding: false, maxResolutionInMP: 1, maxMemoryUsageInMB: 32 });
+    }
+    check(state, decoded.width === 706 && decoded.height >= 400 && decoded.height <= 860,
+      `${relative} screenshot must be 706 pixels wide and 400–860 pixels high`);
+  } catch {
+    addError(state, `${relative} screenshot must be a valid PNG or JPEG, 706 pixels wide and 400–860 pixels high`);
+  }
+}
+
 function validateAssetsAndTree(state, manifest = readJson(MANIFEST_PATH)) {
   const referenced = [manifest?.interface?.composerIcon, manifest?.interface?.logo, manifest?.interface?.logoDark]
     .map(relative => ({ relative, branding: true }));
@@ -357,6 +425,7 @@ function validateAssetsAndTree(state, manifest = readJson(MANIFEST_PATH)) {
     check(state, contained, `asset reference escapes plugin root: ${relative}`);
     if (!contained) continue;
     check(state, fs.existsSync(resolved) && fs.statSync(resolved).isFile(), `referenced asset is missing: ${relative}`);
+    if (!branding && fs.existsSync(resolved) && fs.statSync(resolved).isFile()) validateScreenshot(state, resolved, relative);
     if (branding && resolved.endsWith('.svg') && fs.existsSync(resolved) && fs.statSync(resolved).isFile() && fs.statSync(resolved).size <= 100 * 1024 * 1024) {
       const svg = fs.readFileSync(resolved, 'utf8');
       check(state, /^\s*<svg\b/i.test(svg), `${relative} must be valid SVG/XML`);
@@ -434,6 +503,24 @@ function validateSubmissionTests(state, fixtures) {
     checkString(state, item?.expectedResponse, `${item?.id || '<unknown>'}.expectedResponse`);
     checkString(state, item?.whyOutOfScope, `${item?.id || '<unknown>'}.whyOutOfScope`);
     check(state, Array.isArray(item?.forbidden) && item.forbidden.length > 0, `${item?.id || '<unknown>'}.forbidden must be non-empty`);
+  }
+  const environment = fixtures.reviewEnvironment;
+  check(state, isObject(environment), 'reviewEnvironment must be an object');
+  for (const key of ['account', 'fixtures', 'submissionPolicy', 'identifierPolicy']) {
+    checkString(state, environment?.[key], `reviewEnvironment.${key}`);
+  }
+  const authentication = environment?.authentication;
+  check(state, isObject(authentication), 'reviewEnvironment.authentication must be an object');
+  check(state, authentication?.mode === 'direct_email_password', 'reviewEnvironment.authentication.mode must be direct_email_password');
+  for (const key of ['additionalSetupRequired', 'thirdPartyIdentityProviderRequired']) {
+    check(state, authentication?.[key] === false, `reviewEnvironment.authentication.${key} must be false`);
+  }
+  for (const key of ['surface', 'credentialSource', 'requiredEvidence']) {
+    checkString(state, authentication?.[key], `reviewEnvironment.authentication.${key}`);
+  }
+  check(state, isObject(environment?.reviewerProtocol), 'reviewEnvironment.reviewerProtocol must be an object');
+  for (const key of ['startingState', 'authenticationProof', 'discoveryProbeProof', 'safetyBoundary']) {
+    checkString(state, environment?.reviewerProtocol?.[key], `reviewEnvironment.reviewerProtocol.${key}`);
   }
   const serialized = JSON.stringify(fixtures);
   check(state, !/\b(?:Kevin|Astuhuaman)\b/i.test(serialized), 'submission fixtures must not contain a real reviewer identity');
@@ -662,6 +749,7 @@ async function runLive(state, {
         if (isObject(asMetadata)) {
           check(state, typeof asMetadata.issuer === 'string', 'authorization-server metadata must include issuer');
           check(state, asMetadata.issuer === authorizationServer, `issuer must exactly equal protected authorization_servers entry (issuer=${asMetadata.issuer}, advertised=${authorizationServer})`);
+          check(state, Array.isArray(asMetadata.response_types_supported) && asMetadata.response_types_supported.includes('code'), 'authorization-server metadata must advertise authorization-code response type code');
           check(state, Array.isArray(asMetadata.code_challenge_methods_supported) && asMetadata.code_challenge_methods_supported.includes('S256'), 'authorization-server metadata must advertise PKCE S256');
           for (const endpoint of ['authorization_endpoint', 'token_endpoint']) {
             try {
