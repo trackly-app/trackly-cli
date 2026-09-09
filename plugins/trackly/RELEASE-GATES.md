@@ -1,6 +1,6 @@
 # Release gates
 
-The package may be tested locally before these gates are complete. It must not be submitted to OpenAI or published publicly until every gate is satisfied.
+These gates govern OpenAI submission and publication of the plugin listing. Repository merges and npm CLI releases follow the normal reviewed release workflow; neither proves OpenAI portal acceptance. The plugin must not be submitted to OpenAI or published in its directory until every applicable gate below is satisfied.
 
 ## OpenAI Platform draft
 
@@ -27,8 +27,14 @@ The package may be tested locally before these gates are complete. It must not b
 
 ### Automated package preflight
 
-- Run `npm run test:plugin-submission` from this checkout. It validates the
-  final-directory manifest limits, HTTPS/legal URLs, support URL parity,
+The validation limits follow the [OpenAI submission error reference](https://developers.openai.com/plugins/deploy/submission-errors); the portal remains authoritative.
+
+- Run `npm run test:plugin-submission` from this source checkout. This is a
+  maintainer command, like the hosted-contract checks, and is not a command
+  shipped to npm consumers. The plugin directory is a separate submission
+  artifact, not part of the CLI tarball. Portal Support URL parity remains a
+  manual check. The preflight validates the
+  final-directory manifest limits, HTTPS/legal URLs, listing support URL validity,
   package paths and assets, absence of developer-mode app bindings, skill
   frontmatter, credential assignments, and the reviewer fixture shape.
 - After the production deployment is frozen, run
@@ -93,7 +99,7 @@ The package may be tested locally before these gates are complete. It must not b
 
 - Require an unauthenticated HTTP 200 response from `https://usetrackly.app/plugins/trackly` and verify its logo, support, privacy, and terms links before submission.
 - Run `npm run test:hosted-contract` without `TRACKLY_BACKEND_DIR` and require the checked-in hosted-tool contract fixture to pass in the standalone CLI checkout.
-- Separately run `TRACKLY_BACKEND_DIR=/absolute/path/to/granola-followup-app npm run test:hosted-contract` against the exact backend release candidate and require the executable plugin catalog to match the locked 18-tool allowlist.
+- Separately run `TRACKLY_BACKEND_DIR=/absolute/path/to/granola-followup-app npm run test:hosted-contract` against the exact backend release candidate and require the executable plugin catalog to match the locked 21-tool allowlist.
 - Run `TRACKLY_BACKEND_DIR=/absolute/path/to/granola-followup-app npm run test:review-auth-contract` against the exact deployed reviewer-auth runtime and require its dedicated identity, credential, migration, token-lifecycle, and plugin-resource bindings to pass. This is independent of the fixture-pinned Trackly Apply provenance gate above; do not require both checks to use the same historical backend checkout.
 - Execute all six internal positive and all three negative `listing/submission-tests.json` fixtures with the synthetic reviewer account. The OpenAI portal accepts exactly five positive cases: submit only the five IDs listed in `reviewEnvironment.portalPositiveCaseIds`, plus all three negative cases. Preserve the result shapes, tool sequence, manual-resume filename confirmation, and forbidden-action evidence for the submission packet.
 - Use the reviewer-facing briefs in `listing/submission-tests.json` when copying

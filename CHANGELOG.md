@@ -9,6 +9,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Recover a complete Claude terminal review when the model wraps the taught
+  metadata or clean-verdict lines in inline code, or prefixes the required
+  header with planning text. Issue autolinks, trailing prose, and incomplete
+  last results still fail closed.
+
+## [0.18.3] - 2026-09-09
+
+### Changed
+
+- Harden the separate OpenAI plugin submission preflight and enforce it in CLI CI.
+- Clarify listing copy, synthetic reviewer cases, and the distinction between a CLI release and OpenAI portal acceptance.
+
+## [0.18.2] - 2026-09-09
+
+### Security
+
+- Pin `hono` to `4.13.7` so a clean packed-consumer `npm run security:audit`
+  closes GHSA-gqvv-2mrq-wpjv (`toSSG()` path traversal), GHSA-g6gw-c38x-mqfc
+  (`parseBody()` memory exhaustion), and GHSA-crvj-82cr-hjcx (query-parser
+  fragment differentials). Patched in 4.13.5+; other dependencies, the stdio
+  MCP transport, and Apply schemas are unchanged. The local MCP server still
+  does not initialize an HTTP server.
+
+## [0.18.1] - 2026-09-05
+
+### Fixed
+
+- Align Apply access-review parsing and guidance with the compact 3.8.x
+  proposal wire shape, including all-deferred and recovery-blocked zero-member reviews and active
+  execution recovery envelopes, while retaining the 3.8.1 provider-scope
+  contract for the coordinated backend release. Legacy all-deferred receipts
+  without deferment mappings remain safe stop/expiry states until refreshed.
+  Proposal approval and replay bindings now use bounded in-memory caches.
+- Fail the Claude review workflow closed when its recovered output contains
+  intermediate planning text instead of a complete terminal review verdict.
+- Recapture the hosted contract fixture from the deployed backend merge of
+  provider-wide deferments (close-ai #1769, merge `254e1c6f`) after migration
+  507 completed, lock the backend's `owner_scoped_list_create_and_idempotent_clear`
+  deferment lifecycle, update the locked start-or-resume data flow, and let the
+  reachability check accept hoisted helper function declarations.
+- Bind the hosted plugin lifecycle into the contract fixture and run the local
+  registration reachability checks in fixture-only mode, so CI can no longer
+  pass while the backend-coupled verifier would fail.
+- Validate every Claude review finding location against a trusted changed-line
+  map built from the exact diff the reviewer saw, covering added and deleted
+  lines and ignoring forged file headers; a misstated path or line now fails
+  the terminal review record closed, and the trusted base extractor must
+  support that validation before a record is published. Diffs containing
+  binary or otherwise opaque entries are reviewed as partial coverage.
+
+## [0.18.0] - 2026-09-04
+
+### Added
+
+- Published MCP contract 3.8.1 access knowledge: frozen `proposedWave`
+  identities and receipts, `nextAction: access_review`, and hash-bound
+  `accessReviewApproval` on `trackly_advance_apply_execution`.
+- Added `trackly_list_apply_access_deferments`, `trackly_defer_apply_access`,
+  and `trackly_clear_apply_access_deferment` so agents can persist or clear
+  job/company/provider deferments from a Trackly `jobId` without submitting
+  provider names, URLs, or raw chat. Provider scope is the approved global
+  policy boundary and applies across companies until explicitly cleared.
+- Updated Trackly Apply skill 4.8.0 and protocol 3.7.0 so historical OPEN
+  can schedule work but a fresh live probe remains required before form
+  filling.
+
+### Fixed
+
 - `trackly mcp` now closes its server and flushes bounded analytics when the
   parent client closes stdin or its output pipe, avoiding orphaned processes
   and noisy `EPIPE` crashes during client shutdown.
