@@ -21,6 +21,9 @@ const YAML = require('yaml');
 const { PNG } = require('pngjs');
 const jpeg = require('jpeg-js');
 const zlib = require('node:zlib');
+const sharp = require('sharp');
+const { SaxesParser } = require('saxes');
+const { TextDecoder } = require('node:util');
 
 const ROOT = path.resolve(__dirname, '..');
 const PLUGIN = path.join(ROOT, 'plugins', 'trackly');
@@ -465,7 +468,55 @@ function validateScreenshot(state, file, relative) {
   }
 }
 
-function validateAssetsAndTree(state, manifest = readJson(MANIFEST_PATH)) {
+async function validateBranding(state, file, relative) {
+  const extension = path.extname(file).toLowerCase();
+  if (!['.svg', '.png', '.jpg', '.jpeg', '.webp'].includes(extension)) {
+    addError(state, `${relative} branding must be SVG, PNG, JPEG or WebP`);
+    return;
+  }
+  if (fs.statSync(file).size > 5 * 1024 * 1024) {
+    addError(state, `${relative} branding must not exceed 5 MiB`);
+    return;
+  }
+  try {
+    const data = fs.readFileSync(file);
+    if (extension === '.svg') {
+      const source = new TextDecoder('utf-8', { fatal: true }).decode(data);
+      let root;
+      const parser = new SaxesParser({ xmlns: true });
+      parser.on('opentag', tag => { if (!root) root = tag; });
+      parser.write(source).close();
+      if (!root || root.local !== 'svg' || (root.uri && root.uri !== 'http://www.w3.org/2000/svg')) throw new Error('invalid SVG root');
+      const attribute = name => root.attributes[name]?.value;
+      const numeric = value => typeof value === 'string' && /^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?$/i.test(value.trim()) && Number.isFinite(Number(value));
+      const viewBox = attribute('viewBox');
+      let width; let height;
+      if (viewBox !== undefined) {
+        const dimensions = viewBox.trim().split(/[\s,]+/);
+        if (dimensions.length !== 4 || !dimensions.every(numeric)) throw new Error('invalid SVG dimensions');
+        width = Number(dimensions[2]); height = Number(dimensions[3]);
+      } else {
+        if (!numeric(attribute('width')) || !numeric(attribute('height'))) throw new Error('missing SVG dimensions');
+        width = Number(attribute('width')); height = Number(attribute('height'));
+      }
+      check(state, width === height && width >= 48, `${relative} must declare square SVG dimensions of at least 48 pixels`);
+      return;
+    }
+    const expected = extension === '.jpg' || extension === '.jpeg' ? 'jpeg' : extension.slice(1);
+    const signatureMatches = expected === 'png' ? data.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+      : expected === 'jpeg' ? data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff
+        : data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP';
+    if (!signatureMatches) throw new Error('branding format mismatch');
+    const decoder = sharp(data, { failOn: 'warning', limitInputPixels: 4096 * 4096 }).timeout({ seconds: 10 });
+    const metadata = await decoder.metadata();
+    if (metadata.format !== expected || metadata.width !== metadata.height || metadata.width < 48 || metadata.width > 4096) throw new Error('invalid raster branding');
+    await decoder.raw().toBuffer();
+  } catch {
+    addError(state, `${relative} branding must decode in its declared format; raster dimensions must be square and 48–4096 pixels, SVG must be valid XML`);
+  }
+}
+
+async function validateAssetsAndTree(state, manifest = readJson(MANIFEST_PATH)) {
   const referenced = [manifest?.interface?.composerIcon, manifest?.interface?.logo, manifest?.interface?.logoDark]
     .map(relative => ({ relative, branding: true }));
   const screenshots = manifest?.interface?.screenshots;
@@ -491,12 +542,7 @@ function validateAssetsAndTree(state, manifest = readJson(MANIFEST_PATH)) {
     if (!contained) continue;
     check(state, fs.existsSync(resolved) && fs.statSync(resolved).isFile(), `referenced asset is missing: ${relative}`);
     if (!branding && fs.existsSync(resolved) && fs.statSync(resolved).isFile()) validateScreenshot(state, resolved, relative);
-    if (branding && resolved.endsWith('.svg') && fs.existsSync(resolved) && fs.statSync(resolved).isFile() && fs.statSync(resolved).size <= 100 * 1024 * 1024) {
-      const svg = fs.readFileSync(resolved, 'utf8');
-      check(state, /^\s*<svg\b/i.test(svg), `${relative} must be valid SVG/XML`);
-      const dimensions = svg.match(/viewBox\s*=\s*["']0\s+0\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)["']/i);
-      check(state, dimensions && Number(dimensions[1]) > 0 && Number(dimensions[1]) === Number(dimensions[2]), `${relative} must declare a square viewBox`);
-    }
+    if (branding && fs.existsSync(resolved) && fs.statSync(resolved).isFile()) await validateBranding(state, resolved, relative);
   }
 
   let count = 0;
@@ -539,6 +585,7 @@ function validateSubmissionTests(state, fixtures) {
   const positive = Array.isArray(fixtures.positive) ? fixtures.positive : [];
   const negative = Array.isArray(fixtures.negative) ? fixtures.negative : [];
   const allIds = [...positive, ...negative].map((item) => item?.id);
+  allIds.forEach((id, index) => checkString(state, id, `submission fixture[${index}].id`));
   check(state, new Set(allIds).size === allIds.length, 'submission fixture IDs must be unique');
   check(state, Array.isArray(fixtures.reviewEnvironment?.portalPositiveCaseIds), 'reviewEnvironment.portalPositiveCaseIds must be an array');
   check(state, JSON.stringify(fixtures.reviewEnvironment?.portalPositiveCaseIds) === JSON.stringify(EXPECTED_PORTAL_POSITIVE_IDS), 'portal positive case IDs must remain the exact five-case sequence');
@@ -596,7 +643,7 @@ function validateSubmissionTests(state, fixtures) {
   check(state, !/(?:password|secret)\s*[:=]\s*["'][^"']{8,}["']/i.test(serialized), 'submission fixtures must not contain credential values');
 }
 
-function runStatic() {
+async function runStatic() {
   const state = { errors: [], warnings: [] };
   let manifest;
   let metadata;
@@ -613,7 +660,7 @@ function runStatic() {
   validateMetadata(state, metadata);
   validateMcpConfig(state, metadata);
   validateSkills(state);
-  validateAssetsAndTree(state, manifest);
+  await validateAssetsAndTree(state, manifest);
   validateSubmissionTests(state, fixtures);
   return state;
 }
@@ -721,7 +768,7 @@ async function checkPublicPage(state, url, label) {
       if (typeof response.headers.location !== 'string' || !response.headers.location.trim()) throw new Error('redirect must include Location');
       currentUrl = parseHttpsUrl(new URL(response.headers.location, currentUrl).href, 'redirect URL').href;
     }
-    check(state, response.statusCode >= 200 && response.statusCode < 300, `${label} must be publicly reachable with HTTP 2xx (got ${response.statusCode})`);
+    check(state, response.statusCode === 200, `${label} must be publicly reachable with HTTP 200 (got ${response.statusCode})`);
   } catch (error) {
     addError(state, `${label} probe failed: ${error.message}`);
   }
@@ -801,7 +848,16 @@ async function runLive(state, {
   check(state, isObject(protectedMetadata), 'protected-resource metadata must be a JSON object');
   if (isObject(protectedMetadata)) {
     check(state, protectedMetadata.resource === mcpUrl, 'protected-resource metadata resource must exactly match the plugin MCP URL');
-    const authorizationServer = (Array.isArray(protectedMetadata.authorization_servers) ? protectedMetadata.authorization_servers[0] : undefined);
+    const servers = protectedMetadata.authorization_servers;
+    let serversValid = Array.isArray(servers) && servers.length > 0;
+    if (Array.isArray(servers)) {
+      for (const server of servers) {
+        try { wellKnownAuthorizationServerUrl(server); }
+        catch { serversValid = false; addError(state, 'every authorization_servers entry must be a valid HTTPS issuer without query or fragment'); }
+      }
+    }
+    if (serversValid && servers.length > 1) addWarning(state, 'multiple authorization servers advertised; URL syntax is checked for all, but live discovery probes only the first');
+    const authorizationServer = serversValid ? servers[0] : undefined;
     check(state, typeof authorizationServer === 'string', 'protected-resource metadata must advertise an authorization server');
     if (typeof authorizationServer === 'string') {
       try {
@@ -906,7 +962,7 @@ async function main(argv = process.argv.slice(2)) {
   const challengeBaseUrl = challengeFlag
     ? challengeFlag.slice('--challenge-base-url='.length)
     : (challengeIndex >= 0 ? argv[challengeIndex + 1] : process.env.OPENAI_CHALLENGE_BASE_URL);
-  const state = runStatic();
+  const state = await runStatic();
   const booleanFlags = new Set(['--live', '--strict-origins', '--require-challenge', '--json']);
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];

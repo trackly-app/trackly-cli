@@ -48,9 +48,9 @@ test('arbitrary files do not count as skills', () => {
   const api = load({ 'node:fs': { ...fs, readdirSync: () => [{ name: '.gitkeep', isDirectory: () => false }] } });
   const s = state(); api.validateSkills(s); assert(s.errors.some((e) => /at least one skill/.test(e)));
 });
-test('non-square SVG fails', () => {
-  const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) { const value = fs.readFileSync(file, ...args); return String(file).endsWith('.svg') ? '<svg viewBox="0 0 1024 512"></svg>' : value; } } });
-  const s = state(); api.validateAssetsAndTree(s); assert(s.errors.some((e) => /square viewBox/.test(e)));
+test('non-square SVG fails', async () => {
+  const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) { const value = fs.readFileSync(file, ...args); return String(file).endsWith('.svg') ? Buffer.from('<svg viewBox="0 0 1024 512"></svg>') : value; } } });
+  const s = state(); await api.validateAssetsAndTree(s); assert(s.errors.some((e) => /square/.test(e)));
 });
 test('unknown and empty flags fail', async () => {
   const api = load();
@@ -83,7 +83,7 @@ test('strict origin probes reject non-401 and network failures', async () => {
     assert.equal(s.errors.filter((e) => /origin/i.test(e)).length, 4);
   }
 });
-test('credential scan detects assignments across chunk boundaries and skips oversize files', () => {
+test('credential scan detects assignments across chunk boundaries and skips oversize files', async () => {
   const target = path.join(root, 'plugins/trackly/synthetic.txt');
   for (const oversized of [false, true]) {
     const content = Buffer.from('x'.repeat(65530) + '\nOPENAI_API_KEY' + ' '.repeat(70000) + '= synthetic-test-value');
@@ -95,15 +95,15 @@ test('credential scan detects assignments across chunk boundaries and skips over
       readSync(fd, buffer, start, length, position) { if (fd !== -123) return fs.readSync(fd, buffer, start, length, position); const count = content.copy(buffer, start, offset, offset + length); offset += count; return count; },
       closeSync(fd) { if (fd !== -123) fs.closeSync(fd); },
     };
-    const s = state(); load({ 'node:fs': fakeFs }).validateAssetsAndTree(s);
+    const s = state(); await load({ 'node:fs': fakeFs }).validateAssetsAndTree(s);
     assert.equal(opened, !oversized);
     assert(s.errors.some((e) => oversized ? /exceeds 100 MiB/.test(e) : /credential assignment/.test(e)));
   }
 });
-test('malformed top-level JSON becomes validation errors', () => {
+test('malformed top-level JSON becomes validation errors', async () => {
   for (const suffix of ['plugin.json', 'metadata.json', '.mcp.json']) {
     const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) { return String(file).endsWith(suffix) ? 'null' : fs.readFileSync(file, ...args); } } });
-    let result; assert.doesNotThrow(() => { result = api.runStatic(); }); assert(result.errors.length);
+    const result = await api.runStatic(); assert(result.errors.length);
   }
 });
 test('live discovery rejects JSON null and arrays', async () => {
@@ -163,7 +163,7 @@ test('challenge origin accepts only the MCP host or approved Trackly parent', ()
   }
 });
 
-test('tree walk stops at the rejected depth boundary', () => {
+test('tree walk stops at the rejected depth boundary', async () => {
   let deepestRead = 0;
   const pluginRoot = path.join(root, 'plugins/trackly');
   const api = load({ 'node:fs': { ...fs, readdirSync(dir) {
@@ -172,7 +172,7 @@ test('tree walk stops at the rejected depth boundary', () => {
     assert(depth <= 20, 'must not read a directory already rejected as too deep');
     return [{ name: 'nested', isDirectory: () => true, isFile: () => false }];
   } } });
-  const s = state(); api.validateAssetsAndTree(s);
+  const s = state(); await api.validateAssetsAndTree(s);
   assert(s.errors.some(error => /too deep/.test(error)));
   assert.equal(deepestRead, 20);
 });
@@ -212,14 +212,14 @@ test('strict origin 401 challenges require matching HTTPS Bearer resource metada
   }
 });
 
-test('screenshots reject non-array, missing file, and escaping paths', () => {
+test('screenshots reject non-array, missing file, and escaping paths', async () => {
   for (const screenshots of ['not-an-array', ['./assets/does-not-exist.png'], ['../outside.png']]) {
     const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
     manifest.interface.screenshots = screenshots;
     const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) {
       return String(file).endsWith('/.codex-plugin/plugin.json') ? JSON.stringify(manifest) : fs.readFileSync(file, ...args);
     } } });
-    const s = state(); api.validateManifest(s, manifest, json('plugins/trackly/listing/metadata.json')); api.validateAssetsAndTree(s);
+    const s = state(); api.validateManifest(s, manifest, json('plugins/trackly/listing/metadata.json')); await api.validateAssetsAndTree(s);
     assert(s.errors.some((e) => /screenshot|does-not-exist|outside/.test(e)), JSON.stringify(screenshots));
   }
 });
@@ -285,7 +285,7 @@ test('multiline descriptions remain valid and support URL belongs only in listin
   assert.deepEqual(listing.errors, []);
 });
 
-test('screenshots decode PNG/JPEG and enforce 706 by 400..860 pixels', () => {
+test('screenshots decode PNG/JPEG and enforce 706 by 400..860 pixels', async () => {
   const { PNG } = require('pngjs');
   const jpeg = require('jpeg-js');
   for (const [width, height, type, valid] of [[706, 400, 'png', true], [706, 860, 'jpeg', true], [705, 400, 'png', false], [706, 399, 'jpeg', false], [706, 861, 'png', false], [706, 400, 'corrupt', false]]) {
@@ -300,7 +300,7 @@ test('screenshots decode PNG/JPEG and enforce 706 by 400..860 pixels', () => {
       statSync: file => file === target ? { size: data.length, isFile: () => true } : fs.statSync(file),
       readFileSync: (file, ...args) => file === target ? data : fs.readFileSync(file, ...args),
     } });
-    const s = state(); api.validateAssetsAndTree(s, manifest);
+    const s = state(); await api.validateAssetsAndTree(s, manifest);
     assert.equal(s.errors.length === 0, valid, `${width}x${height} ${type}: ${s.errors.join('; ')}`);
   }
 });
@@ -371,7 +371,7 @@ function pngChunk(type, payload) {
   return Buffer.concat([header, namedPayload, checksum]);
 }
 
-test('unsafe PNG headers and interlaced inflation stop before the image decoder allocates', () => {
+test('unsafe PNG headers and interlaced inflation stop before the image decoder allocates', async () => {
   const { PNG } = require('pngjs');
   const zlib = require('node:zlib');
   const encoded = PNG.sync.write({ width: 706, height: 400, data: Buffer.alloc(706 * 400 * 4, 255) });
@@ -394,7 +394,7 @@ test('unsafe PNG headers and interlaced inflation stop before the image decoder 
         readFileSync: (file, ...args) => file === target ? data : fs.readFileSync(file, ...args),
       },
     });
-    const s = state(); api.validateAssetsAndTree(s, manifest);
+    const s = state(); await api.validateAssetsAndTree(s, manifest);
     assert(s.errors.some(error => /screenshot/.test(error)));
     assert.equal(decoderCalls, 0, 'unsafe PNG must be rejected before full decoder allocation');
   }
@@ -432,7 +432,7 @@ test('OAuth authorization and token endpoints reject URL fragments', async () =>
   }
 });
 
-test('nonempty screenshot count must match normalized prompt count', () => {
+test('nonempty screenshot count must match normalized prompt count', async () => {
   const { PNG } = require('pngjs');
   const data = PNG.sync.write({ width: 706, height: 400, data: Buffer.alloc(706 * 400 * 4, 255) });
   const target = path.join(root, 'plugins/trackly/assets/synthetic-count.png');
@@ -444,7 +444,7 @@ test('nonempty screenshot count must match normalized prompt count', () => {
   for (const [screenshots, prompts, valid] of [[[], ['One'], true], [['./assets/synthetic-count.png'], 'One', true], [['./assets/synthetic-count.png'], ['One', 'Two'], false]]) {
     const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
     manifest.interface.screenshots = screenshots; manifest.interface.defaultPrompt = prompts;
-    const s = state(); api.validateManifest(s, manifest, json('plugins/trackly/listing/metadata.json')); api.validateAssetsAndTree(s, manifest);
+    const s = state(); api.validateManifest(s, manifest, json('plugins/trackly/listing/metadata.json')); await api.validateAssetsAndTree(s, manifest);
     assert.equal(s.errors.length === 0, valid, s.errors.join('; '));
   }
 });
@@ -501,10 +501,10 @@ test('MCP configuration rejects unknown top-level fields', () => {
   assert(s.errors.length > 0);
 });
 
-test('asset paths reject parent segments even when normalization stays within plugin', () => {
+test('asset paths reject parent segments even when normalization stays within plugin', async () => {
   const manifest = json('plugins/trackly/.codex-plugin/plugin.json');
   manifest.interface.logo = './assets/../' + manifest.interface.logo.slice(2);
-  const s = state(); load().validateAssetsAndTree(s, manifest);
+  const s = state(); await load().validateAssetsAndTree(s, manifest);
   assert(s.errors.length > 0);
 });
 
@@ -533,5 +533,83 @@ test('existing skill companion YAML validates mappings, fields, policies, and ic
     } } });
     const s = state(); assert.doesNotThrow(() => api.validateSkills(s));
     assert.equal(s.errors.length === 0, expected, `${source}: ${s.errors.join('; ')}`);
+  }
+});
+
+test('all fixture IDs must be nonempty strings including internal-only cases', () => {
+  for (const id of [undefined, null, 42, '']) {
+    const fixtures = json('plugins/trackly/listing/submission-tests.json');
+    fixtures.positive.find(item => item.id === 'resume-apply').id = id;
+    const s = state(); load().validateSubmissionTests(s, fixtures);
+    assert(s.errors.length > 0, String(id));
+  }
+});
+
+test('public pages require complete HTTP 200 responses', async () => {
+  for (const status of [200, 204, 206]) {
+    const api = load({ 'node:https': network(() => ({ status })) });
+    const s = state(); await api.checkPublicPage(s, 'https://example.com/page', 'page');
+    assert.equal(s.errors.length === 0, status === 200, String(status));
+  }
+});
+
+test('every authorization server URL is validated before selecting the first issuer', async () => {
+  for (const second of [42, 'http://second.example.com', 'https://second.example.com?query', 'https://second.example.com#fragment', 'https://second.example.com']) {
+    const selected = [];
+    const api = load({ 'node:https': network(o => {
+      if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
+      if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com', second] }) };
+      if (o.path.includes('oauth-authorization-server')) {
+        selected.push(o.hostname);
+        return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
+      }
+      return { status: 404 };
+    }) });
+    const s = state(); await api.runLive(s, { checkPublicPages: false });
+    const valid = second === 'https://second.example.com';
+    assert.equal(s.errors.length === 0, valid, String(second));
+    assert.deepEqual(selected, valid ? ['example.com'] : []);
+  }
+});
+
+test('branding fully decodes supported raster formats with square size and file bounds', async () => {
+  const sharp = require('sharp');
+  for (const [format, width, height, valid, corrupt, oversized] of [
+    ['png', 48, 48, true], ['jpeg', 48, 48, true], ['webp', 48, 48, true],
+    ['png', 48, 49, false], ['png', 47, 47, false], ['png', 4097, 4097, false],
+    ['png', 48, 48, false, true], ['png', 48, 48, false, false, true],
+  ]) {
+    const data = corrupt ? Buffer.from('invalid image') : await sharp({ create: { width, height, channels: 3, background: '#ffffff' } }).toFormat(format).toBuffer();
+    const target = path.join(root, `plugins/trackly/assets/synthetic-branding.${format}`);
+    const manifest = json('plugins/trackly/.codex-plugin/plugin.json'); manifest.interface.logo = './assets/' + path.basename(target);
+    const api = load({ 'node:fs': { ...fs,
+      existsSync: file => file === target || fs.existsSync(file),
+      statSync: file => file === target ? { size: oversized ? 5 * 1024 * 1024 + 1 : data.length, isFile: () => true } : fs.statSync(file),
+      readFileSync: (file, ...args) => file === target ? data : fs.readFileSync(file, ...args),
+    } });
+    const s = state(); await api.validateAssetsAndTree(s, manifest);
+    assert.equal(s.errors.length === 0, valid, `${format} ${width}x${height} corrupt=${corrupt} oversized=${oversized}: ${s.errors.join('; ')}`);
+  }
+});
+
+test('branding validates SVG XML, dimensions, and raster extension agreement', async () => {
+  const sharp = require('sharp');
+  const png = await sharp({ create: { width: 48, height: 48, channels: 3, background: '#ffffff' } }).png().toBuffer();
+  for (const [name, data, valid] of [
+    ['valid.svg', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"></svg>'), true],
+    ['malformed.svg', Buffer.from('<svg viewBox="0 0 48 48"><g></svg>'), false],
+    ['rectangle.svg', Buffer.from('<svg viewBox="0 0 48 96"></svg>'), false],
+    ['tiny.svg', Buffer.from('<svg viewBox="0 0 47 47"></svg>'), false],
+    ['mismatch.webp', png, false],
+  ]) {
+    const target = path.join(root, 'plugins/trackly/assets/' + name);
+    const manifest = json('plugins/trackly/.codex-plugin/plugin.json'); manifest.interface.logo = './assets/' + name;
+    const api = load({ 'node:fs': { ...fs,
+      existsSync: file => file === target || fs.existsSync(file),
+      statSync: file => file === target ? { size: data.length, isFile: () => true } : fs.statSync(file),
+      readFileSync: (file, ...args) => file === target ? data : fs.readFileSync(file, ...args),
+    } });
+    const s = state(); await api.validateAssetsAndTree(s, manifest);
+    assert.equal(s.errors.length === 0, valid, `${name}: ${s.errors.join('; ')}`);
   }
 });

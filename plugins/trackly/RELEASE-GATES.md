@@ -26,9 +26,9 @@ These gates govern OpenAI submission and publication of the plugin listing. Repo
 
 ### Automated package preflight
 
-The source preflight uses development-only YAML and PNG/JPEG parsers. It checks
+The offline source preflight uses development-only YAML, XML and image parsers. It checks
 actual screenshot dimensions and decoding, required reviewer-environment fields,
-authorization-code discovery, and legal-URL parity. The reviewed manual-submit
+and legal-URL parity. Live mode checks authorization-code discovery. The reviewed manual-submit
 sentence is pinned verbatim (apart from Unicode/whitespace normalization); changing that safety claim
 requires reviewing and updating the contract, not just retaining a keyword.
 Non-empty screenshot lists require one image per starter prompt, and portal
