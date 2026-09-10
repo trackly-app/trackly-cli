@@ -798,3 +798,41 @@ test('skill icons must decode as images while small valid icons are supported', 
     const s = state(); await api.validateSkills(s); assert.equal(s.errors.length === 0, valid, `${name}: ${s.errors.join('; ')}`);
   }
 });
+
+test('credential scan rejects concrete reviewer email and user ID assignments', () => {
+  for (const key of ['MCP_REVIEW_LOGIN_EMAIL', 'MCP_REVIEW_LOGIN_USER_ID']) {
+    let read = false; const content = Buffer.from(`${key}=synthetic-reviewer-value`);
+    const api = load({ 'node:fs': { ...fs, openSync: () => -123, closeSync: () => {}, readSync(fd, buffer) {
+      if (read) return 0; read = true; content.copy(buffer); return content.length;
+    } } });
+    assert.equal(api.containsCredentialAssignment('synthetic'), true, key);
+  }
+});
+
+test('listing metadata rejects TODO placeholders recursively', () => {
+  const metadata = json('plugins/trackly/listing/metadata.json'); metadata.tagline = '[TODO: tagline]';
+  const s = state(); load().validateMetadata(s, metadata); assert(s.errors.some(error => /TODO/.test(error)));
+});
+
+test('unreadable or directory SKILL.md becomes a validation error', async () => {
+  for (const mode of ['directory', 'stat-error', 'read-error']) {
+    const isSkill = file => String(file).endsWith('/SKILL.md');
+    const api = load({ 'node:fs': { ...fs,
+      lstatSync(file) { if (isSkill(file) && mode === 'stat-error') throw new Error('synthetic stat failure'); return isSkill(file) && mode === 'directory' ? { isFile: () => false, isDirectory: () => true } : fs.lstatSync(file); },
+      readFileSync(file, ...args) { if (isSkill(file) && mode === 'read-error') throw new Error('synthetic read failure'); return fs.readFileSync(file, ...args); },
+    } });
+    const s = state(); await assert.doesNotReject(() => api.validateSkills(s)); assert(s.errors.length > 0, mode);
+  }
+});
+
+test('advertised token authentication methods support the selected client registration mode', async () => {
+  for (const [urlMode, methods, valid] of [[true, undefined, true], [true, ['none'], true], [true, ['client_secret_basic'], false], [false, undefined, true], [false, ['none'], true], [false, ['client_secret_basic'], true], [false, ['client_secret_post'], true], [false, ['private_key_jwt'], false]]) {
+    const api = load({ 'node:https': network(o => {
+      if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
+      if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', ...(urlMode ? { client_id_metadata_document_supported: true } : { registration_endpoint: 'https://example.com/register' }), response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token', token_endpoint_auth_methods_supported: methods }) };
+      return { status: 404 };
+    }) });
+    const s = state(); await api.runLive(s, { checkPublicPages: false }); assert.equal(s.errors.length === 0, valid, `${urlMode} ${methods}: ${s.errors.join('; ')}`);
+  }
+});

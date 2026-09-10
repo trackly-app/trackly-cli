@@ -264,6 +264,7 @@ function validateManifest(state, manifest, metadata) {
 function validateMetadata(state, metadata) {
   check(state, isObject(metadata), 'listing metadata must be a JSON object');
   if (!isObject(metadata)) return;
+  check(state, !/\[TODO[: ]/i.test(JSON.stringify(metadata)), 'listing metadata must not contain TODO placeholders');
   checkString(state, metadata.pluginName, 'listing.pluginName', { max: 64, oneLine: true });
   checkString(state, metadata.shortDescription, 'listing.shortDescription', { max: 30, oneLine: true });
   checkString(state, metadata.tagline, 'listing.tagline', { max: 120, oneLine: true });
@@ -388,7 +389,17 @@ async function validateSkills(state) {
     const skillPath = path.join(skillsPath, entry.name, 'SKILL.md');
     check(state, fs.existsSync(skillPath), `skill ${entry.name} must contain SKILL.md`);
     if (!fs.existsSync(skillPath)) continue;
-    const source = fs.readFileSync(skillPath, 'utf8');
+    let source;
+    try {
+      if (!fs.lstatSync(skillPath).isFile()) {
+        addError(state, `skill ${entry.name} SKILL.md must be a regular file`);
+        continue;
+      }
+      source = fs.readFileSync(skillPath, 'utf8');
+    } catch {
+      addError(state, `skill ${entry.name} SKILL.md could not be read`);
+      continue;
+    }
     const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
     check(state, Boolean(match), `skill ${entry.name} must begin with YAML frontmatter`);
     if (!match) continue;
@@ -414,7 +425,7 @@ async function validateSkills(state) {
 }
 
 function containsCredentialAssignment(file) {
-  const names = ['MCP_REVIEW_LOGIN_PASSWORD', 'NODE_AUTH_TOKEN', 'NPM_TOKEN', 'NPM_ACCESS_TOKEN', 'OPENAI_API_KEY', '_authToken', '_auth', '_password', 'Authorization', 'authorization', 'access_token'];
+  const names = ['MCP_REVIEW_LOGIN_PASSWORD', 'MCP_REVIEW_LOGIN_EMAIL', 'MCP_REVIEW_LOGIN_USER_ID', 'NODE_AUTH_TOKEN', 'NPM_TOKEN', 'NPM_ACCESS_TOKEN', 'OPENAI_API_KEY', '_authToken', '_auth', '_password', 'Authorization', 'authorization', 'access_token'];
   const fd = fs.openSync(file, 'r');
   const buffer = Buffer.alloc(64 * 1024);
   const decoder = new StringDecoder('utf8');
@@ -958,6 +969,13 @@ async function runLive(state, {
           check(state, Array.isArray(asMetadata.code_challenge_methods_supported) && asMetadata.code_challenge_methods_supported.includes('S256'), 'authorization-server metadata must advertise PKCE S256');
           check(state, asMetadata.client_id_metadata_document_supported === true || typeof asMetadata.registration_endpoint === 'string',
             'authorization-server metadata must support URL-based client IDs or dynamic client registration');
+          if (asMetadata.token_endpoint_auth_methods_supported !== undefined) {
+            const methods = asMetadata.token_endpoint_auth_methods_supported;
+            const compatible = asMetadata.client_id_metadata_document_supported === true
+              ? ['none'] : ['none', 'client_secret_basic', 'client_secret_post'];
+            check(state, Array.isArray(methods) && compatible.some(method => methods.includes(method)),
+              'authorization-server token authentication methods must support the selected client registration mode');
+          }
           if (asMetadata.registration_endpoint !== undefined) {
             try {
               const registrationUrl = parseHttpsUrl(asMetadata.registration_endpoint, 'authorization-server registration_endpoint');
