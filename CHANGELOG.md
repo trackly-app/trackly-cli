@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   header with planning text. Issue autolinks, trailing prose, and incomplete
   last results still fail closed.
 
+## [0.18.3] - 2026-09-09
+
+### Changed
+
+- Harden the separate OpenAI plugin submission preflight and enforce it in CLI CI.
+- Clarify listing copy, synthetic reviewer cases, and the distinction between a CLI release and OpenAI portal acceptance.
+
 ## [0.18.2] - 2026-09-09
 
 ### Security

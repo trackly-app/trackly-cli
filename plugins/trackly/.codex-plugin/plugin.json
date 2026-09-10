@@ -1,7 +1,7 @@
 {
   "name": "trackly",
-  "version": "1.0.0",
-  "description": "Find openings as they appear and fill approved applications for your review.",
+  "version": "1.0.1",
+  "description": "Find jobs and fill forms",
   "author": {
     "name": "trackly",
     "email": "hello@usetrackly.app",
@@ -21,8 +21,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "trackly",
-    "shortDescription": "Real-time job search and application filling",
-    "longDescription": "trackly finds openings as they appear. You decide what to pursue. trackly Apply fills approved applications for your review, and you always submit manually.",
+    "shortDescription": "Find jobs and fill forms",
+    "longDescription": "trackly finds openings as they appear using your preferences and job metadata. You decide what to pursue. trackly Apply fills approved applications for your review, and you always submit manually. It does not make hiring decisions or activate an employer's Submit control.",
     "developerName": "trackly",
     "category": "Productivity",
     "capabilities": [

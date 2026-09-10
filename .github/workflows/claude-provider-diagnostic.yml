@@ -1,0 +1,159 @@
+name: Claude provider diagnostic
+
+# Advisory, read-only observation. Never substitutes for claude-review.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/claude-provider-diagnostic.yml'
+
+permissions: {}
+
+jobs:
+  provider-status:
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.pull_request.author_association == 'OWNER' ||
+       github.event.pull_request.author_association == 'MEMBER' ||
+       github.event.pull_request.author_association == 'COLLABORATOR')
+    # Diagnostic execution records stay on ephemeral hosted runners.
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      # No checkout, package installation, model call, credential mutation, or artifacts.
+      - name: Read existing review-account usage safely
+        env:
+          REVIEW_PRIMARY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          REVIEW_FALLBACK: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_FALLBACK }}
+        shell: python
+        run: |
+          import json, math, os, urllib.error, urllib.request
+          
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          
+          def summarize(status, payload):
+              result = {'http_status': status}
+              if status != 200:
+                  result['category'] = {401: 'authentication-rejected', 403: 'usage-scope-or-account-denied', 429: 'usage-endpoint-rate-limited'}.get(status, 'provider-or-transport-error')
+                  return result
+              if not isinstance(payload, dict):
+                  return {'http_status': 200, 'category': 'invalid-usage-response'}
+              windows = {}
+              for key in ('five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet'):
+                  item = payload.get(key)
+                  value = item.get('utilization') if isinstance(item, dict) else None
+                  if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and 0 <= value <= 100:
+                      windows[key] = value
+              result['category'] = 'quota-window-exhausted' if any(v >= 100 for v in windows.values()) else 'usage-readable' if windows else 'usage-shape-unrecognized'
+              result['utilization_percent'] = windows
+              return result
+          
+          def probe(token):
+              if not token:
+                  return {'category': 'binding-unavailable'}
+              request = urllib.request.Request('https://api.anthropic.com/api/oauth/usage', headers={'Authorization': 'Bearer ' + token, 'anthropic-beta': 'oauth-2025-04-20', 'User-Agent': 'trackly-cli-review-diagnostic/1'})
+              try:
+                  with urllib.request.build_opener(NoRedirect()).open(request, timeout=20) as response:
+                      data = response.read(65537)
+                      if len(data) > 65536:
+                          return {'category': 'usage-response-too-large'}
+                      return summarize(response.status, json.loads(data))
+              except urllib.error.HTTPError as error:
+                  return summarize(error.code, None)
+              except Exception:
+                  return {'category': 'transport-or-invalid-response'}
+          
+          if __name__ == '__main__':
+              for label, binding in [('primary', 'REVIEW_PRIMARY'), ('fallback', 'REVIEW_FALLBACK')]:
+                  print(json.dumps({'binding': label, **probe(os.environ.get(binding))}, allow_nan=False))
+
+  model-status:
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.pull_request.author_association == 'OWNER' ||
+       github.event.pull_request.author_association == 'MEMBER' ||
+       github.event.pull_request.author_association == 'COLLABORATOR')
+    # Diagnostic execution records stay on ephemeral hosted runners.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - binding: primary
+            secret: CLAUDE_CODE_OAUTH_TOKEN
+            model: claude-opus-4-8
+          - binding: fallback
+            secret: CLAUDE_CODE_OAUTH_TOKEN_FALLBACK
+            model: claude-sonnet-5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Probe configured model without tools
+        id: probe
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: anthropics/claude-code-action@700e7f8316990de46bed556429765647af760efc # v1.0.176
+        env:
+          ANTHROPIC_API_KEY: ""
+        with:
+          claude_code_oauth_token: ${{ secrets[matrix.secret] }}
+          github_token: ${{ github.token }}
+          settings: '{"env":{"API_FORCE_IDLE_TIMEOUT":"1"}}'
+          prompt: 'Diagnostic only. Reply with OK. Do not review code or use tools.'
+          claude_args: |
+            --model ${{ matrix.model }}
+            --tools=
+            --max-turns 1
+            --max-budget-usd 1
+      - name: Classify result without exposing execution content
+        if: always()
+        shell: python
+        run: |
+          import json, os, pathlib, re
+          p = pathlib.Path(os.environ['RUNNER_TEMP']) / 'claude-execution-output.json'
+          result = {'category': 'execution-unavailable'}
+          try:
+              if p.is_file() and p.stat().st_size <= 16 * 1024 * 1024:
+                  events = json.loads(p.read_text())
+                  records = [e for e in events if isinstance(e, dict) and e.get('type') == 'result'] if isinstance(events, list) else []
+                  if records:
+                      record = records[-1]
+                      if record.get('subtype') == 'success' and record.get('is_error') is False:
+                          result = {'category': 'model-call-succeeded'}
+                      else:
+                          text = str(record.get('result', '')) + ' ' + str(record.get('errors', ''))
+                          for event in events:
+                              if isinstance(event, dict) and event.get('type') == 'assistant' and event.get('error'):
+                                  message = event.get('message')
+                                  text += ' ' + str(event.get('error')) + ' ' + str(message.get('content', '') if isinstance(message, dict) else '')
+                          patterns = {
+                              'authentication': r'authentication_error|invalid (?:oauth |access |bearer )?token|token.{0,30}expired|unauthorized|invalid api key',
+                              'quota-or-rate-limit': r'rate_limit_error|rate limit|usage limit|quota|credit balance|out of credits|hit your limit',
+                              'model-unavailable': r'model.{0,50}(?:not found|not available|does not exist|unsupported)|not_found_error',
+                              'provider-transient': r'overloaded_error|api_error|service unavailable|internal server error|temporarily unavailable',
+                              'login-required': r'not logged in|please (?:run )?/login|please log in|authentication required',
+                              'usage-limit': r'reached.{0,20}(?:usage )?limit|limit.{0,20}reached|usage cap|out of extra usage',
+                              'request-rejected': r'API Error: 400|bad_request|invalid_request_error',
+                              'http-401': r'API Error: 401|HTTP 401',
+                              'http-403': r'API Error: 403|HTTP 403',
+                              'http-404': r'API Error: 404|HTTP 404',
+                              'http-429': r'API Error: 429|HTTP 429',
+                              'oauth-unsupported': r'oauth.{0,60}(?:not supported|unsupported)',
+                              'account-unavailable': r'account.{0,50}(?:disabled|suspended|deactivated)|organization.{0,50}(?:disabled|suspended)',
+                              'permission': r'permission_error|forbidden|insufficient.{0,20}scope|scope requirement',
+                          }
+                          categories = [key for key, pattern in patterns.items() if re.search(pattern, text, re.I)]
+                          result = {'category': 'model-call-failed', 'error_categories': categories or ['unclassified']}
+          except Exception:
+              result = {'category': 'execution-invalid'}
+          print(json.dumps(result))

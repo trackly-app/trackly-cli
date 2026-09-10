@@ -40,6 +40,10 @@ jobs:
       # backend checkout through `npm run test:hosted-contract`.
       - run: npm run test:contract-fixture
 
+      # Keep the OpenAI final-directory package limits and reviewer fixture
+      # shape enforced without making CI depend on live credentials.
+      - run: npm run test:plugin-submission
+
       - run: npm test
 
       - run: node scripts/sync-public-metrics.js --check --prepare

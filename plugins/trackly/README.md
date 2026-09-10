@@ -4,7 +4,7 @@ The trackly plugin package for ChatGPT and Codex.
 
 **Hero feature:** trackly Apply
 
-trackly finds openings as they appear. You decide what to pursue. trackly Apply fills approved applications for your review. You submit manually.
+trackly finds openings as they appear using your preferences and job metadata. You decide what to pursue. trackly Apply fills approved applications for your review. You submit manually.
 
 ## What is included
 
@@ -16,7 +16,7 @@ trackly finds openings as they appear. You decide what to pursue. trackly Apply 
 - A derived vector of the approved white trackly arrow mark on black. It is not claimed to be byte- or pixel-identical to the source PNG; Kevin approved the exact packaged SVG bytes whose SHA-256 is recorded in `assets/brand-source.json` for the OpenAI listing.
 - Submission fixtures covering expected and out-of-scope behavior.
 
-An account is required. The current trackly tool is free and unlimited. The initial launch is US-first.
+An account is required. trackly is free for all users, with initial availability in the United States. Matching reflects your stated preferences and job metadata; it is not an employer hiring decision or candidate ranking.
 
 ## Safety boundary
 
@@ -34,6 +34,10 @@ send the same RFC 8707 `resource` parameter twice, and Express then parses it
 as an array the authorization server rejects.
 
 The legacy trackly MCP endpoint is intentionally not used by this package.
+
+The plugin never bypasses employer access controls, CAPTCHA, OTP, credentials, or
+account-creation requirements. It stops at a review-ready form and the user
+activates Submit manually.
 
 ## OpenAI submission
 
