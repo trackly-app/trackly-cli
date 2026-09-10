@@ -212,6 +212,7 @@ function validateManifest(state, manifest, metadata) {
   const iface = manifest.interface;
   check(state, isObject(iface), 'manifest.interface must be an object');
   if (!isObject(iface)) return;
+  check(state, iface.websiteURL === 'https://usetrackly.app/plugins/trackly', 'interface.websiteURL must be the reviewed Trackly plugin listing URL');
   rejectUnknownKeys(state, iface, ALLOWED_INTERFACE_KEYS, 'manifest.interface');
   checkString(state, iface.displayName, 'interface.displayName', { max: 30, oneLine: true });
   checkString(state, iface.shortDescription, 'interface.shortDescription', { max: 30, oneLine: true });
@@ -267,6 +268,7 @@ function validateMetadata(state, metadata) {
   checkString(state, metadata.shortDescription, 'listing.shortDescription', { max: 30, oneLine: true });
   checkString(state, metadata.tagline, 'listing.tagline', { max: 120, oneLine: true });
   checkString(state, metadata.audience, 'listing.audience', { max: 120, oneLine: true });
+  check(state, metadata.audience === 'US job seekers', 'listing.audience must remain US job seekers');
   validateHttpsUrl(state, metadata.supportURL, 'listing.supportURL');
   validateHttpsUrl(state, metadata.privacyPolicyURL, 'listing.privacyPolicyURL');
   validateHttpsUrl(state, metadata.termsOfServiceURL, 'listing.termsOfServiceURL');
@@ -350,6 +352,21 @@ function validateSkillAgent(state, skillRoot, name) {
   }
   if (isObject(payload.policy) && payload.policy.allow_implicit_invocation !== undefined) {
     check(state, typeof payload.policy.allow_implicit_invocation === 'boolean', `${label}.policy.allow_implicit_invocation must be boolean`);
+  }
+  if (isObject(payload.dependencies) && payload.dependencies.tools !== undefined) {
+    const tools = payload.dependencies.tools;
+    check(state, Array.isArray(tools), `${label}.dependencies.tools must be an array`);
+    if (Array.isArray(tools)) for (const [index, tool] of tools.entries()) {
+      const toolLabel = `${label}.dependencies.tools[${index}]`;
+      check(state, isObject(tool), `${toolLabel} must be an object`);
+      if (!isObject(tool)) continue;
+      rejectUnknownKeys(state, tool, new Set(['type', 'value', 'description', 'transport', 'url']), toolLabel);
+      check(state, tool.type === 'mcp', `${toolLabel}.type must be mcp`);
+      checkString(state, tool.value, `${toolLabel}.value`);
+      checkString(state, tool.description, `${toolLabel}.description`);
+      check(state, tool.transport === 'streamable_http', `${toolLabel}.transport must be streamable_http`);
+      validateHttpsUrl(state, tool.url, `${toolLabel}.url`);
+    }
   }
 }
 
@@ -918,6 +935,10 @@ async function runLive(state, {
           check(state, typeof asMetadata.issuer === 'string', 'authorization-server metadata must include issuer');
           check(state, asMetadata.issuer === authorizationServer, `issuer must exactly equal protected authorization_servers entry (issuer=${asMetadata.issuer}, advertised=${authorizationServer})`);
           check(state, Array.isArray(asMetadata.response_types_supported) && asMetadata.response_types_supported.includes('code'), 'authorization-server metadata must advertise authorization-code response type code');
+          if (asMetadata.grant_types_supported !== undefined) {
+            check(state, Array.isArray(asMetadata.grant_types_supported) && asMetadata.grant_types_supported.includes('authorization_code'),
+              'authorization-server grant_types_supported must include authorization_code when present');
+          }
           check(state, Array.isArray(asMetadata.code_challenge_methods_supported) && asMetadata.code_challenge_methods_supported.includes('S256'), 'authorization-server metadata must advertise PKCE S256');
           check(state, asMetadata.client_id_metadata_document_supported === true || typeof asMetadata.registration_endpoint === 'string',
             'authorization-server metadata must support URL-based client IDs or dynamic client registration');

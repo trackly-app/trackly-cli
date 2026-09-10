@@ -730,3 +730,32 @@ test('authorization discovery requires supported client registration', async () 
     const s = state(); await api.runLive(s, { checkPublicPages: false }); assert.equal(s.errors.length === 0, valid, s.errors.join('; '));
   }
 });
+
+test('listing retains the reviewed website and audience', () => {
+  const manifest = json('plugins/trackly/.codex-plugin/plugin.json'); const metadata = json('plugins/trackly/listing/metadata.json');
+  manifest.interface.websiteURL = 'https://usetrackly.app/other';
+  const website = state(); load().validateManifest(website, manifest, metadata); assert(website.errors.length > 0);
+  metadata.audience = 'All users';
+  const audience = state(); load().validateMetadata(audience, metadata); assert(audience.errors.length > 0);
+});
+
+test('advertised OAuth grants must support authorization code while omission remains valid', async () => {
+  for (const grants of [undefined, ['authorization_code'], ['client_credentials']]) {
+    const api = load({ 'node:https': network(o => {
+      if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
+      if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', client_id_metadata_document_supported: true, response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token', grant_types_supported: grants }) };
+      return { status: 404 };
+    }) });
+    const s = state(); await api.runLive(s, { checkPublicPages: false }); assert.equal(s.errors.length === 0, grants === undefined || grants.includes('authorization_code'), s.errors.join('; '));
+  }
+});
+
+test('skill dependency tool descriptors require the reviewed MCP structure', () => {
+  const descriptor = { type: 'mcp', value: 'trackly', description: 'Synthetic MCP dependency', transport: 'streamable_http', url: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp' };
+  for (const [tools, valid] of [[undefined, true], [[descriptor], true], ['invalid', false], [[null], false], [[{}], false], [[{ ...descriptor, type: 'other' }], false], [[{ ...descriptor, value: '' }], false], [[{ ...descriptor, description: 42 }], false], [[{ ...descriptor, transport: 'stdio' }], false], [[{ ...descriptor, url: 'http://example.com' }], false]]) {
+    const source = JSON.stringify({ interface: { display_name: 'Synthetic', short_description: 'Synthetic description' }, dependencies: tools === undefined ? {} : { tools } });
+    const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) { return String(file).endsWith('/agents/openai.yaml') ? source : fs.readFileSync(file, ...args); } } });
+    const s = state(); api.validateSkills(s); assert.equal(s.errors.length === 0, valid, `${JSON.stringify(tools)}: ${s.errors.join('; ')}`);
+  }
+});
