@@ -70,7 +70,7 @@ function registerRuntimeTools(apiResponse = { ok: true }) {
 }
 
 test('protocol 3.7 publishes all accessible execution, recovery, and access-knowledge tools', () => {
-  assert.equal(contract.contractVersion, '3.8.1');
+  assert.equal(contract.contractVersion, '3.9.0');
   for (const name of executionTools) {
     assert.ok(contract.tools[name], `${name} missing from contract fixture`);
     assert.match(tools, new RegExp(`['"]${name}['"]`));

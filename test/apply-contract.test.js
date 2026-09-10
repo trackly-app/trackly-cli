@@ -1136,7 +1136,7 @@ test('documented local MCP tool count matches every registered tool', () => {
 });
 
 test('local MCP Apply schemas match each complete versioned input schema', () => {
-  assert.equal(contract.contractVersion, '3.8.1');
+  assert.equal(contract.contractVersion, '3.9.0');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
     const localSchema = typeof expectedSchema === 'string' ? expectedSchema : expectedSchema.local;
     const executableSchema = LOCAL_VALIDATION_SCHEMAS[name] || toolArguments(name)[2];
@@ -1990,6 +1990,7 @@ test('Apply contract owns value-free bulk checkpoint semantics', () => {
     'review/manual_submit',
     'trust/origin_mismatch',
     'observability/unverifiable_state',
+    'client/upgrade_required',
   ]);
   assert.deepEqual(contract.constants.applyCheckpointPacketPhases, ['first_pass', 'delta']);
   const schema = normalizeSchema(toolArguments('trackly_checkpoint_apply_batch')[2]);
