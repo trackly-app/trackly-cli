@@ -69,3 +69,77 @@ jobs:
           if __name__ == '__main__':
               for label, binding in [('primary', 'REVIEW_PRIMARY'), ('fallback', 'REVIEW_FALLBACK')]:
                   print(json.dumps({'binding': label, **probe(os.environ.get(binding))}, allow_nan=False))
+
+  model-status:
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.pull_request.author_association == 'OWNER' ||
+       github.event.pull_request.author_association == 'MEMBER' ||
+       github.event.pull_request.author_association == 'COLLABORATOR')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - binding: primary
+            secret: CLAUDE_CODE_OAUTH_TOKEN
+            model: claude-opus-4-8
+          - binding: fallback
+            secret: CLAUDE_CODE_OAUTH_TOKEN_FALLBACK
+            model: claude-sonnet-5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Probe configured model without tools
+        id: probe
+        continue-on-error: true
+        timeout-minutes: 3
+        uses: anthropics/claude-code-action@700e7f8316990de46bed556429765647af760efc # v1.0.176
+        env:
+          ANTHROPIC_API_KEY: ""
+        with:
+          claude_code_oauth_token: ${{ secrets[matrix.secret] }}
+          github_token: ${{ github.token }}
+          settings: '{"env":{"API_FORCE_IDLE_TIMEOUT":"1"}}'
+          prompt: 'Diagnostic only. Reply with OK. Do not review code or use tools.'
+          claude_args: |
+            --model ${{ matrix.model }}
+            --tools=
+            --max-turns 1
+            --max-budget-usd 1
+      - name: Classify result without exposing execution content
+        if: always()
+        shell: python
+        run: |
+          import json, os, pathlib, re
+          p = pathlib.Path(os.environ['RUNNER_TEMP']) / 'claude-execution-output.json'
+          result = {'category': 'execution-unavailable'}
+          try:
+              if p.is_file() and p.stat().st_size <= 16 * 1024 * 1024:
+                  events = json.loads(p.read_text())
+                  records = [e for e in events if isinstance(e, dict) and e.get('type') == 'result'] if isinstance(events, list) else []
+                  if records:
+                      record = records[-1]
+                      if record.get('subtype') == 'success' and record.get('is_error') is False:
+                          result = {'category': 'model-call-succeeded'}
+                      else:
+                          text = str(record.get('result', '')) + ' ' + str(record.get('errors', ''))
+                          patterns = {
+                              'authentication': r'authentication_error|invalid (?:oauth |access )?token|token.{0,30}expired|unauthorized|invalid api key',
+                              'quota-or-rate-limit': r'rate_limit_error|rate limit|usage limit|quota|credit balance|out of credits|hit your limit',
+                              'model-unavailable': r'model.{0,50}(?:not found|not available|does not exist|unsupported)|not_found_error',
+                              'provider-transient': r'overloaded_error|api_error|service unavailable|internal server error|temporarily unavailable',
+                              'permission': r'permission_error|forbidden|insufficient.{0,20}scope',
+                          }
+                          categories = [key for key, pattern in patterns.items() if re.search(pattern, text, re.I)]
+                          result = {'category': 'model-call-failed', 'error_categories': categories or ['unclassified']}
+          except Exception:
+              result = {'category': 'execution-invalid'}
+          print(json.dumps(result))

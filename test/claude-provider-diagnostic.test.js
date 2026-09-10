@@ -26,3 +26,17 @@ test('provider diagnostic only emits bounded status and numeric usage', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, '');
 });
+
+test('model probe classifies failures without exposing provider result text', () => {
+  const probe = workflow.jobs['model-status'];
+  assert.deepEqual(probe.permissions, { contents: 'read', 'id-token': 'write' });
+  assert.equal(probe.steps[0].with.ref, '${{ github.event.pull_request.base.sha }}');
+  assert.equal(probe.steps[0].with['persist-credentials'], false);
+  assert.match(probe.steps[1].with.claude_args, /--tools=/);
+  assert.match(probe.steps[1].with.claude_args, /--max-budget-usd 1/);
+  const classifier = probe.steps[2].run;
+  const script = `import contextlib,io,json,os,pathlib,tempfile\nsource=${JSON.stringify(classifier)}\nwith tempfile.TemporaryDirectory() as d:\n os.environ['RUNNER_TEMP']=d\n p=pathlib.Path(d)/'claude-execution-output.json'\n for text,expected in [('OAuth token expired synthetic-private','authentication'),('You have hit your limit synthetic-private','quota-or-rate-limit'),('model not available synthetic-private','model-unavailable'),('overloaded_error synthetic-private','provider-transient'),('permission_error synthetic-private','permission'),('synthetic-private','unclassified')]:\n  p.write_text(json.dumps([{'type':'result','subtype':'success','is_error':True,'result':text}]))\n  out=io.StringIO()\n  with contextlib.redirect_stdout(out):exec(source,{})\n  result=json.loads(out.getvalue())\n  assert result=={'category':'model-call-failed','error_categories':[expected]},result\n  assert 'synthetic-private' not in out.getvalue()\n p.write_text(json.dumps([{'type':'result','subtype':'success','is_error':False,'result':'synthetic-private'}]))\n out=io.StringIO()\n with contextlib.redirect_stdout(out):exec(source,{})\n assert json.loads(out.getvalue())=={'category':'model-call-succeeded'}\n`;
+  const result = spawnSync('python3', ['-c', script], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, '');
+});
