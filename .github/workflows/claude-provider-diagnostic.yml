@@ -1,0 +1,71 @@
+name: Claude provider diagnostic
+
+# Advisory, read-only observation. Never substitutes for claude-review.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/claude-provider-diagnostic.yml'
+
+permissions: {}
+
+jobs:
+  provider-status:
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.pull_request.author_association == 'OWNER' ||
+       github.event.pull_request.author_association == 'MEMBER' ||
+       github.event.pull_request.author_association == 'COLLABORATOR')
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      # No checkout, package installation, model call, credential mutation, or artifacts.
+      - name: Read existing review-account usage safely
+        env:
+          REVIEW_PRIMARY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          REVIEW_FALLBACK: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_FALLBACK }}
+        shell: python
+        run: |
+          import json, math, os, urllib.error, urllib.request
+          
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          
+          def summarize(status, payload):
+              result = {'http_status': status}
+              if status != 200:
+                  result['category'] = {401: 'authentication-rejected', 403: 'usage-scope-or-account-denied', 429: 'usage-endpoint-rate-limited'}.get(status, 'provider-or-transport-error')
+                  return result
+              if not isinstance(payload, dict):
+                  return {'http_status': 200, 'category': 'invalid-usage-response'}
+              windows = {}
+              for key in ('five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet'):
+                  item = payload.get(key)
+                  value = item.get('utilization') if isinstance(item, dict) else None
+                  if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and 0 <= value <= 100:
+                      windows[key] = value
+              result['category'] = 'quota-window-exhausted' if any(v >= 100 for v in windows.values()) else 'usage-readable' if windows else 'usage-shape-unrecognized'
+              result['utilization_percent'] = windows
+              return result
+          
+          def probe(token):
+              if not token:
+                  return {'category': 'binding-unavailable'}
+              request = urllib.request.Request('https://api.anthropic.com/api/oauth/usage', headers={'Authorization': 'Bearer ' + token, 'anthropic-beta': 'oauth-2025-04-20', 'User-Agent': 'trackly-cli-review-diagnostic/1'})
+              try:
+                  with urllib.request.build_opener(NoRedirect()).open(request, timeout=20) as response:
+                      data = response.read(65537)
+                      if len(data) > 65536:
+                          return {'category': 'usage-response-too-large'}
+                      return summarize(response.status, json.loads(data))
+              except urllib.error.HTTPError as error:
+                  return summarize(error.code, None)
+              except Exception:
+                  return {'category': 'transport-or-invalid-response'}
+          
+          if __name__ == '__main__':
+              for label, binding in [('primary', 'REVIEW_PRIMARY'), ('fallback', 'REVIEW_FALLBACK')]:
+                  print(json.dumps({'binding': label, **probe(os.environ.get(binding))}, allow_nan=False))
