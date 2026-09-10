@@ -102,8 +102,14 @@ const ALLOWED_INTERFACE_KEYS = new Set([
   'default_prompt',
 ]);
 
+function readMetadata(filePath) {
+  const info = fs.lstatSync(filePath);
+  if (!info.isFile() || info.size > 1024 * 1024) throw new Error('metadata must be a regular file no larger than 1 MiB');
+  return fs.readFileSync(filePath, 'utf8');
+}
+
 function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  return JSON.parse(readMetadata(filePath));
 }
 
 function isObject(value) {
@@ -322,8 +328,8 @@ async function validateSkillAgent(state, skillRoot, name) {
   if (!fs.existsSync(file)) return;
   const label = `skill ${name} agent`;
   let payload;
-  try { payload = parseYaml(fs.readFileSync(file, 'utf8')); }
-  catch { addError(state, `${label} must contain valid YAML`); return; }
+  try { payload = parseYaml(readMetadata(file)); }
+  catch { addError(state, `${label} must be a readable regular file no larger than 1 MiB containing valid YAML`); return; }
   check(state, isObject(payload), `${label} must be an object`);
   if (!isObject(payload)) return;
   rejectUnknownKeys(state, payload, new Set(['interface', 'policy', 'dependencies']), label);
@@ -391,13 +397,9 @@ async function validateSkills(state) {
     if (!fs.existsSync(skillPath)) continue;
     let source;
     try {
-      if (!fs.lstatSync(skillPath).isFile()) {
-        addError(state, `skill ${entry.name} SKILL.md must be a regular file`);
-        continue;
-      }
-      source = fs.readFileSync(skillPath, 'utf8');
+      source = readMetadata(skillPath);
     } catch {
-      addError(state, `skill ${entry.name} SKILL.md could not be read`);
+      addError(state, `skill ${entry.name} SKILL.md must be a readable regular file no larger than 1 MiB`);
       continue;
     }
     const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);

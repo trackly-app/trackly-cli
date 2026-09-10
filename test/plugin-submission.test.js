@@ -836,3 +836,23 @@ test('advertised token authentication methods support the selected client regist
     const s = state(); await api.runLive(s, { checkPublicPages: false }); assert.equal(s.errors.length === 0, valid, `${urlMode} ${methods}: ${s.errors.join('; ')}`);
   }
 });
+
+test('oversized skill, companion, and JSON metadata fail before reading', async () => {
+  for (const suffix of ['/SKILL.md', '/agents/openai.yaml', '/listing/metadata.json']) {
+    let readOversized = false;
+    const api = load({ 'node:fs': { ...fs,
+      lstatSync(file, ...args) { return String(file).endsWith(suffix) ? { size: 1024 * 1024 + 1, isFile: () => true } : fs.lstatSync(file, ...args); },
+      readFileSync(file, ...args) {
+        if (String(file).endsWith(suffix)) { readOversized = true; throw new Error('oversized metadata must not be read'); }
+        return fs.readFileSync(file, ...args);
+      },
+    } });
+    let s = state();
+    await assert.doesNotReject(async () => {
+      if (suffix.endsWith('.json')) s = await api.runStatic();
+      else await api.validateSkills(s);
+    });
+    assert(s.errors.length > 0, suffix);
+    assert.equal(readOversized, false, suffix);
+  }
+});

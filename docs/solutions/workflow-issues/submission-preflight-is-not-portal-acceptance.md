@@ -33,3 +33,5 @@ Pin the reviewed public listing URL and US audience rather than certifying arbit
 Bind skill dependency identifiers/URLs and the support page to the reviewed Trackly destinations. Decode supplied skill icons as images while retaining their own small/non-square allowance; await this validation through the static command. For SVG branding, check intrinsic viewport dimensions as well as viewBox so a square coordinate system cannot hide a rectangular rendered image, and accept numeric pixel dimensions consistently.
 
 Known reviewer identity assignments are private packet data alongside credentials. Reject listing placeholders recursively, and return structured validation errors for non-file or unreadable skill manifests. When token authentication methods are advertised, require compatibility with URL-based public clients or an SDK-supported dynamic-registration method; absent metadata still needs credentialed verification.
+
+Apply the 1 MiB metadata admission limit before reading JSON, SKILL.md or skill companion YAML; the later archive-file limit cannot protect earlier parsers. Reject non-regular metadata files before reading them, and retain structured errors.
