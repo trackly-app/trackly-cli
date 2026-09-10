@@ -270,6 +270,7 @@ function validateMetadata(state, metadata) {
   checkString(state, metadata.audience, 'listing.audience', { max: 120, oneLine: true });
   check(state, metadata.audience === 'US job seekers', 'listing.audience must remain US job seekers');
   validateHttpsUrl(state, metadata.supportURL, 'listing.supportURL');
+  check(state, metadata.supportURL === 'https://usetrackly.app/support', 'listing.supportURL must be the reviewed Trackly support page');
   validateHttpsUrl(state, metadata.privacyPolicyURL, 'listing.privacyPolicyURL');
   validateHttpsUrl(state, metadata.termsOfServiceURL, 'listing.termsOfServiceURL');
   validateHttpsUrl(state, metadata.productionMcpURL, 'listing.productionMcpURL');
@@ -315,7 +316,7 @@ function parseYaml(source) {
   return document.toJS({ maxAliasCount: 100 });
 }
 
-function validateSkillAgent(state, skillRoot, name) {
+async function validateSkillAgent(state, skillRoot, name) {
   const file = path.join(skillRoot, 'agents', 'openai.yaml');
   if (!fs.existsSync(file)) return;
   const label = `skill ${name} agent`;
@@ -342,7 +343,11 @@ function validateSkillAgent(state, skillRoot, name) {
       const resolved = path.resolve(skillRoot, relative.replace(/\\/g, '/'));
       const contained = resolved.startsWith(`${PLUGIN}${path.sep}`);
       check(state, contained, `${label}.interface.${key} must stay inside the plugin`);
-      if (contained) check(state, fs.existsSync(resolved) && fs.statSync(resolved).isFile(), `${label}.interface.${key} must reference an existing file`);
+      if (contained) {
+        const exists = fs.existsSync(resolved) && fs.statSync(resolved).isFile();
+        check(state, exists, `${label}.interface.${key} must reference an existing file`);
+        if (exists) await validateBranding(state, resolved, `${label}.interface.${key}`, { square: false, minimum: 1 });
+      }
     }
   }
   for (const [key, allowed] of [['policy', ['allow_implicit_invocation']], ['dependencies', ['tools']]]) {
@@ -363,14 +368,16 @@ function validateSkillAgent(state, skillRoot, name) {
       rejectUnknownKeys(state, tool, new Set(['type', 'value', 'description', 'transport', 'url']), toolLabel);
       check(state, tool.type === 'mcp', `${toolLabel}.type must be mcp`);
       checkString(state, tool.value, `${toolLabel}.value`);
+      check(state, tool.value === 'trackly', `${toolLabel}.value must be trackly`);
       checkString(state, tool.description, `${toolLabel}.description`);
       check(state, tool.transport === 'streamable_http', `${toolLabel}.transport must be streamable_http`);
       validateHttpsUrl(state, tool.url, `${toolLabel}.url`);
+      check(state, tool.url === 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', `${toolLabel}.url must be the reviewed Trackly MCP facade`);
     }
   }
 }
 
-function validateSkills(state) {
+async function validateSkills(state) {
   const skillsPath = path.join(PLUGIN, 'skills');
   check(state, fs.existsSync(skillsPath) && fs.statSync(skillsPath).isDirectory(), 'skills/ must exist');
   if (!fs.existsSync(skillsPath) || !fs.statSync(skillsPath).isDirectory()) return;
@@ -402,7 +409,7 @@ function validateSkills(state) {
     checkString(state, name, `skill ${entry.name} frontmatter name`, { max: 64, oneLine: true });
     checkString(state, description, `skill ${entry.name} frontmatter description`, { max: 1024, allowNewlines: true });
     check(state, !/\[TODO[: ]/i.test(frontmatter), `skill ${entry.name} frontmatter must not contain TODO placeholders`);
-    validateSkillAgent(state, path.join(skillsPath, entry.name), entry.name);
+    await validateSkillAgent(state, path.join(skillsPath, entry.name), entry.name);
   }
 }
 
@@ -492,7 +499,7 @@ function validateScreenshot(state, file, relative) {
   }
 }
 
-async function validateBranding(state, file, relative) {
+async function validateBranding(state, file, relative, { square = true, minimum = 48 } = {}) {
   const extension = path.extname(file).toLowerCase();
   if (!['.svg', '.png', '.jpg', '.jpeg', '.webp'].includes(extension)) {
     addError(state, `${relative} branding must be SVG, PNG, JPEG or WebP`);
@@ -513,17 +520,25 @@ async function validateBranding(state, file, relative) {
       if (!root || root.local !== 'svg' || (root.uri && root.uri !== 'http://www.w3.org/2000/svg')) throw new Error('invalid SVG root');
       const attribute = name => root.attributes[name]?.value;
       const numeric = value => typeof value === 'string' && /^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?$/i.test(value.trim()) && Number.isFinite(Number(value));
+      const pixels = value => typeof value === 'string' ? value.trim().replace(/px$/, '') : value;
       const viewBox = attribute('viewBox');
+      if (viewBox !== undefined && (attribute('width') !== undefined || attribute('height') !== undefined)) {
+        const intrinsicWidth = pixels(attribute('width')); const intrinsicHeight = pixels(attribute('height'));
+        if (!numeric(intrinsicWidth) || !numeric(intrinsicHeight)
+          || Number(intrinsicWidth) < minimum || Number(intrinsicHeight) < minimum
+          || (square && Number(intrinsicWidth) !== Number(intrinsicHeight))) throw new Error('invalid SVG viewport dimensions');
+      }
       let width; let height;
       if (viewBox !== undefined) {
         const dimensions = viewBox.trim().split(/[\s,]+/);
         if (dimensions.length !== 4 || !dimensions.every(numeric)) throw new Error('invalid SVG dimensions');
         width = Number(dimensions[2]); height = Number(dimensions[3]);
       } else {
-        if (!numeric(attribute('width')) || !numeric(attribute('height'))) throw new Error('missing SVG dimensions');
-        width = Number(attribute('width')); height = Number(attribute('height'));
+        if (!numeric(pixels(attribute('width'))) || !numeric(pixels(attribute('height')))) throw new Error('missing SVG dimensions');
+        width = Number(pixels(attribute('width'))); height = Number(pixels(attribute('height')));
       }
-      check(state, width === height && width >= 48, `${relative} must declare square SVG dimensions of at least 48 pixels`);
+      check(state, (!square || width === height) && width >= minimum && height >= minimum,
+        `${relative} must declare ${square ? 'square ' : ''}SVG dimensions of at least ${minimum} pixels`);
       return;
     }
     const expected = extension === '.jpg' || extension === '.jpeg' ? 'jpeg' : extension.slice(1);
@@ -533,10 +548,11 @@ async function validateBranding(state, file, relative) {
     if (!signatureMatches) throw new Error('branding format mismatch');
     const decoder = sharp(data, { failOn: 'warning', limitInputPixels: 4096 * 4096 }).timeout({ seconds: 10 });
     const metadata = await decoder.metadata();
-    if (metadata.format !== expected || metadata.width !== metadata.height || metadata.width < 48 || metadata.width > 4096) throw new Error('invalid raster branding');
+    if (metadata.format !== expected || (square && metadata.width !== metadata.height)
+      || metadata.width < minimum || metadata.height < minimum || metadata.width > 4096 || metadata.height > 4096) throw new Error('invalid raster branding');
     await decoder.raw().toBuffer();
   } catch {
-    addError(state, `${relative} branding must decode in its declared format; raster dimensions must be square and 48–4096 pixels, SVG must be valid XML`);
+    addError(state, `${relative} branding must decode in its declared format; raster dimensions must be ${square ? 'square and ' : ''}${minimum}–4096 pixels, SVG must be valid XML`);
   }
 }
 
@@ -706,7 +722,7 @@ async function runStatic() {
   validateManifest(state, manifest, metadata);
   validateMetadata(state, metadata);
   validateMcpConfig(state, metadata);
-  validateSkills(state);
+  await validateSkills(state);
   await validateAssetsAndTree(state, manifest);
   validateSubmissionTests(state, fixtures);
   return state;

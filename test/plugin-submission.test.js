@@ -44,9 +44,9 @@ test('rejects malformed fixture members without throwing', () => {
   fixtures.negative[0] = null; fixtures.reviewEnvironment.portalCaseBriefs[0] = null;
   const s = state(); assert.doesNotThrow(() => load().validateSubmissionTests(s, fixtures)); assert(s.errors.length);
 });
-test('arbitrary files do not count as skills', () => {
+test('arbitrary files do not count as skills', async () => {
   const api = load({ 'node:fs': { ...fs, readdirSync: () => [{ name: '.gitkeep', isDirectory: () => false }] } });
-  const s = state(); api.validateSkills(s); assert(s.errors.some((e) => /at least one skill/.test(e)));
+  const s = state(); await api.validateSkills(s); assert(s.errors.some((e) => /at least one skill/.test(e)));
 });
 test('non-square SVG fails', async () => {
   const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) { const value = fs.readFileSync(file, ...args); return String(file).endsWith('.svg') ? Buffer.from('<svg viewBox="0 0 1024 512"></svg>') : value; } } });
@@ -305,7 +305,7 @@ test('screenshots decode PNG/JPEG and enforce 706 by 400..860 pixels', async () 
   }
 });
 
-test('skill frontmatter uses YAML scalar strings and rejects malformed or missing fields', () => {
+test('skill frontmatter uses YAML scalar strings and rejects malformed or missing fields', async () => {
   const cases = [
     ['name: synthetic\ndescription: "A quoted description"', true],
     ['name: synthetic\ndescription: >-\n  A folded description', true],
@@ -321,7 +321,7 @@ test('skill frontmatter uses YAML scalar strings and rejects malformed or missin
     const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) {
       return String(file).endsWith('/SKILL.md') ? `---\n${frontmatter}\n---\nBody.\n` : fs.readFileSync(file, ...args);
     } } });
-    const s = state(); assert.doesNotThrow(() => api.validateSkills(s));
+    const s = state(); await assert.doesNotReject(() => api.validateSkills(s));
     assert.equal(s.errors.length === 0, valid, `${frontmatter}: ${s.errors.join('; ')}`);
   }
 });
@@ -508,7 +508,7 @@ test('asset paths reject parent segments even when normalization stays within pl
   assert(s.errors.length > 0);
 });
 
-test('existing skill companion YAML validates mappings, fields, policies, and icon paths', () => {
+test('existing skill companion YAML validates mappings, fields, policies, and icon paths', async () => {
   const valid = 'interface:\n  display_name: Synthetic\n  short_description: Test description\n';
   const cases = [
     [valid, true],
@@ -531,7 +531,7 @@ test('existing skill companion YAML validates mappings, fields, policies, and ic
     const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) {
       return String(file).endsWith('/agents/openai.yaml') ? source : fs.readFileSync(file, ...args);
     } } });
-    const s = state(); assert.doesNotThrow(() => api.validateSkills(s));
+    const s = state(); await assert.doesNotReject(() => api.validateSkills(s));
     assert.equal(s.errors.length === 0, expected, `${source}: ${s.errors.join('; ')}`);
   }
 });
@@ -597,6 +597,8 @@ test('branding validates SVG XML, dimensions, and raster extension agreement', a
   const png = await sharp({ create: { width: 48, height: 48, channels: 3, background: '#ffffff' } }).png().toBuffer();
   for (const [name, data, valid] of [
     ['valid.svg', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"></svg>'), true],
+    ['pixels.svg', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="48px" height="48px"></svg>'), true],
+    ['pixels-viewbox.svg', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="48px" height="48px" viewBox="0 0 48 48"></svg>'), true],
     ['malformed.svg', Buffer.from('<svg viewBox="0 0 48 48"><g></svg>'), false],
     ['rectangle.svg', Buffer.from('<svg viewBox="0 0 48 96"></svg>'), false],
     ['tiny.svg', Buffer.from('<svg viewBox="0 0 47 47"></svg>'), false],
@@ -712,10 +714,10 @@ test('MCP server rejects extra headers even without credential-shaped values', (
   const s = state(); api.validateMcpConfig(s, json('plugins/trackly/listing/metadata.json')); assert(s.errors.length > 0);
 });
 
-test('skill frontmatter accepts normalized CRLF but rejects BOM and leading blanks', () => {
+test('skill frontmatter accepts normalized CRLF but rejects BOM and leading blanks', async () => {
   for (const source of ['---\r\nname: synthetic\r\ndescription: valid\r\n---\r\nBody', '\ufeff---\nname: synthetic\ndescription: valid\n---\nBody', '\n---\nname: synthetic\ndescription: valid\n---\nBody']) {
     const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) { return String(file).endsWith('/SKILL.md') ? source : fs.readFileSync(file, ...args); } } });
-    const s = state(); api.validateSkills(s); assert.equal(s.errors.length === 0, source.startsWith('---\r\n'), s.errors.join('; '));
+    const s = state(); await api.validateSkills(s); assert.equal(s.errors.length === 0, source.startsWith('---\r\n'), s.errors.join('; '));
   }
 });
 
@@ -751,11 +753,48 @@ test('advertised OAuth grants must support authorization code while omission rem
   }
 });
 
-test('skill dependency tool descriptors require the reviewed MCP structure', () => {
+test('skill dependency tool descriptors require the reviewed MCP structure', async () => {
   const descriptor = { type: 'mcp', value: 'trackly', description: 'Synthetic MCP dependency', transport: 'streamable_http', url: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp' };
   for (const [tools, valid] of [[undefined, true], [[descriptor], true], ['invalid', false], [[null], false], [[{}], false], [[{ ...descriptor, type: 'other' }], false], [[{ ...descriptor, value: '' }], false], [[{ ...descriptor, description: 42 }], false], [[{ ...descriptor, transport: 'stdio' }], false], [[{ ...descriptor, url: 'http://example.com' }], false]]) {
     const source = JSON.stringify({ interface: { display_name: 'Synthetic', short_description: 'Synthetic description' }, dependencies: tools === undefined ? {} : { tools } });
     const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) { return String(file).endsWith('/agents/openai.yaml') ? source : fs.readFileSync(file, ...args); } } });
-    const s = state(); api.validateSkills(s); assert.equal(s.errors.length === 0, valid, `${JSON.stringify(tools)}: ${s.errors.join('; ')}`);
+    const s = state(); await api.validateSkills(s); assert.equal(s.errors.length === 0, valid, `${JSON.stringify(tools)}: ${s.errors.join('; ')}`);
+  }
+});
+
+test('skill dependency identity and listing support URL retain reviewed destinations', async () => {
+  for (const override of [{ value: 'other' }, { url: 'https://example.com/mcp' }]) {
+    const source = JSON.stringify({ interface: { display_name: 'Synthetic', short_description: 'Synthetic description' }, dependencies: { tools: [{ type: 'mcp', value: 'trackly', description: 'Synthetic dependency', transport: 'streamable_http', url: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', ...override }] } });
+    const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) { return String(file).endsWith('/agents/openai.yaml') ? source : fs.readFileSync(file, ...args); } } });
+    const s = state(); await api.validateSkills(s); assert(s.errors.length > 0);
+  }
+  const metadata = json('plugins/trackly/listing/metadata.json'); metadata.supportURL = 'https://example.com/support';
+  const s = state(); load().validateMetadata(s, metadata); assert(s.errors.length > 0);
+});
+
+test('branding SVG rejects rectangular intrinsic dimensions despite square viewBox', async () => {
+  const target = path.join(root, 'plugins/trackly/assets/synthetic-intrinsic.svg');
+  const data = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="96" height="48" viewBox="0 0 48 48"></svg>');
+  const manifest = json('plugins/trackly/.codex-plugin/plugin.json'); manifest.interface.logo = './assets/' + path.basename(target);
+  const api = load({ 'node:fs': { ...fs,
+    existsSync: file => file === target || fs.existsSync(file),
+    statSync: file => file === target ? { size: data.length, isFile: () => true } : fs.statSync(file),
+    readFileSync: (file, ...args) => file === target ? data : fs.readFileSync(file, ...args),
+  } });
+  const s = state(); await api.validateAssetsAndTree(s, manifest); assert(s.errors.length > 0);
+});
+
+test('skill icons must decode as images while small valid icons are supported', async () => {
+  const sharp = require('sharp');
+  const png = await sharp({ create: { width: 16, height: 16, channels: 3, background: '#ffffff' } }).png().toBuffer();
+  for (const [name, data, valid] of [['README.md', Buffer.from('Not an image'), false], ['corrupt.png', Buffer.from('corrupt image'), false], ['small.png', png, true]]) {
+    const source = JSON.stringify({ interface: { display_name: 'Synthetic', short_description: 'Synthetic description', icon_small: './assets/' + name } });
+    const isIcon = file => String(file).includes('/skills/') && String(file).endsWith('/assets/' + name);
+    const api = load({ 'node:fs': { ...fs,
+      existsSync: file => isIcon(file) || fs.existsSync(file),
+      statSync: file => isIcon(file) ? { size: data.length, isFile: () => true } : fs.statSync(file),
+      readFileSync(file, ...args) { return String(file).endsWith('/agents/openai.yaml') ? source : isIcon(file) ? data : fs.readFileSync(file, ...args); },
+    } });
+    const s = state(); await api.validateSkills(s); assert.equal(s.errors.length === 0, valid, `${name}: ${s.errors.join('; ')}`);
   }
 });
