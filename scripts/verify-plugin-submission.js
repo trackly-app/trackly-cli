@@ -301,6 +301,7 @@ function validateMcpConfig(state, metadata) {
   const server = config.mcpServers.trackly;
   check(state, isObject(server), '.mcp.json trackly entry must be an object');
   if (!isObject(server)) return;
+  rejectUnknownKeys(state, server, new Set(['type', 'url']), '.mcp.json trackly');
   check(state, server.type === 'http', '.mcp.json trackly transport must be HTTP');
   check(state, server.url === metadata?.productionMcpURL, '.mcp.json URL must match listing.productionMcpURL');
   check(state, !Object.hasOwn(server, 'oauth_resource'), '.mcp.json must not duplicate the OAuth resource parameter');
@@ -389,7 +390,7 @@ function validateSkills(state) {
 }
 
 function containsCredentialAssignment(file) {
-  const names = ['MCP_REVIEW_LOGIN_PASSWORD', 'NODE_AUTH_TOKEN', 'NPM_TOKEN', 'NPM_ACCESS_TOKEN', 'OPENAI_API_KEY', '_authToken', '_auth', '_password'];
+  const names = ['MCP_REVIEW_LOGIN_PASSWORD', 'NODE_AUTH_TOKEN', 'NPM_TOKEN', 'NPM_ACCESS_TOKEN', 'OPENAI_API_KEY', '_authToken', '_auth', '_password', 'Authorization', 'authorization', 'access_token'];
   const fd = fs.openSync(file, 'r');
   const buffer = Buffer.alloc(64 * 1024);
   const decoder = new StringDecoder('utf8');
@@ -918,6 +919,14 @@ async function runLive(state, {
           check(state, asMetadata.issuer === authorizationServer, `issuer must exactly equal protected authorization_servers entry (issuer=${asMetadata.issuer}, advertised=${authorizationServer})`);
           check(state, Array.isArray(asMetadata.response_types_supported) && asMetadata.response_types_supported.includes('code'), 'authorization-server metadata must advertise authorization-code response type code');
           check(state, Array.isArray(asMetadata.code_challenge_methods_supported) && asMetadata.code_challenge_methods_supported.includes('S256'), 'authorization-server metadata must advertise PKCE S256');
+          check(state, asMetadata.client_id_metadata_document_supported === true || typeof asMetadata.registration_endpoint === 'string',
+            'authorization-server metadata must support URL-based client IDs or dynamic client registration');
+          if (asMetadata.registration_endpoint !== undefined) {
+            try {
+              const registrationUrl = parseHttpsUrl(asMetadata.registration_endpoint, 'authorization-server registration_endpoint');
+              check(state, !registrationUrl.hash && !asMetadata.registration_endpoint.includes('#'), 'authorization-server registration_endpoint must not contain a fragment');
+            } catch (error) { addError(state, error.message); }
+          }
           for (const endpoint of ['authorization_endpoint', 'token_endpoint']) {
             try {
               const endpointUrl = parseHttpsUrl(asMetadata[endpoint], `authorization-server ${endpoint}`);

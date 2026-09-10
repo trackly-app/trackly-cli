@@ -76,7 +76,7 @@ test('strict origin probes reject non-401 and network failures', async () => {
       if (o.headers.origin) return outcome;
       if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
       if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
-      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', client_id_metadata_document_supported: true, response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
       return { status: 404 };
     }) });
     const s = state(); await api.runLive(s, { strictOrigins: true, checkPublicPages: false });
@@ -204,7 +204,7 @@ test('strict origin 401 challenges require matching HTTPS Bearer resource metada
     const api = load({ 'node:https': network((o) => {
       if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': o.headers.origin ? challenge : canonical } };
       if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
-      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', client_id_metadata_document_supported: true, response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
       return { status: 404 };
     }) });
     const s = state(); await api.runLive(s, { strictOrigins: true, checkPublicPages: false });
@@ -247,7 +247,7 @@ test('required challenge matches the expected token exactly without printing tok
     const api = load({ 'node:https': network((o) => {
       if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
       if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
-      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', client_id_metadata_document_supported: true, response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
       return { body };
     }) });
     const s = state(); await api.runLive(s, { requireChallenge: true, expectedChallenge, checkPublicPages: false });
@@ -331,7 +331,7 @@ test('authorization-server discovery requires the authorization code response ty
     const api = load({ 'node:https': network(o => {
       if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
       if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
-      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: responseTypes, code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', client_id_metadata_document_supported: true, response_types_supported: responseTypes, code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
       return { status: 404 };
     }) });
     const s = state(); await api.runLive(s, { checkPublicPages: false });
@@ -424,7 +424,7 @@ test('OAuth authorization and token endpoints reject URL fragments', async () =>
     const api = load({ 'node:https': network(o => {
       if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
       if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
-      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token', [field]: 'https://example.com/endpoint#fragment' }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', client_id_metadata_document_supported: true, response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token', [field]: 'https://example.com/endpoint#fragment' }) };
       return { status: 404 };
     }) });
     const s = state(); await api.runLive(s, { checkPublicPages: false });
@@ -561,7 +561,7 @@ test('every authorization server URL is validated before selecting the first iss
       if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com', second] }) };
       if (o.path.includes('oauth-authorization-server')) {
         selected.push(o.hostname);
-        return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
+        return { body: JSON.stringify({ issuer: 'https://example.com', client_id_metadata_document_supported: true, response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
       }
       return { status: 404 };
     }) });
@@ -630,7 +630,7 @@ test('optional OAuth scopes metadata must be an array of strings', async () => {
     const api = load({ 'node:https': network(o => {
       if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
       if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
-      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token', scopes_supported: scopes }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', client_id_metadata_document_supported: true, response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token', scopes_supported: scopes }) };
       return { status: 404 };
     }) });
     const s = state(); await api.runLive(s, { checkPublicPages: false });
@@ -652,7 +652,7 @@ test('protected-resource optional scopes metadata must be an array of strings', 
     const api = load({ 'node:https': network(o => {
       if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
       if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'], scopes_supported: scopes }) };
-      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', client_id_metadata_document_supported: true, response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token' }) };
       return { status: 404 };
     }) });
     const s = state(); await api.runLive(s, { checkPublicPages: false });
@@ -694,4 +694,39 @@ test('internal reviewer cases validate supplied prompts and conversation turns',
   const fixtures = json('plugins/trackly/listing/submission-tests.json');
   fixtures.positive.find(item => item.id === 'resume-apply').turns = [{ role: 'assistant', content: 'Synthetic answer', expected: [] }];
   const s = state(); load().validateSubmissionTests(s, fixtures); assert.deepEqual(s.errors, []);
+});
+
+test('credential scan rejects Authorization headers and access token query parameters', () => {
+  for (const assignment of ['Authorization: Bearer synthetic-value', '"Authorization": "Bearer synthetic-value"', 'https://example.com/path?access_token=synthetic-value']) {
+    let read = false; const content = Buffer.from(assignment);
+    const api = load({ 'node:fs': { ...fs, openSync: () => -123, closeSync: () => {}, readSync(fd, buffer) {
+      if (read) return 0; read = true; content.copy(buffer); return content.length;
+    } } });
+    assert.equal(api.containsCredentialAssignment('synthetic'), true);
+  }
+});
+
+test('MCP server rejects extra headers even without credential-shaped values', () => {
+  const config = json('plugins/trackly/.mcp.json'); config.mcpServers.trackly.headers = { 'X-Synthetic': 'value' };
+  const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) { return String(file).endsWith('/.mcp.json') ? JSON.stringify(config) : fs.readFileSync(file, ...args); } } });
+  const s = state(); api.validateMcpConfig(s, json('plugins/trackly/listing/metadata.json')); assert(s.errors.length > 0);
+});
+
+test('skill frontmatter accepts normalized CRLF but rejects BOM and leading blanks', () => {
+  for (const source of ['---\r\nname: synthetic\r\ndescription: valid\r\n---\r\nBody', '\ufeff---\nname: synthetic\ndescription: valid\n---\nBody', '\n---\nname: synthetic\ndescription: valid\n---\nBody']) {
+    const api = load({ 'node:fs': { ...fs, readFileSync(file, ...args) { return String(file).endsWith('/SKILL.md') ? source : fs.readFileSync(file, ...args); } } });
+    const s = state(); api.validateSkills(s); assert.equal(s.errors.length === 0, source.startsWith('---\r\n'), s.errors.join('; '));
+  }
+});
+
+test('authorization discovery requires supported client registration', async () => {
+  for (const [registration, valid] of [[{}, false], [{ registration_endpoint: 'http://example.com/register' }, false], [{ registration_endpoint: 'https://example.com/register' }, true], [{ client_id_metadata_document_supported: true }, true]]) {
+    const api = load({ 'node:https': network(o => {
+      if (o.method === 'POST') return { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://example.com/resource"' } };
+      if (o.path === '/resource') return { body: JSON.stringify({ resource: 'https://mcp.usetrackly.app/api/plugin/trackly/mcp', authorization_servers: ['https://example.com'] }) };
+      if (o.path.includes('oauth-authorization-server')) return { body: JSON.stringify({ issuer: 'https://example.com', response_types_supported: ['code'], code_challenge_methods_supported: ['S256'], authorization_endpoint: 'https://example.com/auth', token_endpoint: 'https://example.com/token', ...registration }) };
+      return { status: 404 };
+    }) });
+    const s = state(); await api.runLive(s, { checkPublicPages: false }); assert.equal(s.errors.length === 0, valid, s.errors.join('; '));
+  }
 });
