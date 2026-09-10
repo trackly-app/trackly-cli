@@ -43,3 +43,22 @@ test("credential-bearing release workflows never route to shared runners", () =>
     assert.ok(!text.includes("vars.CI_RUNNER_LINUX"), `${file} must not use CI_RUNNER_LINUX (holds npm/release credentials)`);
   }
 });
+
+// Explicit exception: credential diagnostics retain raw SDK execution records
+// only in an ephemeral hosted runner's temp directory, never on the shared bridge.
+const HOSTED_DIAGNOSTIC_EXCEPTIONS = {
+  "claude-provider-diagnostic.yml": ["provider-status", "model-status"],
+};
+test("credential diagnostic jobs remain on ephemeral hosted runners", () => {
+  const YAML = require("yaml");
+  for (const [file, jobs] of Object.entries(HOSTED_DIAGNOSTIC_EXCEPTIONS)) {
+    const text = workflows(file);
+    const parsed = YAML.parse(text);
+    assert.deepEqual(Object.keys(parsed.jobs).sort(), [...jobs].sort());
+    assert.ok(!text.includes("vars.CI_RUNNER_LINUX"));
+    for (const name of jobs) {
+      assert.equal(parsed.jobs[name]["runs-on"], "ubuntu-latest");
+      assert.ok(parsed.jobs[name].if.includes(FORK_GATE));
+    }
+  }
+});

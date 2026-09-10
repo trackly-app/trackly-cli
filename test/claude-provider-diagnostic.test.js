@@ -29,7 +29,7 @@ test('provider diagnostic only emits bounded status and numeric usage', () => {
 
 test('model probe classifies failures without exposing provider result text', () => {
   const probe = workflow.jobs['model-status'];
-  assert.deepEqual(probe.permissions, { contents: 'read', 'id-token': 'write' });
+  assert.deepEqual(probe.permissions, { contents: 'read' });
   assert.equal(probe.steps[0].with.ref, '${{ github.event.pull_request.base.sha }}');
   assert.equal(probe.steps[0].with['persist-credentials'], false);
   assert.match(probe.steps[1].with.claude_args, /--tools=/);
