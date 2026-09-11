@@ -159,7 +159,7 @@ test('checkpoint helper semantics match their versioned AST digests', () => {
 });
 
 test('hosted checkpoint helper drift fails coordinated semantic parity even when the tool alias is unchanged', () => {
-  const helperSource = source;
+  const helperSource = source.replace(/\r\n/g, '\n');
   const replayAwareServiceSource = `
     function actionCodeFromStoredCheckpoint(
       stored: StoredApplyBatchCheckpoint,
@@ -334,6 +334,7 @@ test('hosted checkpoint helper drift fails coordinated semantic parity even when
     'review/manual_submit': ['review', 'review', 'manual_submit'],
     'trust/origin_mismatch': ['review', 'navigation', 'origin_mismatch'],
     'observability/unverifiable_state': ['review', 'application', 'unverifiable_state'],
+    'client/upgrade_required': ['upgrade_client', 'navigation', 'client_upgrade'],
   };
   const checkpointMappings = Object.fromEntries(
     contract.constants.applyCheckpointActionCodes.map((actionCode) => {
@@ -459,6 +460,9 @@ test('hosted checkpoint helper drift fails coordinated semantic parity even when
     ['APPLY_BATCH_MAX_LEASE_DURATION_MS = 5 * 60_000', 'APPLY_BATCH_MAX_LEASE_DURATION_MS = 999 * 999', /must match its reviewed static value/],
     ['APPLY_BATCH_LEASE_RENEW_BY_FRACTION = 0.8', 'APPLY_BATCH_LEASE_RENEW_BY_FRACTION = 2', /must match its reviewed static value/],
     ['"stage":"authentication"', '"stage":"application"', /must match its reviewed routing semantics/],
+    ['"actionType":"upgrade_client"', '"actionType":"review"', /must match its reviewed routing semantics/],
+    ['"actionType":"upgrade_client","stage":"navigation"', '"actionType":"upgrade_client","stage":"application"', /must match its reviewed routing semantics/],
+    ['"continuationCode":"client_upgrade"', '"continuationCode":"manual_submit"', /must match its reviewed routing semantics/],
   ]) {
     const driftedSource = hostedCheckpointContractSource.replace(from, to);
     assert.notEqual(driftedSource, hostedCheckpointContractSource);

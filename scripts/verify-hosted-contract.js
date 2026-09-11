@@ -5575,6 +5575,7 @@ function hostedCheckpointActionMappings(source, sourcePath) {
     'review/manual_submit': ['review', 'review', 'manual_submit'],
     'trust/origin_mismatch': ['review', 'navigation', 'origin_mismatch'],
     'observability/unverifiable_state': ['review', 'application', 'unverifiable_state'],
+    'client/upgrade_required': ['upgrade_client', 'navigation', 'client_upgrade'],
   };
   const allowedRuntimeBindings = new Set([
     'APPLY_BATCH_CHECKPOINT_ACTION_CODES',
