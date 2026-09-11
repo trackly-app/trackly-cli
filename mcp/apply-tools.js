@@ -14,6 +14,11 @@ const {
 const { isIso3166Alpha2 } = require('../lib/iso-country-codes');
 const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 
+const APPLY_ADAPTER_CODES = APPLY_CONTRACT.constants.applyAdapterCodes;
+function isPublishedApplyAdapterCode(value) {
+  return APPLY_ADAPTER_CODES.includes(value);
+}
+
 const APPLY_BROWSER_SURFACES = APPLY_CONTRACT.constants.applyBrowserSurfaces;
 const APPLY_EXECUTION_ACCESS_CLASSIFICATIONS = APPLY_CONTRACT.constants.applyAccessClassifications;
 const APPLY_EXECUTION_DISPOSITION_SOURCES = APPLY_CONTRACT.constants.applyExecutionDispositionSources;
@@ -1614,7 +1619,7 @@ function registerApplyTools(
       leaseToken: z.string().min(1).max(1024),
       browserBindingHash: z.string().regex(/^[a-f0-9]{64}$/),
       browserSurface: z.enum(APPLY_BROWSER_SURFACES),
-      adapterCode: z.string().regex(SAFE_OBSERVATION_CODE),
+      adapterCode: z.string().regex(SAFE_OBSERVATION_CODE).refine(isPublishedApplyAdapterCode, { message: 'Invalid adapterCode' }),
       bindingReason: z.enum(APPLY_SURFACE_BINDING_REASONS),
       idempotencyKey: z.string().min(16).max(200).regex(SAFE_IDEMPOTENCY_KEY),
     },
@@ -1641,7 +1646,7 @@ function registerApplyTools(
       leaseToken: z.string().min(1).max(1024),
       browserBindingHash: z.string().regex(/^[a-f0-9]{64}$/),
       browserSurface: z.enum(APPLY_BROWSER_SURFACES),
-      adapterCode: z.string().regex(SAFE_OBSERVATION_CODE),
+      adapterCode: z.string().regex(SAFE_OBSERVATION_CODE).refine(isPublishedApplyAdapterCode, { message: 'Invalid adapterCode' }),
       ownershipState: z.enum(APPLY_SURFACE_OWNERSHIP_STATES),
       completeInventory: z.boolean(),
       evidenceType: z.enum(APPLY_SURFACE_EVIDENCE_TYPES),

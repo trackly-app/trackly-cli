@@ -4628,6 +4628,25 @@ const AST_METADATA_FIELDS = new Set([
   'innerComments',
 ]);
 
+function assertPublishedApplyAdapterValidation(source, sourcePath) {
+  assert.deepEqual(
+    canonicalSchemaAst(parseSchemaExpression(source, 'APPLY_ADAPTER_CODES', sourcePath)),
+    canonicalSchemaAst(parseSchemaExpression(
+      'const APPLY_ADAPTER_CODES = APPLY_CONTRACT.constants.applyAdapterCodes;',
+      'APPLY_ADAPTER_CODES', 'expected adapter contract binding',
+    )),
+    'Published adapters must resolve from the mirrored contract',
+  );
+  assert.deepEqual(
+    canonicalSchemaAst(activeNamedDefinitionAst(source, 'isPublishedApplyAdapterCode', sourcePath)),
+    canonicalSchemaAst(activeNamedDefinitionAst(
+      'function isPublishedApplyAdapterCode(value) { return APPLY_ADAPTER_CODES.includes(value); }',
+      'isPublishedApplyAdapterCode', 'expected published adapter validator',
+    )),
+    'Adapter validation must reject values outside the published set',
+  );
+}
+
 function canonicalSchemaAst(value) {
   if (value instanceof RegExp) {
     return { pattern: value.source, flags: value.flags };
@@ -6679,6 +6698,7 @@ if (!fs.existsSync(hostedPluginContractPath)) {
 
 const local = JSON.parse(fs.readFileSync(localContractPath, 'utf8'));
 const localApplySource = fs.readFileSync(localApplySourcePath, 'utf8');
+assertPublishedApplyAdapterValidation(localApplySource, localApplySourcePath);
 const localServerSource = fs.readFileSync(localServerSourcePath, 'utf8');
 const hosted = JSON.parse(fs.readFileSync(hostedContractPath, 'utf8'));
 const hostedApplySource = fs.readFileSync(hostedApplySourcePath, 'utf8');
@@ -6825,6 +6845,7 @@ const HOSTED_ONLY_TOOLS = [
 
 for (const constantName of [
   'applyExecutionMaxTarget',
+  'applyAdapterCodes',
   'applyBrowserSurfaces',
   'applyAccessClassifications',
   'applyObservedAccessClassifications',
@@ -9022,7 +9043,7 @@ assertBabelPropertyExpression(
       expectedInspectionEpoch: z.number().int().min(0),
       browserBindingHash: z.string().regex(SHA256),
       browserSurface: z.enum(APPLY_BROWSER_SURFACES),
-      adapterCode: z.string().regex(SAFE_CODE),
+      adapterCode: z.string().regex(SAFE_CODE).refine(isPublishedApplyAdapterCode, { message: 'Invalid adapterCode' }),
       bindingReason: z.enum(['initial_binding', 'recovery_binding']),
       idempotencyKey: z.string().min(16).max(200).regex(SAFE_IDEMPOTENCY_KEY),
     }).strict(),
@@ -9470,6 +9491,7 @@ module.exports = {
   activeNamedDefinitionAst,
   activeToolRegistrations,
   assertApplicationFieldByKeyReferenceSemantics,
+  assertPublishedApplyAdapterValidation,
   assertCheckpointRouteCallChain,
   assertCoordinatedCheckpointHelperSemantics,
   assertExactHostedSourceSha256,

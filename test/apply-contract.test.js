@@ -15,6 +15,7 @@ const {
   HOSTED_GIT_MAX_BUFFER,
   activeNamedDefinitionAst,
   assertApplicationFieldByKeyReferenceSemantics,
+  assertPublishedApplyAdapterValidation,
   assertCheckpointRouteCallChain,
   assertCoordinatedCheckpointHelperSemantics,
   assertExactHostedSourceSha256,
@@ -35,6 +36,17 @@ const {
   sha256ExactBytes,
   verifyHostedContract,
 } = require('../scripts/verify-hosted-contract.js');
+
+test('adapter verifier rejects weakened published-set validation and detached constants', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'mcp', 'apply-tools.js'), 'utf8');
+  assert.doesNotThrow(() => assertPublishedApplyAdapterValidation(source, 'local apply tools'));
+  for (const mutated of [
+    source.replace('return APPLY_ADAPTER_CODES.includes(value);', 'return true;'),
+    source.replace('APPLY_CONTRACT.constants.applyAdapterCodes', "['workday:12']"),
+  ]) {
+    assert.throws(() => assertPublishedApplyAdapterValidation(mutated, 'mutated apply tools'));
+  }
+});
 
 test('hosted verifier rejects runtime verifyAccessToken shadow members', () => {
   for (const member of [
@@ -1140,7 +1152,7 @@ test('documented local MCP tool count matches every registered tool', () => {
 });
 
 test('local MCP Apply schemas match each complete versioned input schema', () => {
-  assert.equal(contract.contractVersion, '3.9.0');
+  assert.equal(contract.contractVersion, '3.9.1');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
     const localSchema = typeof expectedSchema === 'string' ? expectedSchema : expectedSchema.local;
     const executableSchema = LOCAL_VALIDATION_SCHEMAS[name] || toolArguments(name)[2];
