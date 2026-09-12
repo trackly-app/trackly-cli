@@ -810,7 +810,12 @@ function registerApplyTools(
       false,
       false,
       MCP_USER_AGENT,
-      idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+      idempotencyKey ? {
+        'Idempotency-Key': idempotencyKey,
+        ...(method === 'POST' && (path === '/api/jobscout/apply/executions'
+          || path === '/api/jobscout/apply/executions/recover')
+          ? { 'X-Trackly-Apply-Start-Contract': APPLY_CONTRACT.contractVersion } : {}),
+      } : undefined,
     )
   );
   const discoveredRecoverableSources = new Map();

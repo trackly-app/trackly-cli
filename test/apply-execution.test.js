@@ -186,7 +186,7 @@ test('durable recovery tools use exact bounded HTTP contracts and validate resul
     mode: 'recover_exact_members', sourceExecutionId: 11, sourceSnapshotHash, candidateIds: [21],
     explicitExactSetConfirmation: true,
   }]);
-  assert.deepEqual(calls[1].at(-1), { 'Idempotency-Key': idempotencyKey });
+  assert.deepEqual(calls[1].at(-1), { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': contract.contractVersion });
   assert.deepEqual(calls[2].slice(0, 2), ['GET', '/api/jobscout/apply/executions/12/review-handoffs']);
   assert.deepEqual(calls[3].slice(0, 3), ['POST', '/api/jobscout/apply/review-handoffs/41/claim', {
     members: [{ memberId: 51, classification: 'detected' }],
@@ -706,7 +706,7 @@ test('execution tools validate and send the exact HTTP contract', async () => {
   const cases = [
     ['trackly_start_apply_execution',
       { mode: 'complete_next_n_accessible', target: 10, idempotencyKey },
-      ['POST', '/api/jobscout/apply/executions', { mode: 'complete_next_n_accessible', target: 10 }, false, false, 'trackly-mcp/test', { 'Idempotency-Key': idempotencyKey }]],
+      ['POST', '/api/jobscout/apply/executions', { mode: 'complete_next_n_accessible', target: 10 }, false, false, 'trackly-mcp/test', { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': contract.contractVersion }]],
     ['trackly_get_active_apply_execution', {},
       ['GET', '/api/jobscout/apply/executions/active', null, false, false, 'trackly-mcp/test', undefined]],
     ['trackly_get_apply_execution', { executionId: 41 },
