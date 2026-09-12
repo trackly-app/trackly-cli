@@ -101,6 +101,8 @@ function verifyCandidateContract({ cliRoot = path.join(__dirname, '..'), backend
       assert.equal(matches.length, 1, `${lane} ${name} must have exactly one registration`);
       let expected = typeof declared === 'string' ? declared : declared[lane];
       // Public object schemas are refined by the locked handler wrappers below.
+      if (name === 'trackly_start_apply_run') assert.equal(declared, 'startApplyRunSchema', `${lane} ${name} declared schema alias drifted`);
+      if (name === 'trackly_certify_apply_batch_truth') assert.equal(declared, 'truthCertificationSchema', `${lane} ${name} declared schema alias drifted`);
       if (lane === 'local' && name === 'trackly_start_apply_run') expected = 'startApplyRunInputSchema';
       if (name === 'trackly_certify_apply_batch_truth') expected = lane === 'local' ? 'truthCertificationInputSchema' : 'truthCertificationInputSchema.shape';
       if (lane === 'hosted' && name === 'trackly_start_apply_run') expected = 'startApplyRunSchema.shape';

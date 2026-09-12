@@ -266,3 +266,20 @@ test('candidate ignores replacement refs that substitute another commit under th
   f.expectedBackendSha = pinned;
   assert.throws(() => verifyCandidateContract(f), /completely clean|shared contract drifted/);
 });
+
+
+for (const [name, localAlias, hostedAlias] of [
+  ['trackly_start_apply_run', 'startApplyRunInputSchema', 'startApplyRunSchema.shape'],
+  ['trackly_certify_apply_batch_truth', 'truthCertificationInputSchema', 'truthCertificationInputSchema.shape'],
+]) {
+  test(`candidate rejects coordinated declared alias drift for ${name}`, t => {
+    const f = fixture(t);
+    const contract = { contractVersion: '3.9.2', tools: { [name]: 'unreviewedSchema' } };
+    f.write(f.cliRoot, 'contracts/trackly-apply-tools.json', JSON.stringify({ ...contract, schemaDigests: {} }));
+    f.write(f.backendDir, 'contracts/trackly-apply-tools.json', JSON.stringify(contract));
+    f.write(f.cliRoot, 'mcp/apply-tools.js', `function registerApplyTools(server) { server.tool('${name}', 'example', ${localAlias}, handler); }`);
+    f.write(f.backendDir, 'src/mcp/server.ts', `registerHostedMcpTool(server, '${name}', 'example', ${hostedAlias}, handler);`);
+    f.expectedBackendSha = f.commit();
+    assert.throws(() => verifyCandidateContract(f), /declared schema alias drifted/);
+  });
+}
