@@ -83,12 +83,14 @@ for (const suffix of ['BINDING_REASONS', 'EVIDENCE_TYPES', 'OWNERSHIP_STATES']) 
 
 test('surface enum parity accepts canonical aliases and rejects changed backend values or imports', () => {
   const bindings = { BINDING_REASONS: 'applySurfaceBindingReasons', EVIDENCE_TYPES: 'applySurfaceEvidenceTypes', OWNERSHIP_STATES: 'applySurfaceOwnershipStates' };
-  const constants = Object.fromEntries(Object.values(bindings).map(key => [key, ['expected']]));
+  const constants = { ...Object.fromEntries(Object.values(bindings).map(key => [key, ['expected']])), applyBatchConflictCodes: ['state_changed', 'client_upgrade_required'] };
   const local = Object.entries(bindings).map(([suffix, key]) => `const APPLY_SURFACE_${suffix} = APPLY_CONTRACT.constants.${key};`).join('\n');
   const hosted = `import { ${Object.keys(bindings).map(s => `APPLY_BATCH_SURFACE_${s}`).join(', ')} } from '../services/application-profile/batch-service.js';\n`
     + Object.keys(bindings).map(s => `const APPLY_SURFACE_${s} = APPLY_BATCH_SURFACE_${s};`).join('\n');
-  const batch = Object.keys(bindings).map(s => `export const APPLY_BATCH_SURFACE_${s} = ['expected'] as const;`).join('\n');
+  const batch = Object.keys(bindings).map(s => `export const APPLY_BATCH_SURFACE_${s} = ['expected'] as const;`).join('\n')
+    + "\nexport const APPLY_BATCH_CONFLICT_CODES = ['state_changed', 'client_upgrade_required'] as const;";
   assert.doesNotThrow(() => assertSurfaceEnumBindings(local, hosted, batch, constants));
+  assert.throws(() => assertSurfaceEnumBindings(local, hosted, batch.replace(", 'client_upgrade_required'", ''), constants), /backend conflict enum values drifted/);
   assert.throws(() => assertSurfaceEnumBindings(local, hosted, batch.replace("['expected']", "['unexpected']"), constants), /backend surface enum values drifted/);
   assert.throws(() => assertSurfaceEnumBindings(local, hosted.replace('batch-service.js', 'untrusted.js'), batch, constants), /import/);
 });

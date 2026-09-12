@@ -1165,6 +1165,7 @@ test('Apply contract publishes the accessible execution protocol and conflict co
   assert.equal(contract.constants.applyAccessKnowledgeOrderingVersion, 3);
   assert.deepEqual(contract.constants.applyBatchConflictCodes, [
     'state_changed',
+    'client_upgrade_required',
     'lease_unavailable',
     'idempotency_key_reused',
     'fixed_batch_not_found',

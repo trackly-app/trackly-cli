@@ -41,6 +41,8 @@ function assertSurfaceEnumBindings(localSource, hostedSource, batchSource, const
     assert.deepEqual(typescriptConstArrayValues(batchSource, imported, 'batch service'), constants[key],
       `${name} backend surface enum values drifted`);
   }
+  assert.deepEqual(typescriptConstArrayValues(batchSource, 'APPLY_BATCH_CONFLICT_CODES', 'batch service'),
+    constants.applyBatchConflictCodes, 'backend conflict enum values drifted');
 }
 
 // Lossless decoding is restricted to these exact published 3.9.2 schemas from
