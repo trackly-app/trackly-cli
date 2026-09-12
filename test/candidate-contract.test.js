@@ -101,7 +101,7 @@ test('candidate AST comparison rejects literal drift hidden by historical whites
   f.write(f.cliRoot, 'mcp/apply-tools.js', "function registerApplyTools(server) { server.tool('trackly_example', 'example', {value:z.string().describe('a b')}, handler); }");
   f.write(f.backendDir, 'src/mcp/server.ts', "registerHostedMcpTool(server, 'trackly_example', 'example', {value:z.string().describe('ab')}, handler);");
   f.expectedBackendSha = f.commit();
-  assert.throws(() => verifyCandidateContract(f), /shared executable AST drifted/);
+  assert.throws(() => verifyCandidateContract(f), /executable schema drifted/);
 });
 
 test('candidate checkpoint pin rejects an unexpected variant and another contract generation', () => {
@@ -118,4 +118,91 @@ test('candidate writer requires the exact awaited schema guard and preserves the
   assert.doesNotThrow(() => assertCheckpointWriterCallChain(source, 'candidate fixture', 'candidate-3.9.2'));
   assert.throws(() => assertCheckpointWriterCallChain(source.replace('await upgradeClientActionTypeSchemaReady(queryable)', 'true'), 'mutated candidate', 'candidate-3.9.2'), /locked validation prefix/);
   assert.throws(() => assertCheckpointWriterCallChain(source, 'deployed fixture'), /locked validation prefix/);
+});
+
+
+test('candidate rejects the same whitespace-sensitive literal drift in both executable lanes', t => {
+  const f = fixture(t);
+  const contract = { contractVersion: '3.9.2', tools: { trackly_example: "{value:z.string().describe('ab')}" } };
+  f.write(f.cliRoot, 'contracts/trackly-apply-tools.json', JSON.stringify({ ...contract, schemaDigests: {} }));
+  f.write(f.backendDir, 'contracts/trackly-apply-tools.json', JSON.stringify(contract));
+  f.write(f.cliRoot, 'mcp/apply-tools.js', "function registerApplyTools(server) { server.tool('trackly_example', 'example', {value:z.string().describe('a b')}, handler); }");
+  f.write(f.backendDir, 'src/mcp/server.ts', "registerHostedMcpTool(server, 'trackly_example', 'example', {value:z.string().describe('a b')}, handler);");
+  f.expectedBackendSha = f.commit();
+  assert.throws(() => verifyCandidateContract(f), /executable schema drifted/);
+});
+
+for (const mutation of ['extra', 'moved']) {
+  test(`candidate rejects ${mutation} local registration outside its declared direct catalog`, t => {
+    const f = fixture(t);
+    f.write(f.cliRoot, 'mcp/apply-tools.js', mutation === 'extra'
+      ? "function registerApplyTools(server) { server.tool('trackly_example', 'example', {value:z.string()}, handler); server.tool('trackly_extra', 'extra', {}, handler); }"
+      : "function registerApplyTools(server) { server.registerPrompt('prompt', {}, handler); } function unrelated(server) { server.tool('trackly_example', 'example', {value:z.string()}, handler); }");
+    assert.throws(() => verifyCandidateContract(f), /local direct tool catalog/);
+  });
+}
+
+test('candidate writer refuses an always-ready executable helper while retaining its awaited guard', () => {
+  const { assertCheckpointWriterCallChain } = require('../scripts/verify-hosted-contract');
+  const writer = fs.readFileSync(path.join(__dirname, 'fixtures/candidate-checkpoint-writer.txt'), 'utf8');
+  const altered = writer.replace('return probeUpgradeClientActionTypeSchemaReady(queryable, 0);', 'return true;');
+  assert.throws(() => assertCheckpointWriterCallChain(altered, 'always ready candidate', 'candidate-3.9.2'), /upgradeClientActionTypeSchemaReady.*locked active semantic AST/);
+});
+
+
+test('candidate writer also refuses an always-ready delegated database probe', () => {
+  const { assertCheckpointWriterCallChain, activeNamedDefinitionAst } = require('../scripts/verify-hosted-contract');
+  const source = fs.readFileSync(path.join(__dirname, 'fixtures/candidate-checkpoint-writer.txt'), 'utf8');
+  const probe = activeNamedDefinitionAst(source, 'probeUpgradeClientActionTypeSchemaReady', 'fixture');
+  const changed = source.slice(0, probe.start) + 'async function probeUpgradeClientActionTypeSchemaReady(queryable, attempt) { return true; }' + source.slice(probe.end);
+  assert.throws(() => assertCheckpointWriterCallChain(changed, 'always ready probe', 'candidate-3.9.2'), /probeUpgradeClientActionTypeSchemaReady.*locked active semantic AST/);
+});
+
+
+test('legacy 3.9.2 decoder accepts only reviewed raw schemas and preserves exact executable literals', () => {
+  const { expectedContractSchemaAst } = require('../scripts/verify-candidate-contract');
+  const { activeToolRegistrations, registrationInputSchemaAst, canonicalSchemaAst } = require('../scripts/verify-hosted-contract');
+  const contract = require('../contracts/trackly-apply-tools.json');
+  const source = fs.readFileSync(path.join(__dirname, '../mcp/apply-tools.js'), 'utf8');
+  const registrations = activeToolRegistrations(source, 'server.tool', 'reviewed local');
+  for (const name of ['trackly_recover_exact_apply_members', 'trackly_claim_apply_review_handoff',
+    'trackly_get_apply_execution_snapshot', 'trackly_advance_apply_execution', 'trackly_record_application_outcomes']) {
+    const raw = contract.tools[name];
+    const actual = canonicalSchemaAst(registrationInputSchemaAst(source, registrations.find(entry => entry.name === name), 'local'));
+    for (const lane of ['local', 'hosted']) assert.deepEqual(expectedContractSchemaAst(name, raw, '3.9.2', lane), actual);
+    assert.throws(() => expectedContractSchemaAst(name, raw + ' ', '3.9.2', 'local'), /unknown legacy raw schema/);
+    assert.throws(() => expectedContractSchemaAst(name, raw, '3.9.3', 'local'), /requires contract 3.9.2/);
+    assert.throws(() => expectedContractSchemaAst(name, raw, '3.9.2', 'unknown'), /Unknown contract schema lane/);
+  }
+});
+
+test('known legacy schema rejects joint literal drift in both lanes', t => {
+  const f = fixture(t);
+  const { activeToolRegistrations, registrationInputSchemaAst } = require('../scripts/verify-hosted-contract');
+  const name = 'trackly_recover_exact_apply_members';
+  const source = fs.readFileSync(path.join(__dirname, '../mcp/apply-tools.js'), 'utf8');
+  const entry = activeToolRegistrations(source, 'server.tool', 'local').find(row => row.name === name);
+  const schema = registrationInputSchemaAst(source, entry, 'local');
+  const original = source.slice(schema.start, schema.end);
+  const changed = original.replace('candidateIds must be unique', 'candidateIds must be uni que');
+  assert.notEqual(changed, original);
+  const contract = { contractVersion: '3.9.2', tools: { [name]: require('../contracts/trackly-apply-tools.json').tools[name] } };
+  f.write(f.cliRoot, 'contracts/trackly-apply-tools.json', JSON.stringify({ ...contract, schemaDigests: {} }));
+  f.write(f.backendDir, 'contracts/trackly-apply-tools.json', JSON.stringify(contract));
+  f.write(f.cliRoot, 'mcp/apply-tools.js', `function registerApplyTools(server) { server.tool('${name}', 'example', ${changed}, handler); }`);
+  f.write(f.backendDir, 'src/mcp/server.ts', `registerHostedMcpTool(server, '${name}', 'example', ${changed}, handler);`);
+  f.expectedBackendSha = f.commit();
+  assert.throws(() => verifyCandidateContract(f), /executable schema drifted/);
+});
+
+
+test('candidate readiness cache cannot start always ready or lose invalidation', () => {
+  const { assertCheckpointWriterCallChain } = require('../scripts/verify-hosted-contract');
+  const source = fs.readFileSync(path.join(__dirname, 'fixtures/candidate-checkpoint-writer.txt'), 'utf8');
+  const changed = source.replace('let upgradeClientActionTypeReadyUntil = 0;', 'let upgradeClientActionTypeReadyUntil = Infinity;');
+  assert.notEqual(changed, source);
+  assert.throws(() => assertCheckpointWriterCallChain(changed, 'always ready cache', 'candidate-3.9.2'), /upgradeClientActionTypeReadyUntil.*initialization drifted/);
+  assert.throws(() => assertCheckpointWriterCallChain(source.replace('const MIGRATION_511_READY_TTL_MS = 30_000;', 'const MIGRATION_511_READY_TTL_MS = Infinity;'), 'unbounded TTL', 'candidate-3.9.2'), /MIGRATION_511_READY_TTL_MS.*initialization drifted/);
+  assert.throws(() => assertCheckpointWriterCallChain(source.replace('let migration511InvalidationGeneration = 0;', 'let migration511InvalidationGeneration = NaN;'), 'invalid cache generation', 'candidate-3.9.2'), /migration511InvalidationGeneration.*initialization drifted/);
+  assert.throws(() => assertCheckpointWriterCallChain(source.replace('migration511InvalidationGeneration += 1;', ''), 'lost invalidation', 'candidate-3.9.2'), /invalidateMigration511Ready.*locked active semantic AST/);
 });

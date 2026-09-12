@@ -85,3 +85,63 @@ async function recordApplyBatchCheckpoints(
     questionPacket: buildApplyBatchQuestionPacket(results),
   };
 }
+
+// Schema-readiness dependency definitions from close-ai b1b2fbf7155f1eadd4a22bcef10525800dcad63f.
+async function upgradeClientActionTypeSchemaReady(
+  queryable: ApplyBatchQueryable,
+): Promise<boolean> {
+  return probeUpgradeClientActionTypeSchemaReady(queryable, 0);
+}
+async function probeUpgradeClientActionTypeSchemaReady(
+  queryable: ApplyBatchQueryable,
+  attempt: number,
+): Promise<boolean> {
+  if (Date.now() < upgradeClientActionTypeReadyUntil) return true;
+  const generation = migration511InvalidationGeneration;
+  const constraintReady = await queryable.query(
+    `SELECT (
+       EXISTS (
+         SELECT 1
+           FROM pg_constraint
+          WHERE conrelid = to_regclass('public.user_apply_human_actions')
+            AND conname = 'user_apply_human_actions_action_type_check'
+            AND convalidated
+            AND pg_get_constraintdef(oid) LIKE '%upgrade_client%'
+       )
+       AND NOT EXISTS (
+         -- /admin/rollback-migration-511 phase 1 adds this NOT VALID guard
+         -- before it drops/renames the wide constraint above. Postgres
+         -- enforces a NOT VALID CHECK against new rows immediately, so once
+         -- this guard exists an upgrade_client insert violates IT, not the
+         -- still-validated wide constraint the query above inspects. Report
+         -- not-ready for that whole window, not just once the wide
+         -- constraint is finally dropped.
+         SELECT 1
+           FROM pg_constraint
+          WHERE conrelid = to_regclass('public.user_apply_human_actions')
+            AND conname = 'user_apply_human_actions_action_type_rollback_check'
+       )
+     ) AS ready`,
+  );
+  const ready = constraintReady.rows[0]?.ready === true;
+  if (generation !== migration511InvalidationGeneration) {
+    // An invalidation landed while this query was in flight -- this answer
+    // is ambiguous relative to it (the DB read could have run either side
+    // of the admin rollback's transaction), so discard it and re-probe
+    // against the now-current generation instead of trusting or caching
+    // it. Bounded so a pathological invalidation-every-probe scenario
+    // fails safe (not ready) rather than recursing forever.
+    return attempt >= 3 ? false : probeUpgradeClientActionTypeSchemaReady(queryable, attempt + 1);
+  }
+  upgradeClientActionTypeReadyUntil = ready ? Date.now() + MIGRATION_511_READY_TTL_MS : 0;
+  return ready;
+}
+
+// Reviewed readiness cache state and invalidation from the same b1b2fbf commit.
+const MIGRATION_511_READY_TTL_MS = 30_000;
+let upgradeClientActionTypeReadyUntil = 0;
+let migration511InvalidationGeneration = 0;
+function invalidateMigration511Ready(): void {
+  upgradeClientActionTypeReadyUntil = 0;
+  migration511InvalidationGeneration += 1;
+}

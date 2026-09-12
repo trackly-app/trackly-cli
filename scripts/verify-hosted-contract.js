@@ -5250,6 +5250,23 @@ function assertCheckpointWriterCallChain(source, sourcePath, checkpointWriterGen
     `, `${sourcePath} production writer uniqueness validation`),
   ];
   if (checkpointWriterGeneration === 'candidate-3.9.2') {
+    // Reviewed executable dependency chain from backend b1b2fbf7155f1eadd4a22bcef10525800dcad63f.
+    // Lock the wrapper and its database probe, not only the awaited call site.
+    assertActiveFunctionAstSha256(source, 'upgradeClientActionTypeSchemaReady',
+      'd56bfb189229fbf50bc3df4c59335e66136964af5a23592769c301c784fe35d6', sourcePath);
+    assertActiveFunctionAstSha256(source, 'probeUpgradeClientActionTypeSchemaReady',
+      'ce128689466f4d1e957951a4659d1ef88d8aa1dc365c5d0eeac4212b376e3d89', sourcePath);
+    assertActiveFunctionAstSha256(source, 'invalidateMigration511Ready',
+      '1828af9e0f7bc64fa35136f15e822f3d1bf7e9873a0d1aed97541f8c1eb86986', sourcePath);
+    for (const [name, initialValue] of [
+      ['MIGRATION_511_READY_TTL_MS', 30_000],
+      ['upgradeClientActionTypeReadyUntil', 0],
+      ['migration511InvalidationGeneration', 0],
+    ]) {
+      const kind = name === 'MIGRATION_511_READY_TTL_MS' ? 'const' : 'let';
+      assertActiveTopLevelStatementAst(source, `${kind} ${name} = ${initialValue};`,
+        `${name} candidate schema-readiness initialization drifted (${sourcePath})`);
+    }
     productionPrefix.push(parseExpectedStatement(`
       if (
         input.checkpoints.some((checkpoint) => checkpoint.actions.some(
