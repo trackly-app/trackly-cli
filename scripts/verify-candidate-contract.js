@@ -74,17 +74,23 @@ function expectedContractSchemaAst(name, serialized, version, lane) {
 function verifyCandidateContract({ cliRoot = path.join(__dirname, '..'), backendDir, expectedBackendSha }) {
   assert.match(expectedBackendSha || '', /^[a-f0-9]{40}$/, 'Expected backend SHA must be a full 40-character commit');
   assert.ok(backendDir, 'Candidate backend directory is required');
-  assert.equal(gitOutput(backendDir, ['rev-parse', 'HEAD']).trim(), expectedBackendSha, 'Candidate backend HEAD must match expected SHA');
-  assert.equal(gitOutput(backendDir, ['status', '--porcelain', '--untracked-files=all']).trim(), '', 'Candidate backend must be completely clean');
+  const candidateGit = args => gitOutput(backendDir, ['--no-replace-objects', ...args]);
+  assert.equal(candidateGit(['rev-parse', 'HEAD']).trim(), expectedBackendSha, 'Candidate backend HEAD must match expected SHA');
+  assert.equal(candidateGit(['status', '--porcelain', '--untracked-files=all']).trim(), '', 'Candidate backend must be completely clean');
   const read = (root, file) => fs.readFileSync(path.join(root, file), 'utf8');
+  const readBackend = file => {
+    const entry = candidateGit(['ls-tree', expectedBackendSha, '--', file]).trim();
+    assert.match(entry, /^(100644|100755) blob [a-f0-9]{40}\t/, `Candidate backend ${file} must be a committed regular file`);
+    return candidateGit(['show', `${expectedBackendSha}:${file}`]);
+  };
   const local = JSON.parse(read(cliRoot, 'contracts/trackly-apply-tools.json'));
-  const hosted = JSON.parse(read(backendDir, 'contracts/trackly-apply-tools.json'));
+  const hosted = JSON.parse(readBackend('contracts/trackly-apply-tools.json'));
   const { schemaDigests, ...shared } = local;
   assert.ok(schemaDigests, 'Local helper schema digests are required');
   shared.tools = Object.fromEntries(Object.entries(shared.tools).filter(([name]) => !LOCAL_ONLY.has(name)));
   assert.deepEqual(hosted, shared, 'Candidate shared contract drifted');
   const localSource = read(cliRoot, 'mcp/apply-tools.js');
-  const hostedSource = read(backendDir, 'src/mcp/server.ts');
+  const hostedSource = readBackend('src/mcp/server.ts');
   const executableSchemas = { local: {}, hosted: {} };
   for (const [lane, source, contract] of [['local', localSource, local], ['hosted', hostedSource, hosted]]) {
     const registrations = lane === 'local'
@@ -121,7 +127,7 @@ function verifyCandidateContract({ cliRoot = path.join(__dirname, '..'), backend
   const dependencySources = {
     localMcpApplyTools: localSource,
     hostedMcpServer: hostedSource,
-    hostedApplyExecutionContract: read(backendDir, 'src/services/application-profile/apply-execution-contract.ts'),
+    hostedApplyExecutionContract: readBackend('src/services/application-profile/apply-execution-contract.ts'),
   };
   for (const section of ['namedApplySchemaSha256', 'namedApplyDependencySha256']) {
     for (const [lane, definitions] of Object.entries(pluginLock.publicExecutableContract[section])) {
@@ -133,11 +139,11 @@ function verifyCandidateContract({ cliRoot = path.join(__dirname, '..'), backend
   }
   const fixture = {
     localContract: local, hostedContract: hosted, localApplySource: localSource, hostedApplySource: hostedSource,
-    hostedBatchServiceSource: read(backendDir, 'src/services/application-profile/batch-service.ts'),
-    hostedCheckpointContractSource: read(backendDir, 'src/services/application-profile/apply-checkpoint-contract.ts'),
-    hostedPluginContract: JSON.parse(read(backendDir, 'contracts/trackly-plugin-tools.json')),
+    hostedBatchServiceSource: readBackend('src/services/application-profile/batch-service.ts'),
+    hostedCheckpointContractSource: readBackend('src/services/application-profile/apply-checkpoint-contract.ts'),
+    hostedPluginContract: JSON.parse(readBackend('contracts/trackly-plugin-tools.json')),
     pluginLock,
-    hostedPluginSource: read(backendDir, 'src/mcp/plugin-server.ts'),
+    hostedPluginSource: readBackend('src/mcp/plugin-server.ts'),
   };
   assertSurfaceEnumBindings(localSource, hostedSource, fixture.hostedBatchServiceSource, local.constants);
   verifyCoordinatedBackendCore(fixture);

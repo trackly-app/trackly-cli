@@ -208,3 +208,61 @@ test('candidate readiness cache cannot start always ready or lose invalidation',
   assert.throws(() => assertCheckpointWriterCallChain(source.replace('let migration511InvalidationGeneration = 0;', 'let migration511InvalidationGeneration = NaN;'), 'invalid cache generation', 'candidate-3.9.2'), /migration511InvalidationGeneration.*initialization drifted/);
   assert.throws(() => assertCheckpointWriterCallChain(source.replace('migration511InvalidationGeneration += 1;', ''), 'lost invalidation', 'candidate-3.9.2'), /invalidateMigration511Ready.*locked active semantic AST/);
 });
+
+
+for (const target of ['contracts/trackly-apply-tools.json', 'src/mcp/server.ts']) {
+  test(`candidate reads committed backend bytes despite hidden checkout substitution: ${target}`, t => {
+    const f = fixture(t);
+    const file = path.join(f.backendDir, target);
+    const original = fs.readFileSync(file, 'utf8');
+    fs.writeFileSync(file, original.replace('z.string()', 'z.number()'));
+    f.expectedBackendSha = f.commit();
+    execFileSync('git', ['-C', f.backendDir, 'update-index', '--skip-worktree', target]);
+    fs.writeFileSync(file, original);
+    assert.equal(execFileSync('git', ['-C', f.backendDir, 'status', '--porcelain'], { encoding: 'utf8' }).trim(), '');
+    assert.throws(() => verifyCandidateContract(f), target.endsWith('.json')
+      ? /shared contract drifted/ : /hosted trackly_example executable schema drifted/);
+  });
+}
+
+
+test('candidate rejects a committed symlink even when a clean checkout supplies regular external content', t => {
+  const f = fixture(t);
+  const target = 'contracts/trackly-apply-tools.json';
+  const external = path.join(f.cliRoot, 'external-contract.json');
+  const original = fs.readFileSync(path.join(f.backendDir, target), 'utf8');
+  fs.writeFileSync(external, original);
+  const git = (args, input) => execFileSync('git', ['-C', f.backendDir, ...args], { encoding: 'utf8', input }).trim();
+  const blob = git(['hash-object', '-w', '--stdin'], external);
+  git(['update-index', '--cacheinfo', `120000,${blob},${target}`]);
+  git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '-m', 'synthetic symlink entry']);
+  f.expectedBackendSha = git(['rev-parse', 'HEAD']);
+  // Plumbing models a symlink index on Windows without requiring symlink privilege.
+  // The checkout still supplies matching JSON, hidden by skip-worktree.
+  git(['update-index', '--skip-worktree', target]);
+  assert.equal(git(['status', '--porcelain']), '');
+  assert.throws(() => verifyCandidateContract(f), /must be a committed regular file/);
+});
+
+
+test('candidate ignores replacement refs that substitute another commit under the expected SHA', t => {
+  const f = fixture(t);
+  const target = 'contracts/trackly-apply-tools.json';
+  const file = path.join(f.backendDir, target);
+  const original = fs.readFileSync(file, 'utf8');
+  fs.writeFileSync(file, original.replace('z.string()', 'z.number()'));
+  const pinned = f.commit();
+  fs.writeFileSync(file, original);
+  const replacement = f.commit();
+  const git = args => execFileSync('git', ['-C', f.backendDir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git(['checkout', '--detach', pinned]);
+  git(['replace', pinned, replacement]);
+  git(['read-tree', replacement]);
+  git(['update-index', '--skip-worktree', target]);
+  fs.writeFileSync(file, original);
+  assert.equal(git(['rev-parse', 'HEAD']), pinned);
+  assert.equal(git(['status', '--porcelain']), '');
+  assert.equal(git(['show', `${pinned}:${target}`]), original.trim());
+  f.expectedBackendSha = pinned;
+  assert.throws(() => verifyCandidateContract(f), /completely clean|shared contract drifted/);
+});
