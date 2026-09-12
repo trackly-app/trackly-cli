@@ -15,7 +15,7 @@ const {
   HOSTED_GIT_MAX_BUFFER,
   activeNamedDefinitionAst,
   assertApplicationFieldByKeyReferenceSemantics,
-  assertPublishedApplyAdapterValidation,
+  assertBoundedApplyAdapterValidation,
   assertCheckpointRouteCallChain,
   assertCoordinatedCheckpointHelperSemantics,
   assertExactHostedSourceSha256,
@@ -37,14 +37,14 @@ const {
   verifyHostedContract,
 } = require('../scripts/verify-hosted-contract.js');
 
-test('adapter verifier rejects weakened published-set validation and detached constants', () => {
+test('adapter verifier rejects unbounded or broadened transport syntax', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'mcp', 'apply-tools.js'), 'utf8');
-  assert.doesNotThrow(() => assertPublishedApplyAdapterValidation(source, 'local apply tools'));
+  assert.doesNotThrow(() => assertBoundedApplyAdapterValidation(source, 'local apply tools'));
   for (const mutated of [
-    source.replace('return APPLY_ADAPTER_CODES.includes(value);', 'return true;'),
-    source.replace('APPLY_CONTRACT.constants.applyAdapterCodes', "['workday:12']"),
+    source.replace('/^[a-z0-9][a-z0-9_:-]{0,99}$/', '/.*/'),
+    source.replace('{0,99}', '{0,100}'),
   ]) {
-    assert.throws(() => assertPublishedApplyAdapterValidation(mutated, 'mutated apply tools'));
+    assert.throws(() => assertBoundedApplyAdapterValidation(mutated, 'mutated apply tools'));
   }
 });
 
@@ -1152,7 +1152,7 @@ test('documented local MCP tool count matches every registered tool', () => {
 });
 
 test('local MCP Apply schemas match each complete versioned input schema', () => {
-  assert.equal(contract.contractVersion, '3.9.1');
+  assert.equal(contract.contractVersion, '3.9.2');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
     const localSchema = typeof expectedSchema === 'string' ? expectedSchema : expectedSchema.local;
     const executableSchema = LOCAL_VALIDATION_SCHEMAS[name] || toolArguments(name)[2];
@@ -2543,6 +2543,9 @@ test('standalone hosted verifier executes tool, schema, and handler snapshot wir
   };
 
   assert.doesNotThrow(verifyFixture(structuredClone(originalFixture)));
+  const versionDrift = structuredClone(originalFixture);
+  versionDrift.applyContractVersion = contract.contractVersion;
+  assert.throws(verifyFixture(versionDrift), /must retain its captured historical Apply contract version/);
   const lifecycleDrift = structuredClone(originalFixture);
   lifecycleDrift.hostedPluginLifecycle.accessDefermentRecovery = 'owner_scoped_list_create_and_same_session_idempotent_clear';
   assert.throws(

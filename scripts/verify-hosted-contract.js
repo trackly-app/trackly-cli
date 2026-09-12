@@ -4628,22 +4628,14 @@ const AST_METADATA_FIELDS = new Set([
   'innerComments',
 ]);
 
-function assertPublishedApplyAdapterValidation(source, sourcePath) {
+function assertBoundedApplyAdapterValidation(source, sourcePath) {
   assert.deepEqual(
-    canonicalSchemaAst(parseSchemaExpression(source, 'APPLY_ADAPTER_CODES', sourcePath)),
+    canonicalSchemaAst(parseSchemaExpression(source, 'SAFE_OBSERVATION_CODE', sourcePath)),
     canonicalSchemaAst(parseSchemaExpression(
-      'const APPLY_ADAPTER_CODES = APPLY_CONTRACT.constants.applyAdapterCodes;',
-      'APPLY_ADAPTER_CODES', 'expected adapter contract binding',
+      'const SAFE_OBSERVATION_CODE = /^[a-z0-9][a-z0-9_:-]{0,99}$/;',
+      'SAFE_OBSERVATION_CODE', 'expected bounded adapter syntax',
     )),
-    'Published adapters must resolve from the mirrored contract',
-  );
-  assert.deepEqual(
-    canonicalSchemaAst(activeNamedDefinitionAst(source, 'isPublishedApplyAdapterCode', sourcePath)),
-    canonicalSchemaAst(activeNamedDefinitionAst(
-      'function isPublishedApplyAdapterCode(value) { return APPLY_ADAPTER_CODES.includes(value); }',
-      'isPublishedApplyAdapterCode', 'expected published adapter validator',
-    )),
-    'Adapter validation must reject values outside the published set',
+    'Adapter transport must retain bounded machine-code syntax; the backend authorizes execution generation',
   );
 }
 
@@ -5070,7 +5062,8 @@ function assertReplayAwareMixedPacketOrdering(
   assert.ok(mixedIndex > replayIndex, `${sourcePath} must reject new mixed packets only after exact replay lookup`);
 }
 
-function assertCheckpointWriterCallChain(source, sourcePath) {
+function assertCheckpointWriterCallChain(source, sourcePath, checkpointWriterGeneration = 'deployed') {
+  assert.ok(['deployed', 'candidate-3.9.2'].includes(checkpointWriterGeneration), 'Unknown checkpoint writer generation');
   assertUnshadowedIntrinsicBinding(source, 'Promise', sourcePath);
   const definition = activeNamedDefinitionAst(source, 'recordApplyBatchCheckpoints', sourcePath);
   assert.equal(definition?.type, 'FunctionDeclaration', `recordApplyBatchCheckpoints in ${sourcePath} must be a function`);
@@ -5256,8 +5249,22 @@ function assertCheckpointWriterCallChain(source, sourcePath) {
       }
     `, `${sourcePath} production writer uniqueness validation`),
   ];
+  if (checkpointWriterGeneration === 'candidate-3.9.2') {
+    productionPrefix.push(parseExpectedStatement(`
+      if (
+        input.checkpoints.some((checkpoint) => checkpoint.actions.some(
+          (action) => APPLY_BATCH_CHECKPOINT_ACTION_MAP[action.actionCode].actionType === 'upgrade_client',
+        ))
+        && !(await upgradeClientActionTypeSchemaReady(queryable))
+      ) {
+        throw new ApplyBatchSchemaPendingError(
+          'client/upgrade_required checkpoints are not yet enabled on this server.',
+        );
+      }
+    `, `${sourcePath} candidate upgrade-client schema probe`));
+  }
   assert.ok(
-    [fixturePrefix, productionPrefix].some((expectedPrefix) => (
+    (checkpointWriterGeneration === 'deployed' ? [fixturePrefix, productionPrefix] : [productionPrefix]).some((expectedPrefix) => (
       JSON.stringify(canonicalSchemaAst(prefixStatements)) === JSON.stringify(canonicalSchemaAst(expectedPrefix))
     )),
     `${sourcePath} checkpoint writer must preserve only its locked validation prefix`,
@@ -5292,7 +5299,7 @@ function assertCheckpointWriterCallChain(source, sourcePath) {
     && JSON.stringify(canonicalSchemaAst(tailStatements)) === JSON.stringify(canonicalSchemaAst(tail))
   );
   assert.ok(
-    matchesWriterShape(fixturePrefix, fixtureCatchBody, fixtureTail)
+    (checkpointWriterGeneration === 'deployed' && matchesWriterShape(fixturePrefix, fixtureCatchBody, fixtureTail))
       || matchesWriterShape(productionPrefix, productionCatchBody, productionTail),
     `${sourcePath} checkpoint writer must match one complete locked fixture or production shape`,
   );
@@ -5306,12 +5313,14 @@ function checkpointHelperSemanticDescriptor(
   checkpointContractSource = null,
   checkpointContractSourcePath = null,
   expectedReplayHelperDigests = HOSTED_APPLY_REPLAY_HELPER_AST_SHA256,
+  checkpointWriterGeneration = 'deployed',
 ) {
   const hostedMappings = checkpointContractSource === null
     ? null
     : hostedCheckpointActionMappings(
       checkpointContractSource,
       checkpointContractSourcePath || sourcePath,
+      checkpointWriterGeneration,
     );
   const actionCodes = hostedMappings?.actionCodes
     ?? contract.constants.applyCheckpointActionCodes;
@@ -5523,6 +5532,7 @@ function checkpointHelperSemanticDescriptor(
     assertCheckpointWriterCallChain(
       replayAwareServiceSource,
       `${sourcePath} replay-aware service`,
+      checkpointWriterGeneration,
     );
   } else {
     assert.fail(`${sourcePath} contains an unmodeled local mixed-packet preflight`);
@@ -5579,7 +5589,7 @@ function staticPrimitive(node, label) {
   assert.fail(`${label} must be a static string or boolean literal`);
 }
 
-function hostedCheckpointActionMappings(source, sourcePath) {
+function hostedCheckpointActionMappings(source, sourcePath, checkpointWriterGeneration = 'deployed') {
   const contractAst = parseFullSource(source, sourcePath);
   const reviewedRoutingByAction = {
     'answer/unknown': ['complete_field', 'application', 'unknown_answer'],
@@ -5726,14 +5736,19 @@ function hostedCheckpointActionMappings(source, sourcePath) {
     unwrapStaticExpression(frozenMap.arguments[0]),
     `APPLY_BATCH_CHECKPOINT_ACTION_MAP in ${sourcePath}`,
   );
-  assert.deepEqual(Object.keys(mappings), actionCodes, `${sourcePath} checkpoint mappings must exactly match action-code order`);
+  const expectedMappingOrder = checkpointWriterGeneration === 'candidate-3.9.2'
+    ? actionCodes.filter(code => code !== 'client/upgrade_required').flatMap(code => (
+      code === 'observability/unverifiable_state' ? ['client/upgrade_required', code] : [code]
+    ))
+    : actionCodes;
+  assert.deepEqual(Object.keys(mappings), expectedMappingOrder, `${sourcePath} checkpoint mappings must exactly match action-code order`);
 
   const continuationByAction = {};
   const lifecycleByAction = {};
   const questionPacketByAction = {};
   const lockedObjectReferences = [frozenMap.callee.object];
   const lockedFreezeCalls = [frozenMap];
-  for (const actionCode of actionCodes) {
+  for (const actionCode of expectedMappingOrder) {
     const frozenMapping = unwrapStaticExpression(mappings[actionCode]);
     assert.equal(
       frozenMapping?.type,
@@ -5820,6 +5835,7 @@ function assertCoordinatedCheckpointHelperSemantics({
   sourcePaths = {},
   expectedHostedDigests = HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256,
   expectedReplayHelperDigests = HOSTED_APPLY_REPLAY_HELPER_AST_SHA256,
+  checkpointWriterGeneration = 'deployed',
 }) {
   const localApplyPath = sourcePaths.localApply || 'local Apply source';
   const hostedApplyPath = sourcePaths.hostedApply || 'hosted Apply source';
@@ -5857,6 +5873,7 @@ function assertCoordinatedCheckpointHelperSemantics({
       null,
       null,
       expectedReplayHelperDigests,
+      checkpointWriterGeneration,
     ),
     checkpointHelperSemanticDescriptor(
       hostedApplySource,
@@ -5866,6 +5883,7 @@ function assertCoordinatedCheckpointHelperSemantics({
       hostedCheckpointContractSource,
       sourcePaths.hostedCheckpointContract,
       expectedReplayHelperDigests,
+      checkpointWriterGeneration,
     ),
     'Local and hosted checkpoint helpers drifted from one language-neutral semantic contract',
   );
@@ -6510,14 +6528,12 @@ function verifyCheckedInHostedContractFixture(
     timestamps.capturedAt - timestamps.mergedCommittedAt <= 24 * 60 * 60 * 1000,
     `${fixturePath} snapshot must be captured within 24 hours of its recorded runtime merge`,
   );
-  const localApplyContract = JSON.parse(fs.readFileSync(
-    path.join(cliRoot, 'contracts', 'trackly-apply-tools.json'),
-    'utf8',
-  ));
+  // This immutable snapshot describes its recorded merge, not today's Apply
+  // contract. Current cross-repository parity requires backendDir mode below.
   assert.equal(
     fixture.applyContractVersion,
-    localApplyContract.contractVersion,
-    `${fixturePath} must identify the checked-in local Apply contract version`,
+    '3.8.1',
+    `${fixturePath} must retain its captured historical Apply contract version`,
   );
   assert.equal(fixture.pluginContractVersion, '1.0.0');
   const lock = JSON.parse(fs.readFileSync(path.join(path.dirname(fixturePath), 'skill-lock.json'), 'utf8'));
@@ -6631,7 +6647,7 @@ function verifyCheckedInHostedContractFixture(
     ...Object.values(lock.publicExecutableContract.handlerSha256),
   ]) assert.match(digest, /^[a-f0-9]{64}$/);
   console.log(
-    `Checked-in hosted contract fixture passes for Apply ${fixture.applyContractVersion}; the ${snapshotNames.length}-tool public facade and ${fixture.hostedMcpToolNames.length}-tool hosted MCP catalogs are locked.`,
+    `Historical hosted contract fixture passes for captured Apply ${fixture.applyContractVersion}; the ${snapshotNames.length}-tool public facade and ${fixture.hostedMcpToolNames.length}-tool hosted MCP catalogs are locked.`,
   );
 }
 
@@ -6698,7 +6714,7 @@ if (!fs.existsSync(hostedPluginContractPath)) {
 
 const local = JSON.parse(fs.readFileSync(localContractPath, 'utf8'));
 const localApplySource = fs.readFileSync(localApplySourcePath, 'utf8');
-assertPublishedApplyAdapterValidation(localApplySource, localApplySourcePath);
+assertBoundedApplyAdapterValidation(localApplySource, localApplySourcePath);
 const localServerSource = fs.readFileSync(localServerSourcePath, 'utf8');
 const hosted = JSON.parse(fs.readFileSync(hostedContractPath, 'utf8'));
 const hostedApplySource = fs.readFileSync(hostedApplySourcePath, 'utf8');
@@ -9043,7 +9059,7 @@ assertBabelPropertyExpression(
       expectedInspectionEpoch: z.number().int().min(0),
       browserBindingHash: z.string().regex(SHA256),
       browserSurface: z.enum(APPLY_BROWSER_SURFACES),
-      adapterCode: z.string().regex(SAFE_CODE).refine(isPublishedApplyAdapterCode, { message: 'Invalid adapterCode' }),
+      adapterCode: z.string().regex(SAFE_CODE),
       bindingReason: z.enum(['initial_binding', 'recovery_binding']),
       idempotencyKey: z.string().min(16).max(200).regex(SAFE_IDEMPOTENCY_KEY),
     }).strict(),
@@ -9491,11 +9507,13 @@ module.exports = {
   activeNamedDefinitionAst,
   activeToolRegistrations,
   assertApplicationFieldByKeyReferenceSemantics,
-  assertPublishedApplyAdapterValidation,
+  assertBoundedApplyAdapterValidation,
   assertCheckpointRouteCallChain,
+  assertCheckpointWriterCallChain,
   assertCoordinatedCheckpointHelperSemantics,
   assertExactHostedSourceSha256,
   assertInternalSecretCompatibility,
+  assertImportBinding,
   assertUnshadowedImportBinding,
   assertInstallProcessGuardsSemantics,
   assertPluginManualSubmissionRouteSemantics,

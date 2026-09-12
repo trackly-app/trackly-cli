@@ -70,20 +70,20 @@ function registerRuntimeTools(apiResponse = { ok: true }) {
 }
 
 for (const name of ['trackly_bind_apply_surface', 'trackly_record_apply_surface_evidence']) {
-  test(`${name} accepts published adapter versions and rejects aliases or future versions`, () => {
+  test(`${name} accepts bounded adapter syntax for backend authorization and rejects malformed codes`, () => {
     const { registrations } = registerRuntimeTools();
     const adapter = registrations.get(name).schema.shape.adapterCode;
-    for (const value of ['greenhouse:1', 'workday:1', 'oracle_hcm:1', 'generic_web_form:1']) {
+    for (const value of ['greenhouse:1', 'workday:1', 'oracle_hcm:1', 'generic_web_form:1', 'chrome_mcp', 'custom:1', 'workday:12', 'a'.repeat(100)]) {
       assert.equal(adapter.safeParse(value).success, true, value);
     }
-    for (const value of ['greenhouse', 'greenhouse_v1', 'custom:1', 'unknown:1', 'workday:12', 'greenhouse:01', 'greenhouse:0']) {
+    for (const value of ['', 'Chrome_MCP', 'chrome mcp', 'chrome/mcp', ':chrome', 'a'.repeat(101)]) {
       assert.equal(adapter.safeParse(value).success, false, value);
     }
   });
 }
 
 test('protocol 3.7 publishes all accessible execution, recovery, and access-knowledge tools', () => {
-  assert.equal(contract.contractVersion, '3.9.1');
+  assert.equal(contract.contractVersion, '3.9.2');
   for (const name of executionTools) {
     assert.ok(contract.tools[name], `${name} missing from contract fixture`);
     assert.match(tools, new RegExp(`['"]${name}['"]`));
