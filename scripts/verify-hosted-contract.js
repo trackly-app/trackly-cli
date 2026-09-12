@@ -4628,6 +4628,17 @@ const AST_METADATA_FIELDS = new Set([
   'innerComments',
 ]);
 
+function assertBoundedApplyAdapterValidation(source, sourcePath) {
+  assert.deepEqual(
+    canonicalSchemaAst(parseSchemaExpression(source, 'SAFE_OBSERVATION_CODE', sourcePath)),
+    canonicalSchemaAst(parseSchemaExpression(
+      'const SAFE_OBSERVATION_CODE = /^[a-z0-9][a-z0-9_:-]{0,99}$/;',
+      'SAFE_OBSERVATION_CODE', 'expected bounded adapter syntax',
+    )),
+    'Adapter transport must retain bounded machine-code syntax; the backend authorizes execution generation',
+  );
+}
+
 function canonicalSchemaAst(value) {
   if (value instanceof RegExp) {
     return { pattern: value.source, flags: value.flags };
@@ -5051,7 +5062,8 @@ function assertReplayAwareMixedPacketOrdering(
   assert.ok(mixedIndex > replayIndex, `${sourcePath} must reject new mixed packets only after exact replay lookup`);
 }
 
-function assertCheckpointWriterCallChain(source, sourcePath) {
+function assertCheckpointWriterCallChain(source, sourcePath, checkpointWriterGeneration = 'deployed') {
+  assert.ok(['deployed', 'candidate-3.9.2'].includes(checkpointWriterGeneration), 'Unknown checkpoint writer generation');
   assertUnshadowedIntrinsicBinding(source, 'Promise', sourcePath);
   const definition = activeNamedDefinitionAst(source, 'recordApplyBatchCheckpoints', sourcePath);
   assert.equal(definition?.type, 'FunctionDeclaration', `recordApplyBatchCheckpoints in ${sourcePath} must be a function`);
@@ -5237,8 +5249,39 @@ function assertCheckpointWriterCallChain(source, sourcePath) {
       }
     `, `${sourcePath} production writer uniqueness validation`),
   ];
+  if (checkpointWriterGeneration === 'candidate-3.9.2') {
+    // Reviewed executable dependency chain from backend b1b2fbf7155f1eadd4a22bcef10525800dcad63f.
+    // Lock the wrapper and its database probe, not only the awaited call site.
+    assertActiveFunctionAstSha256(source, 'upgradeClientActionTypeSchemaReady',
+      'd56bfb189229fbf50bc3df4c59335e66136964af5a23592769c301c784fe35d6', sourcePath);
+    assertActiveFunctionAstSha256(source, 'probeUpgradeClientActionTypeSchemaReady',
+      'ce128689466f4d1e957951a4659d1ef88d8aa1dc365c5d0eeac4212b376e3d89', sourcePath);
+    assertActiveFunctionAstSha256(source, 'invalidateMigration511Ready',
+      '1828af9e0f7bc64fa35136f15e822f3d1bf7e9873a0d1aed97541f8c1eb86986', sourcePath);
+    for (const [name, initialValue] of [
+      ['MIGRATION_511_READY_TTL_MS', 30_000],
+      ['upgradeClientActionTypeReadyUntil', 0],
+      ['migration511InvalidationGeneration', 0],
+    ]) {
+      const kind = name === 'MIGRATION_511_READY_TTL_MS' ? 'const' : 'let';
+      assertActiveTopLevelStatementAst(source, `${kind} ${name} = ${initialValue};`,
+        `${name} candidate schema-readiness initialization drifted (${sourcePath})`);
+    }
+    productionPrefix.push(parseExpectedStatement(`
+      if (
+        input.checkpoints.some((checkpoint) => checkpoint.actions.some(
+          (action) => APPLY_BATCH_CHECKPOINT_ACTION_MAP[action.actionCode].actionType === 'upgrade_client',
+        ))
+        && !(await upgradeClientActionTypeSchemaReady(queryable))
+      ) {
+        throw new ApplyBatchSchemaPendingError(
+          'client/upgrade_required checkpoints are not yet enabled on this server.',
+        );
+      }
+    `, `${sourcePath} candidate upgrade-client schema probe`));
+  }
   assert.ok(
-    [fixturePrefix, productionPrefix].some((expectedPrefix) => (
+    (checkpointWriterGeneration === 'deployed' ? [fixturePrefix, productionPrefix] : [productionPrefix]).some((expectedPrefix) => (
       JSON.stringify(canonicalSchemaAst(prefixStatements)) === JSON.stringify(canonicalSchemaAst(expectedPrefix))
     )),
     `${sourcePath} checkpoint writer must preserve only its locked validation prefix`,
@@ -5273,7 +5316,7 @@ function assertCheckpointWriterCallChain(source, sourcePath) {
     && JSON.stringify(canonicalSchemaAst(tailStatements)) === JSON.stringify(canonicalSchemaAst(tail))
   );
   assert.ok(
-    matchesWriterShape(fixturePrefix, fixtureCatchBody, fixtureTail)
+    (checkpointWriterGeneration === 'deployed' && matchesWriterShape(fixturePrefix, fixtureCatchBody, fixtureTail))
       || matchesWriterShape(productionPrefix, productionCatchBody, productionTail),
     `${sourcePath} checkpoint writer must match one complete locked fixture or production shape`,
   );
@@ -5287,12 +5330,14 @@ function checkpointHelperSemanticDescriptor(
   checkpointContractSource = null,
   checkpointContractSourcePath = null,
   expectedReplayHelperDigests = HOSTED_APPLY_REPLAY_HELPER_AST_SHA256,
+  checkpointWriterGeneration = 'deployed',
 ) {
   const hostedMappings = checkpointContractSource === null
     ? null
     : hostedCheckpointActionMappings(
       checkpointContractSource,
       checkpointContractSourcePath || sourcePath,
+      checkpointWriterGeneration,
     );
   const actionCodes = hostedMappings?.actionCodes
     ?? contract.constants.applyCheckpointActionCodes;
@@ -5504,6 +5549,7 @@ function checkpointHelperSemanticDescriptor(
     assertCheckpointWriterCallChain(
       replayAwareServiceSource,
       `${sourcePath} replay-aware service`,
+      checkpointWriterGeneration,
     );
   } else {
     assert.fail(`${sourcePath} contains an unmodeled local mixed-packet preflight`);
@@ -5560,7 +5606,7 @@ function staticPrimitive(node, label) {
   assert.fail(`${label} must be a static string or boolean literal`);
 }
 
-function hostedCheckpointActionMappings(source, sourcePath) {
+function hostedCheckpointActionMappings(source, sourcePath, checkpointWriterGeneration = 'deployed') {
   const contractAst = parseFullSource(source, sourcePath);
   const reviewedRoutingByAction = {
     'answer/unknown': ['complete_field', 'application', 'unknown_answer'],
@@ -5575,6 +5621,7 @@ function hostedCheckpointActionMappings(source, sourcePath) {
     'review/manual_submit': ['review', 'review', 'manual_submit'],
     'trust/origin_mismatch': ['review', 'navigation', 'origin_mismatch'],
     'observability/unverifiable_state': ['review', 'application', 'unverifiable_state'],
+    'client/upgrade_required': ['upgrade_client', 'navigation', 'client_upgrade'],
   };
   const allowedRuntimeBindings = new Set([
     'APPLY_BATCH_CHECKPOINT_ACTION_CODES',
@@ -5706,14 +5753,19 @@ function hostedCheckpointActionMappings(source, sourcePath) {
     unwrapStaticExpression(frozenMap.arguments[0]),
     `APPLY_BATCH_CHECKPOINT_ACTION_MAP in ${sourcePath}`,
   );
-  assert.deepEqual(Object.keys(mappings), actionCodes, `${sourcePath} checkpoint mappings must exactly match action-code order`);
+  const expectedMappingOrder = checkpointWriterGeneration === 'candidate-3.9.2'
+    ? actionCodes.filter(code => code !== 'client/upgrade_required').flatMap(code => (
+      code === 'observability/unverifiable_state' ? ['client/upgrade_required', code] : [code]
+    ))
+    : actionCodes;
+  assert.deepEqual(Object.keys(mappings), expectedMappingOrder, `${sourcePath} checkpoint mappings must exactly match action-code order`);
 
   const continuationByAction = {};
   const lifecycleByAction = {};
   const questionPacketByAction = {};
   const lockedObjectReferences = [frozenMap.callee.object];
   const lockedFreezeCalls = [frozenMap];
-  for (const actionCode of actionCodes) {
+  for (const actionCode of expectedMappingOrder) {
     const frozenMapping = unwrapStaticExpression(mappings[actionCode]);
     assert.equal(
       frozenMapping?.type,
@@ -5800,6 +5852,7 @@ function assertCoordinatedCheckpointHelperSemantics({
   sourcePaths = {},
   expectedHostedDigests = HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256,
   expectedReplayHelperDigests = HOSTED_APPLY_REPLAY_HELPER_AST_SHA256,
+  checkpointWriterGeneration = 'deployed',
 }) {
   const localApplyPath = sourcePaths.localApply || 'local Apply source';
   const hostedApplyPath = sourcePaths.hostedApply || 'hosted Apply source';
@@ -5837,6 +5890,7 @@ function assertCoordinatedCheckpointHelperSemantics({
       null,
       null,
       expectedReplayHelperDigests,
+      checkpointWriterGeneration,
     ),
     checkpointHelperSemanticDescriptor(
       hostedApplySource,
@@ -5846,6 +5900,7 @@ function assertCoordinatedCheckpointHelperSemantics({
       hostedCheckpointContractSource,
       sourcePaths.hostedCheckpointContract,
       expectedReplayHelperDigests,
+      checkpointWriterGeneration,
     ),
     'Local and hosted checkpoint helpers drifted from one language-neutral semantic contract',
   );
@@ -6490,14 +6545,12 @@ function verifyCheckedInHostedContractFixture(
     timestamps.capturedAt - timestamps.mergedCommittedAt <= 24 * 60 * 60 * 1000,
     `${fixturePath} snapshot must be captured within 24 hours of its recorded runtime merge`,
   );
-  const localApplyContract = JSON.parse(fs.readFileSync(
-    path.join(cliRoot, 'contracts', 'trackly-apply-tools.json'),
-    'utf8',
-  ));
+  // This immutable snapshot describes its recorded merge, not today's Apply
+  // contract. Current cross-repository parity requires backendDir mode below.
   assert.equal(
     fixture.applyContractVersion,
-    localApplyContract.contractVersion,
-    `${fixturePath} must identify the checked-in local Apply contract version`,
+    '3.8.1',
+    `${fixturePath} must retain its captured historical Apply contract version`,
   );
   assert.equal(fixture.pluginContractVersion, '1.0.0');
   const lock = JSON.parse(fs.readFileSync(path.join(path.dirname(fixturePath), 'skill-lock.json'), 'utf8'));
@@ -6611,7 +6664,7 @@ function verifyCheckedInHostedContractFixture(
     ...Object.values(lock.publicExecutableContract.handlerSha256),
   ]) assert.match(digest, /^[a-f0-9]{64}$/);
   console.log(
-    `Checked-in hosted contract fixture passes for Apply ${fixture.applyContractVersion}; the ${snapshotNames.length}-tool public facade and ${fixture.hostedMcpToolNames.length}-tool hosted MCP catalogs are locked.`,
+    `Historical hosted contract fixture passes for captured Apply ${fixture.applyContractVersion}; the ${snapshotNames.length}-tool public facade and ${fixture.hostedMcpToolNames.length}-tool hosted MCP catalogs are locked.`,
   );
 }
 
@@ -6678,6 +6731,7 @@ if (!fs.existsSync(hostedPluginContractPath)) {
 
 const local = JSON.parse(fs.readFileSync(localContractPath, 'utf8'));
 const localApplySource = fs.readFileSync(localApplySourcePath, 'utf8');
+assertBoundedApplyAdapterValidation(localApplySource, localApplySourcePath);
 const localServerSource = fs.readFileSync(localServerSourcePath, 'utf8');
 const hosted = JSON.parse(fs.readFileSync(hostedContractPath, 'utf8'));
 const hostedApplySource = fs.readFileSync(hostedApplySourcePath, 'utf8');
@@ -6824,6 +6878,7 @@ const HOSTED_ONLY_TOOLS = [
 
 for (const constantName of [
   'applyExecutionMaxTarget',
+  'applyAdapterCodes',
   'applyBrowserSurfaces',
   'applyAccessClassifications',
   'applyObservedAccessClassifications',
@@ -9469,10 +9524,13 @@ module.exports = {
   activeNamedDefinitionAst,
   activeToolRegistrations,
   assertApplicationFieldByKeyReferenceSemantics,
+  assertBoundedApplyAdapterValidation,
   assertCheckpointRouteCallChain,
+  assertCheckpointWriterCallChain,
   assertCoordinatedCheckpointHelperSemantics,
   assertExactHostedSourceSha256,
   assertInternalSecretCompatibility,
+  assertImportBinding,
   assertUnshadowedImportBinding,
   assertInstallProcessGuardsSemantics,
   assertPluginManualSubmissionRouteSemantics,

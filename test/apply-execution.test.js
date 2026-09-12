@@ -42,6 +42,7 @@ const executionTools = [
 
 function registerRuntimeTools(apiResponse = { ok: true }) {
   const registrations = new Map();
+  const prompts = new Map();
   const calls = [];
   const server = {
     tool(name, description, schema, handler) {
@@ -54,7 +55,7 @@ function registerRuntimeTools(apiResponse = { ok: true }) {
         handler,
       });
     },
-    registerPrompt() {},
+    registerPrompt(name, definition, handler) { prompts.set(name, handler); },
     registerResource() {},
   };
   registerApplyTools(server, {
@@ -66,11 +67,24 @@ function registerRuntimeTools(apiResponse = { ok: true }) {
       return typeof apiResponse === 'function' ? apiResponse(...args) : apiResponse;
     },
   });
-  return { registrations, calls };
+  return { registrations, calls, prompts };
+}
+
+for (const name of ['trackly_bind_apply_surface', 'trackly_record_apply_surface_evidence']) {
+  test(`${name} accepts bounded adapter syntax for backend authorization and rejects malformed codes`, () => {
+    const { registrations } = registerRuntimeTools();
+    const adapter = registrations.get(name).schema.shape.adapterCode;
+    for (const value of ['greenhouse:1', 'workday:1', 'oracle_hcm:1', 'generic_web_form:1', 'chrome_mcp', 'custom:1', 'workday:12', 'a'.repeat(100)]) {
+      assert.equal(adapter.safeParse(value).success, true, value);
+    }
+    for (const value of ['', 'Chrome_MCP', 'chrome mcp', 'chrome/mcp', ':chrome', 'a'.repeat(101)]) {
+      assert.equal(adapter.safeParse(value).success, false, value);
+    }
+  });
 }
 
 test('protocol 3.7 publishes all accessible execution, recovery, and access-knowledge tools', () => {
-  assert.equal(contract.contractVersion, '3.8.1');
+  assert.equal(contract.contractVersion, '3.9.2');
   for (const name of executionTools) {
     assert.ok(contract.tools[name], `${name} missing from contract fixture`);
     assert.match(tools, new RegExp(`['"]${name}['"]`));
@@ -173,7 +187,7 @@ test('durable recovery tools use exact bounded HTTP contracts and validate resul
     mode: 'recover_exact_members', sourceExecutionId: 11, sourceSnapshotHash, candidateIds: [21],
     explicitExactSetConfirmation: true,
   }]);
-  assert.deepEqual(calls[1].at(-1), { 'Idempotency-Key': idempotencyKey });
+  assert.deepEqual(calls[1].at(-1), { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': contract.contractVersion });
   assert.deepEqual(calls[2].slice(0, 2), ['GET', '/api/jobscout/apply/executions/12/review-handoffs']);
   assert.deepEqual(calls[3].slice(0, 3), ['POST', '/api/jobscout/apply/review-handoffs/41/claim', {
     members: [{ memberId: 51, classification: 'detected' }],
@@ -693,7 +707,7 @@ test('execution tools validate and send the exact HTTP contract', async () => {
   const cases = [
     ['trackly_start_apply_execution',
       { mode: 'complete_next_n_accessible', target: 10, idempotencyKey },
-      ['POST', '/api/jobscout/apply/executions', { mode: 'complete_next_n_accessible', target: 10 }, false, false, 'trackly-mcp/test', { 'Idempotency-Key': idempotencyKey }]],
+      ['POST', '/api/jobscout/apply/executions', { mode: 'complete_next_n_accessible', target: 10 }, false, false, 'trackly-mcp/test', { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': contract.contractVersion }]],
     ['trackly_get_active_apply_execution', {},
       ['GET', '/api/jobscout/apply/executions/active', null, false, false, 'trackly-mcp/test', undefined]],
     ['trackly_get_apply_execution', { executionId: 41 },
@@ -2623,4 +2637,14 @@ test('access deferment discovery accepts the backend active-deferment limit', as
     deferments: [...deferments, { ...deferments[0], id: 21, jobId: 1020 }],
   }).registrations.get('trackly_list_apply_access_deferments');
   await assert.rejects(aboveLimit.handler({}), z.ZodError);
+});
+
+
+test('registered Apply prompt requires the current contract for new work', async () => {
+  const { prompts } = registerRuntimeTools();
+  const result = await prompts.get('trackly-apply')();
+  const texts = result.messages.filter(message => message.content.type === 'text').map(message => message.content.text);
+  const requirements = texts.flatMap(text => Array.from(text.matchAll(/require MCP contract ([0-9]+\.[0-9]+\.[0-9]+)/g), match => match[1]));
+  assert.deepEqual(requirements, [contract.contractVersion]);
+  assert.ok(texts.some(text => text.includes('Never send raw browser values or click Submit.')));
 });

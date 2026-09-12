@@ -173,7 +173,7 @@ test('apiRequest permits only a bounded Idempotency-Key additional header', asyn
   });
 });
 
-test('apiRequest preserves Idempotency-Key across OAuth refresh retry', async (t) => {
+test('apiRequest preserves start capability and Idempotency-Key across OAuth refresh retry', async (t) => {
   const mutationRequests = [];
   let refreshCount = 0;
   const idempotencyKey = 'batch-oauth-retry-key-0001';
@@ -188,10 +188,11 @@ test('apiRequest preserves Idempotency-Key across OAuth refresh retry', async (t
       }));
       return;
     }
-    if (req.url === '/api/jobscout/apply/batches' && req.method === 'POST') {
+    if (req.url === '/api/jobscout/apply/executions' && req.method === 'POST') {
       mutationRequests.push({
         authorization: req.headers.authorization,
         idempotencyKey: req.headers['idempotency-key'],
+        startContract: req.headers['x-trackly-apply-start-contract'],
       });
       if (mutationRequests.length === 1) {
         res.statusCode = 401;
@@ -215,12 +216,12 @@ test('apiRequest preserves Idempotency-Key across OAuth refresh retry', async (t
 
     const result = await client.apiRequest(
       'POST',
-      '/api/jobscout/apply/batches',
+      '/api/jobscout/apply/executions',
       { limit: 5 },
       false,
       false,
       'trackly-test/1.0.0',
-      { 'Idempotency-Key': idempotencyKey },
+      { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': '3.9.2' },
     );
 
     assert.equal(result.batch.id, 44);
@@ -229,10 +230,12 @@ test('apiRequest preserves Idempotency-Key across OAuth refresh retry', async (t
       {
         authorization: 'Bearer jwt_old',
         idempotencyKey,
+        startContract: '3.9.2',
       },
       {
         authorization: 'Bearer jwt_new',
         idempotencyKey,
+        startContract: '3.9.2',
       },
     ]);
   });
@@ -1378,6 +1381,63 @@ test('loadConfig surfaces an unreadable config (EACCES) as a clear TracklyConfig
       assert.deepEqual(client.loadConfig(), {}, 'privileged reader: still parses');
     } else {
       assert.throws(() => client.loadConfig(), /not readable|permissions/);
+    }
+  });
+});
+
+
+test('Apply tool HTTP requests advertise fresh-start capability only on creation routes', async (t) => {
+  const { registerApplyTools } = require('../mcp/apply-tools');
+  const contract = require('../contracts/trackly-apply-tools.json');
+  const requests = [];
+  const sourceSnapshotHash = 'a'.repeat(64);
+  const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
+    requests.push({ method: req.method, path: req.url, headers: req.headers });
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url.endsWith('/recoverable')) {
+      res.end(JSON.stringify({ success: true, sources: [{ sourceExecutionId: 11,
+        sourceSnapshotHash, recoverableUntil: '2026-09-01T12:00:00.000Z',
+        candidates: [{ candidateId: 21, jobId: 31, queuePosition: 0, eligibilityCode: 'recoverable' }],
+      }] }));
+      return;
+    }
+    res.statusCode = 409;
+    res.end(JSON.stringify({ error: 'Synthetic boundary denial' }));
+  });
+  await withEnv({ TRACKLY_CONFIG_DIR: configDir, TRACKLY_API_KEY: 'trk_synthetic_start',
+    TRACKLY_BASE_URL: `http://127.0.0.1:${port}` }, async () => {
+    const handlers = new Map();
+    registerApplyTools({ tool: (name, description, schema, handler) => handlers.set(name, handler),
+      registerTool: (name, definition, handler) => handlers.set(name, handler),
+      registerPrompt() {}, registerResource() {},
+    }, { wrapTool: (handler) => handler, mcpUserAgent: 'trackly-test/1.0.0',
+      throwMcpResourceError: (error) => { throw error; } });
+    const idempotencyKey = 'fresh-start-boundary-0001';
+    await handlers.get('trackly_list_recoverable_apply_executions')({});
+    for (const [name, input, endpoint, capability] of [
+      ['trackly_start_apply_execution', { mode: 'complete_next_n_accessible', target: 1 }, '/api/jobscout/apply/executions', true],
+      ['trackly_recover_exact_apply_members', { sourceExecutionId: 11, sourceSnapshotHash, candidateIds: [21], explicitExactSetConfirmation: true }, '/api/jobscout/apply/executions/recover', true],
+      ['trackly_get_apply_execution', { executionId: 11 }, '/api/jobscout/apply/executions/11', false],
+      ['trackly_advance_apply_execution', { executionId: 11, expectedRevision: 1, browserSurface: 'codex_in_app' }, '/api/jobscout/apply/executions/11/advance', false],
+      ['trackly_stop_apply_execution', { executionId: 11, expectedRevision: 1, reasonCode: 'user_requested' }, '/api/jobscout/apply/executions/11/stop', false],
+    ]) {
+      await assert.rejects(handlers.get(name)({ ...input, idempotencyKey }), (error) => error.status === 409 && error.error === 'Synthetic boundary denial');
+      const request = requests.at(-1);
+      assert.equal(request.path, endpoint);
+      assert.equal(request.headers['x-trackly-apply-start-contract'], capability ? contract.contractVersion : undefined);
+      if (request.method === 'POST') assert.equal(request.headers['idempotency-key'], idempotencyKey);
+    }
+    assert.equal(requests[0].headers['x-trackly-apply-start-contract'], undefined);
+    for (const [method, route, version] of [
+      ['GET', '/api/jobscout/apply/executions', contract.contractVersion],
+      ['POST', '/api/jobscout/apply/executions/11/recover', contract.contractVersion],
+      ['POST', '/api/jobscout/apply/executions/11/stop', contract.contractVersion],
+      ['POST', '/api/jobscout/apply/executions', '3.8.1'],
+    ]) {
+      const count = requests.length;
+      await assert.rejects(client.apiRequest(method, route, {}, false, false, undefined,
+        { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': version }), /additional header/);
+      assert.equal(requests.length, count);
     }
   });
 });

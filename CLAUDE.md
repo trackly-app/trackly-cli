@@ -160,3 +160,14 @@ The complete 58-tool inventory is in `docs/trackly-tools.md`. Local-only helpers
    server. The CLI HTTP client uses raw `node:https`/`node:http`.
 8. **Token refresh is automatic.** On 401, `apiRequest()` tries one refresh via `/api/auth/refresh` before failing. The `_isRetry` flag prevents infinite loops.
 9. **`/ask` backend drift is tracked outside this repo.** The CLI and MCP use DB-backed job function values directly. Backend PR #112 (`trackly-app/close-ai`) tracks the `/ask` prompt/URL migration to those same public values; verify production before claiming `/ask` round-trips are fixed.
+
+### Unmerged Apply contract candidates
+
+Run `TRACKLY_BACKEND_DIR=/path/to/clean/backend TRACKLY_BACKEND_SHA=<full-40-character-commit> npm run test:candidate-contract`
+against the exact independently reviewed backend commit. This verifies current
+shared contracts, executable tool schemas, and coordinated checkpoint helpers.
+It requires a clean backend checkout and rejects another HEAD. It does not
+replace `test:hosted-contract`, which remains pinned to the reviewed deployed
+runtime and its recorded merge. The checked-in historical fixture retains its
+captured Apply version; do not relabel it as evidence for a newer deployment.
+A candidate pass is not release approval or proof of production deployment.

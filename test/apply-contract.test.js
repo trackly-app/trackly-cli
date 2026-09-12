@@ -15,6 +15,7 @@ const {
   HOSTED_GIT_MAX_BUFFER,
   activeNamedDefinitionAst,
   assertApplicationFieldByKeyReferenceSemantics,
+  assertBoundedApplyAdapterValidation,
   assertCheckpointRouteCallChain,
   assertCoordinatedCheckpointHelperSemantics,
   assertExactHostedSourceSha256,
@@ -35,6 +36,17 @@ const {
   sha256ExactBytes,
   verifyHostedContract,
 } = require('../scripts/verify-hosted-contract.js');
+
+test('adapter verifier rejects unbounded or broadened transport syntax', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'mcp', 'apply-tools.js'), 'utf8');
+  assert.doesNotThrow(() => assertBoundedApplyAdapterValidation(source, 'local apply tools'));
+  for (const mutated of [
+    source.replace('/^[a-z0-9][a-z0-9_:-]{0,99}$/', '/.*/'),
+    source.replace('{0,99}', '{0,100}'),
+  ]) {
+    assert.throws(() => assertBoundedApplyAdapterValidation(mutated, 'mutated apply tools'));
+  }
+});
 
 test('hosted verifier rejects runtime verifyAccessToken shadow members', () => {
   for (const member of [
@@ -159,7 +171,7 @@ test('checkpoint helper semantics match their versioned AST digests', () => {
 });
 
 test('hosted checkpoint helper drift fails coordinated semantic parity even when the tool alias is unchanged', () => {
-  const helperSource = source;
+  const helperSource = source.replace(/\r\n/g, '\n');
   const replayAwareServiceSource = `
     function actionCodeFromStoredCheckpoint(
       stored: StoredApplyBatchCheckpoint,
@@ -334,6 +346,7 @@ test('hosted checkpoint helper drift fails coordinated semantic parity even when
     'review/manual_submit': ['review', 'review', 'manual_submit'],
     'trust/origin_mismatch': ['review', 'navigation', 'origin_mismatch'],
     'observability/unverifiable_state': ['review', 'application', 'unverifiable_state'],
+    'client/upgrade_required': ['upgrade_client', 'navigation', 'client_upgrade'],
   };
   const checkpointMappings = Object.fromEntries(
     contract.constants.applyCheckpointActionCodes.map((actionCode) => {
@@ -459,6 +472,9 @@ test('hosted checkpoint helper drift fails coordinated semantic parity even when
     ['APPLY_BATCH_MAX_LEASE_DURATION_MS = 5 * 60_000', 'APPLY_BATCH_MAX_LEASE_DURATION_MS = 999 * 999', /must match its reviewed static value/],
     ['APPLY_BATCH_LEASE_RENEW_BY_FRACTION = 0.8', 'APPLY_BATCH_LEASE_RENEW_BY_FRACTION = 2', /must match its reviewed static value/],
     ['"stage":"authentication"', '"stage":"application"', /must match its reviewed routing semantics/],
+    ['"actionType":"upgrade_client"', '"actionType":"review"', /must match its reviewed routing semantics/],
+    ['"actionType":"upgrade_client","stage":"navigation"', '"actionType":"upgrade_client","stage":"application"', /must match its reviewed routing semantics/],
+    ['"continuationCode":"client_upgrade"', '"continuationCode":"manual_submit"', /must match its reviewed routing semantics/],
   ]) {
     const driftedSource = hostedCheckpointContractSource.replace(from, to);
     assert.notEqual(driftedSource, hostedCheckpointContractSource);
@@ -1136,7 +1152,7 @@ test('documented local MCP tool count matches every registered tool', () => {
 });
 
 test('local MCP Apply schemas match each complete versioned input schema', () => {
-  assert.equal(contract.contractVersion, '3.8.1');
+  assert.equal(contract.contractVersion, '3.9.2');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
     const localSchema = typeof expectedSchema === 'string' ? expectedSchema : expectedSchema.local;
     const executableSchema = LOCAL_VALIDATION_SCHEMAS[name] || toolArguments(name)[2];
@@ -1149,6 +1165,7 @@ test('Apply contract publishes the accessible execution protocol and conflict co
   assert.equal(contract.constants.applyAccessKnowledgeOrderingVersion, 3);
   assert.deepEqual(contract.constants.applyBatchConflictCodes, [
     'state_changed',
+    'client_upgrade_required',
     'lease_unavailable',
     'idempotency_key_reused',
     'fixed_batch_not_found',
@@ -1990,6 +2007,7 @@ test('Apply contract owns value-free bulk checkpoint semantics', () => {
     'review/manual_submit',
     'trust/origin_mismatch',
     'observability/unverifiable_state',
+    'client/upgrade_required',
   ]);
   assert.deepEqual(contract.constants.applyCheckpointPacketPhases, ['first_pass', 'delta']);
   const schema = normalizeSchema(toolArguments('trackly_checkpoint_apply_batch')[2]);
@@ -2526,6 +2544,9 @@ test('standalone hosted verifier executes tool, schema, and handler snapshot wir
   };
 
   assert.doesNotThrow(verifyFixture(structuredClone(originalFixture)));
+  const versionDrift = structuredClone(originalFixture);
+  versionDrift.applyContractVersion = contract.contractVersion;
+  assert.throws(verifyFixture(versionDrift), /must retain its captured historical Apply contract version/);
   const lifecycleDrift = structuredClone(originalFixture);
   lifecycleDrift.hostedPluginLifecycle.accessDefermentRecovery = 'owner_scoped_list_create_and_same_session_idempotent_clear';
   assert.throws(

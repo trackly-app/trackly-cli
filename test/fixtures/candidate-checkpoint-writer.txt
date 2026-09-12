@@ -1,0 +1,147 @@
+// AST-only fixture: close-ai cae8403cab57fbbe0ed5bf6a798ba3e37b654147
+async function recordApplyBatchCheckpoints(
+  queryable: ApplyBatchQueryable,
+  input: RecordApplyBatchCheckpointsInput,
+): Promise<RecordApplyBatchCheckpointsResult> {
+  if (
+    !isPositiveInteger(input.userId)
+    || !isPositiveInteger(input.batchId)
+    || typeof input.leaseToken !== 'string'
+    || input.leaseToken.length < 1
+    || Buffer.byteLength(input.leaseToken, 'utf8') > 1_024
+    || !Number.isFinite(input.now.getTime())
+    || !Array.isArray(input.checkpoints)
+    || input.checkpoints.length < 1
+    || input.checkpoints.length > MAX_CHECKPOINTS_PER_REQUEST
+  ) {
+    throw new ApplyBatchValidationError(
+      `Apply checkpoint request must contain 1-${MAX_CHECKPOINTS_PER_REQUEST} bounded members.`,
+    );
+  }
+  const idempotencyKeys = new Set<string>();
+  const memberEpochs = new Set<string>();
+  for (const checkpoint of input.checkpoints) {
+    validateApplyBatchCheckpoint(checkpoint);
+    idempotencyKeys.add(checkpoint.idempotencyKey);
+    memberEpochs.add(`${checkpoint.memberId}:${checkpoint.inspectionEpoch}`);
+  }
+  if (
+    idempotencyKeys.size !== input.checkpoints.length
+    || memberEpochs.size !== input.checkpoints.length
+  ) {
+    throw new ApplyBatchValidationError(
+      'Apply checkpoints require unique idempotency keys and member epochs.',
+    );
+  }
+
+  // The HTTP mutation shares one transaction across all checkpoints. Probe
+  // before any member writes; if a stale memo still permits a schema failure,
+  // nothing commits -- the transaction rolls back. The per-checkpoint gate
+  // remains as defence-in-depth.
+  if (
+    input.checkpoints.some((checkpoint) => checkpoint.actions.some(
+      (action) => APPLY_BATCH_CHECKPOINT_ACTION_MAP[action.actionCode].actionType === 'upgrade_client',
+    ))
+    && !(await upgradeClientActionTypeSchemaReady(queryable))
+  ) {
+    throw new ApplyBatchSchemaPendingError(
+      'client/upgrade_required checkpoints are not yet enabled on this server.',
+    );
+  }
+
+  const results = await Promise.all(input.checkpoints.map(async (checkpoint) => {
+    try {
+      return await recordOneApplyBatchCheckpoint(queryable, {
+        userId: input.userId,
+        batchId: input.batchId,
+        leaseToken: input.leaseToken,
+        now: input.now,
+      }, checkpoint);
+    } catch (error) {
+      if (error instanceof ApplyBatchIdempotencyConflictError) {
+        return {
+          memberId: checkpoint.memberId,
+          status: 'conflict' as const,
+          errorCode: 'idempotency_payload_mismatch' as const,
+        };
+      }
+      if (error instanceof ApplyBatchConflictError) {
+        return {
+          memberId: checkpoint.memberId,
+          status: 'conflict' as const,
+          errorCode: 'stale_member_state' as const,
+        };
+      }
+      throw error;
+    }
+  }));
+  await completeApplyBatchIfTerminal(queryable, {
+    userId: input.userId,
+    batchId: input.batchId,
+    now: input.now,
+  });
+  return {
+    results,
+    questionPacket: buildApplyBatchQuestionPacket(results),
+  };
+}
+
+// Schema-readiness dependency definitions from close-ai b1b2fbf7155f1eadd4a22bcef10525800dcad63f.
+async function upgradeClientActionTypeSchemaReady(
+  queryable: ApplyBatchQueryable,
+): Promise<boolean> {
+  return probeUpgradeClientActionTypeSchemaReady(queryable, 0);
+}
+async function probeUpgradeClientActionTypeSchemaReady(
+  queryable: ApplyBatchQueryable,
+  attempt: number,
+): Promise<boolean> {
+  if (Date.now() < upgradeClientActionTypeReadyUntil) return true;
+  const generation = migration511InvalidationGeneration;
+  const constraintReady = await queryable.query(
+    `SELECT (
+       EXISTS (
+         SELECT 1
+           FROM pg_constraint
+          WHERE conrelid = to_regclass('public.user_apply_human_actions')
+            AND conname = 'user_apply_human_actions_action_type_check'
+            AND convalidated
+            AND pg_get_constraintdef(oid) LIKE '%upgrade_client%'
+       )
+       AND NOT EXISTS (
+         -- /admin/rollback-migration-511 phase 1 adds this NOT VALID guard
+         -- before it drops/renames the wide constraint above. Postgres
+         -- enforces a NOT VALID CHECK against new rows immediately, so once
+         -- this guard exists an upgrade_client insert violates IT, not the
+         -- still-validated wide constraint the query above inspects. Report
+         -- not-ready for that whole window, not just once the wide
+         -- constraint is finally dropped.
+         SELECT 1
+           FROM pg_constraint
+          WHERE conrelid = to_regclass('public.user_apply_human_actions')
+            AND conname = 'user_apply_human_actions_action_type_rollback_check'
+       )
+     ) AS ready`,
+  );
+  const ready = constraintReady.rows[0]?.ready === true;
+  if (generation !== migration511InvalidationGeneration) {
+    // An invalidation landed while this query was in flight -- this answer
+    // is ambiguous relative to it (the DB read could have run either side
+    // of the admin rollback's transaction), so discard it and re-probe
+    // against the now-current generation instead of trusting or caching
+    // it. Bounded so a pathological invalidation-every-probe scenario
+    // fails safe (not ready) rather than recursing forever.
+    return attempt >= 3 ? false : probeUpgradeClientActionTypeSchemaReady(queryable, attempt + 1);
+  }
+  upgradeClientActionTypeReadyUntil = ready ? Date.now() + MIGRATION_511_READY_TTL_MS : 0;
+  return ready;
+}
+
+// Reviewed readiness cache state and invalidation from the same b1b2fbf commit.
+const MIGRATION_511_READY_TTL_MS = 30_000;
+let upgradeClientActionTypeReadyUntil = 0;
+let migration511InvalidationGeneration = 0;
+function invalidateMigration511Ready(): void {
+  upgradeClientActionTypeReadyUntil = 0;
+  migration511InvalidationGeneration += 1;
+}

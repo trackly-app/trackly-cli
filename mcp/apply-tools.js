@@ -810,7 +810,12 @@ function registerApplyTools(
       false,
       false,
       MCP_USER_AGENT,
-      idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+      idempotencyKey ? {
+        'Idempotency-Key': idempotencyKey,
+        ...(method === 'POST' && (path === '/api/jobscout/apply/executions'
+          || path === '/api/jobscout/apply/executions/recover')
+          ? { 'X-Trackly-Apply-Start-Contract': APPLY_CONTRACT.contractVersion } : {}),
+      } : undefined,
     )
   );
   const discoveredRecoverableSources = new Map();
@@ -1976,7 +1981,7 @@ function registerApplyTools(
       role: 'user',
       content: {
         type: 'text',
-        text: 'Protocol 3.7.0 reliability gate for new work: require MCP contract 3.8.1 and skill 4.8.0. Consume the exact proposedWave with frozen accessKnowledge before opening any browser; same-key advance replay returns identical member IDs, order, and rationale. When nextAction is access_review, including ordinary OPEN or neutral proposals, display the exact access-review receipt and do not report exhaustion. For a nonempty proposal, obtain explicit approval for the unchanged ordered job IDs and server approval hash before probing. For an all-deferred or recovery-blocked proposal with zero members, show the deferred count and stable job/company/provider deferment IDs, offer clear-deferment only for explicitly returned IDs, stop, or expiry, and never send an empty approval. Defer or clear only through jobId-scoped job, company, or provider tools; provider scope applies across companies until explicitly cleared. Never submit provider names, URLs, or raw chat. After complete local context loss, list bounded recovery candidates, obtain explicit confirmation of the exact set, and recover only that set. An active personal deferment blocks exact recovery until cleared. Treat tab recovery, form-state recovery, and mutation authority as independent. List active handoff receipts for the execution before resolving grouped submission statements; use the named receipt or the sole returned active receipt, classify every member, and claim that receipt before recording outcomes. Validate tab keep sets and resume upload stages locally. Never send raw browser values or click Submit.',
+        text: `Protocol 3.7.0 reliability gate for new work: require MCP contract ${APPLY_CONTRACT.contractVersion} and skill 4.8.0. Consume the exact proposedWave with frozen accessKnowledge before opening any browser; same-key advance replay returns identical member IDs, order, and rationale. When nextAction is access_review, including ordinary OPEN or neutral proposals, display the exact access-review receipt and do not report exhaustion. For a nonempty proposal, obtain explicit approval for the unchanged ordered job IDs and server approval hash before probing. For an all-deferred or recovery-blocked proposal with zero members, show the deferred count and stable job/company/provider deferment IDs, offer clear-deferment only for explicitly returned IDs, stop, or expiry, and never send an empty approval. Defer or clear only through jobId-scoped job, company, or provider tools; provider scope applies across companies until explicitly cleared. Never submit provider names, URLs, or raw chat. After complete local context loss, list bounded recovery candidates, obtain explicit confirmation of the exact set, and recover only that set. An active personal deferment blocks exact recovery until cleared. Treat tab recovery, form-state recovery, and mutation authority as independent. List active handoff receipts for the execution before resolving grouped submission statements; use the named receipt or the sole returned active receipt, classify every member, and claim that receipt before recording outcomes. Validate tab keep sets and resume upload stages locally. Never send raw browser values or click Submit.`,
       },
     }, {
       role: 'user',
