@@ -42,6 +42,7 @@ const executionTools = [
 
 function registerRuntimeTools(apiResponse = { ok: true }) {
   const registrations = new Map();
+  const prompts = new Map();
   const calls = [];
   const server = {
     tool(name, description, schema, handler) {
@@ -54,7 +55,7 @@ function registerRuntimeTools(apiResponse = { ok: true }) {
         handler,
       });
     },
-    registerPrompt() {},
+    registerPrompt(name, definition, handler) { prompts.set(name, handler); },
     registerResource() {},
   };
   registerApplyTools(server, {
@@ -66,7 +67,7 @@ function registerRuntimeTools(apiResponse = { ok: true }) {
       return typeof apiResponse === 'function' ? apiResponse(...args) : apiResponse;
     },
   });
-  return { registrations, calls };
+  return { registrations, calls, prompts };
 }
 
 for (const name of ['trackly_bind_apply_surface', 'trackly_record_apply_surface_evidence']) {
@@ -2636,4 +2637,14 @@ test('access deferment discovery accepts the backend active-deferment limit', as
     deferments: [...deferments, { ...deferments[0], id: 21, jobId: 1020 }],
   }).registrations.get('trackly_list_apply_access_deferments');
   await assert.rejects(aboveLimit.handler({}), z.ZodError);
+});
+
+
+test('registered Apply prompt requires the current contract for new work', async () => {
+  const { prompts } = registerRuntimeTools();
+  const result = await prompts.get('trackly-apply')();
+  const texts = result.messages.filter(message => message.content.type === 'text').map(message => message.content.text);
+  const requirements = texts.flatMap(text => Array.from(text.matchAll(/require MCP contract ([0-9]+\.[0-9]+\.[0-9]+)/g), match => match[1]));
+  assert.deepEqual(requirements, [contract.contractVersion]);
+  assert.ok(texts.some(text => text.includes('Never send raw browser values or click Submit.')));
 });
