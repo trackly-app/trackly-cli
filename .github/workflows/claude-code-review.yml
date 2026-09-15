@@ -183,21 +183,24 @@ jobs:
           MAXLEN=100000
           DIFF_FILE="${RUNNER_TEMP:-/tmp}/claude-review.diff"
           git diff -U3 "${BASE}...HEAD" > "$DIFF_FILE" 2>/dev/null || true
-          # Drop generated lockfile sections BEFORE the 100 KB env cap so a
-          # source review is not starved by package-lock/shrinkwrap churn.
-          # The inline copy is byte-for-byte scripts/filter-claude-review-diff.js
-          # so a PR cannot swap the filter without tripping the self-change
-          # guard. Fail-safe: keep the raw diff if the filter errors, and keep
-          # the raw diff when every remaining byte would be empty so a
-          # lockfile-only PR is still reviewed (as PARTIAL/opaque).
+          # Drop generated lockfiles, then pack complete files under the 100 KB
+          # env cap so a source review is not starved by pin churn or mid-file
+          # truncation. The inline copy is byte-for-byte
+          # scripts/filter-claude-review-diff.js so a PR cannot swap the filter
+          # without tripping the self-change guard. Fail-safe: keep the raw
+          # diff if the filter errors. Lockfile-only PRs are packed from the
+          # raw lockfile diff. Skipped files stay PARTIAL/opaque.
           FILTERED_FILE="${RUNNER_TEMP:-/tmp}/claude-review.filtered.diff"
           FILTER_META="${RUNNER_TEMP:-/tmp}/claude-review.filter.json"
           EXCLUDED_GENERATED=false
-          if node - "$DIFF_FILE" "$FILTERED_FILE" "$FILTER_META" <<'JS'
+          PACK_INCOMPLETE=false
+          if node - "$DIFF_FILE" "$FILTERED_FILE" "$FILTER_META" "$MAXLEN" <<'JS'
           #!/usr/bin/env node
           'use strict';
 
           const fs = require('node:fs');
+
+          const DEFAULT_MAX_BYTES = 100000;
 
           const EXCLUDED_BASENAMES = new Set([
             'package-lock.json',
@@ -292,24 +295,131 @@ jobs:
             return { diff: out.join('\n'), excluded, kept };
           }
 
+          function packRank(filePath) {
+            const path = typeof filePath === 'string' ? filePath : '';
+            if (path.startsWith('scripts/')) return 0;
+            if (path.startsWith('lib/') || path.startsWith('src/') || path.startsWith('mcp/')) return 1;
+            if (path === 'package.json' || path === 'server.json') return 2;
+            if (path.startsWith('plugins/')) return 3;
+            if (path.startsWith('.github/')) return 4;
+            if (path.startsWith('docs/')) return 5;
+            if (path.startsWith('test/')) return 8;
+            return 6;
+          }
+
+          function splitDiffSections(unifiedDiff) {
+            const text = typeof unifiedDiff === 'string' ? unifiedDiff : '';
+            const sections = [];
+            let current = null;
+            for (const line of text.split('\n')) {
+              if (line.startsWith('diff --git ')) {
+                if (current) sections.push(current);
+                current = { path: newPathFromDiffHeader(line), lines: [line] };
+                continue;
+              }
+              if (current) current.lines.push(line);
+            }
+            if (current) sections.push(current);
+            return sections;
+          }
+
+          function sectionText(section) {
+            return section.lines.join('\n');
+          }
+
+          function prefixUtf8(text, maxBytes) {
+            const buf = Buffer.from(text);
+            if (buf.length <= maxBytes) return text;
+            let end = maxBytes;
+            while (end > 0 && (buf[end] & 0xc0) === 0x80) end -= 1;
+            const sliced = buf.subarray(0, end).toString('utf8');
+            const lastNewline = sliced.lastIndexOf('\n');
+            return lastNewline > 0 ? sliced.slice(0, lastNewline) : sliced;
+          }
+
+          function packDiff(unifiedDiff, maxBytes) {
+            const max = Number.isFinite(Number(maxBytes)) && Number(maxBytes) > 0
+              ? Number(maxBytes)
+              : DEFAULT_MAX_BYTES;
+            const sections = splitDiffSections(unifiedDiff);
+            const ranked = sections
+              .map((section, index) => ({ section, index, rank: packRank(section.path) }))
+              .sort((left, right) => left.rank - right.rank || left.index - right.index);
+            const selected = new Set();
+            const skipped = [];
+            let used = 0;
+            for (const item of ranked) {
+              const body = sectionText(item.section);
+              const size = Buffer.byteLength(body) + (selected.size > 0 ? 1 : 0);
+              if (used + size <= max) {
+                selected.add(item.index);
+                used += size;
+                continue;
+              }
+              if (item.section.path) skipped.push(item.section.path);
+            }
+            let truncated = false;
+            let includedSections = sections.filter((_, index) => selected.has(index));
+            if (includedSections.length === 0 && ranked.length > 0) {
+              const first = ranked[0].section;
+              includedSections = [{ ...first, lines: prefixUtf8(sectionText(first), max).split('\n') }];
+              truncated = true;
+              skipped.length = 0;
+              for (const item of ranked.slice(1)) {
+                if (item.section.path) skipped.push(item.section.path);
+              }
+            }
+            return {
+              diff: includedSections.map((section) => sectionText(section)).join('\n'),
+              included: includedSections.map((section) => section.path).filter(Boolean),
+              skipped,
+              truncated,
+            };
+          }
+
+          function prepareReviewDiff(unifiedDiff, maxBytes) {
+            const filtered = filterDiff(unifiedDiff);
+            const source = filtered.excluded.length > 0 && Buffer.byteLength(filtered.diff) === 0
+              ? unifiedDiff
+              : filtered.diff;
+            const packed = packDiff(source, maxBytes);
+            return {
+              diff: packed.diff,
+              excluded: filtered.excluded,
+              kept: packed.included,
+              skipped: packed.skipped,
+              truncated: packed.truncated,
+            };
+          }
+
           function main(argv) {
             const inputPath = argv[0];
             const outputPath = argv[1];
             const metaPath = argv[2];
             if (!inputPath || !outputPath || !metaPath) {
-              process.stderr.write('usage: filter-claude-review-diff.js <input.diff> <output.diff> <meta.json>\n');
+              process.stderr.write('usage: filter-claude-review-diff.js <input.diff> <output.diff> <meta.json> [maxBytes]\n');
               process.exit(2);
             }
-            const { diff, excluded, kept } = filterDiff(fs.readFileSync(inputPath, 'utf8'));
-            fs.writeFileSync(outputPath, diff);
-            fs.writeFileSync(metaPath, `${JSON.stringify({ excluded, kept })}\n`);
+            const maxBytes = Number.parseInt(argv[3] || String(DEFAULT_MAX_BYTES), 10);
+            const prepared = prepareReviewDiff(fs.readFileSync(inputPath, 'utf8'), maxBytes);
+            fs.writeFileSync(outputPath, prepared.diff);
+            fs.writeFileSync(metaPath, `${JSON.stringify({
+              excluded: prepared.excluded,
+              kept: prepared.kept,
+              skipped: prepared.skipped,
+              truncated: prepared.truncated,
+            })}\n`);
           }
 
           module.exports = {
+            DEFAULT_MAX_BYTES,
             EXCLUDED_BASENAMES,
             filterDiff,
             isExcludedPath,
             newPathFromDiffHeader,
+            packDiff,
+            packRank,
+            prepareReviewDiff,
           };
 
           if (require.main === module || process.argv[1] === '-') {
@@ -318,12 +428,20 @@ jobs:
           JS
           then
             EXCLUDED_COUNT="$(python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); print(len(data.get("excluded") or []))' "$FILTER_META" 2>/dev/null || echo 0)"
+            SKIPPED_COUNT="$(python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); print(len(data.get("skipped") or []))' "$FILTER_META" 2>/dev/null || echo 0)"
+            PACK_TRUNCATED="$(python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); print("true" if data.get("truncated") else "false")' "$FILTER_META" 2>/dev/null || echo false)"
             FILTERED_BYTES="$(wc -c < "$FILTERED_FILE" | tr -d ' ')"
-            if [ "${EXCLUDED_COUNT:-0}" -gt 0 ] && [ "${FILTERED_BYTES:-0}" -gt 0 ]; then
+            if [ "${FILTERED_BYTES:-0}" -gt 0 ]; then
               mv "$FILTERED_FILE" "$DIFF_FILE"
-              EXCLUDED_GENERATED=true
               FILES="$(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1])).get("kept") or []))' "$FILTER_META")"
+            fi
+            if [ "${EXCLUDED_COUNT:-0}" -gt 0 ]; then
+              EXCLUDED_GENERATED=true
               echo "::notice title=Generated lockfiles omitted::Omitted ${EXCLUDED_COUNT} generated lockfile(s) from the inline review copy before the byte cap; coverage is PARTIAL."
+            fi
+            if [ "${SKIPPED_COUNT:-0}" -gt 0 ] || [ "$PACK_TRUNCATED" = true ]; then
+              PACK_INCOMPLETE=true
+              echo "::notice title=Complete files packed::Kept complete files inside the ${MAXLEN} byte window and skipped ${SKIPPED_COUNT} file(s); coverage is PARTIAL."
             fi
           else
             echo "::warning title=Diff filter skipped::Generated-file filter failed; using the raw diff."
@@ -520,9 +638,10 @@ jobs:
           if grep -qE '^(Binary files .* differ|GIT binary patch|old mode [0-7]+|new mode [0-7]+|(new|deleted) file mode 160000|index [0-9a-f]+\.\.[0-9a-f]+ 160000|similarity index 100%)$' "$VISIBLE_DIFF_FILE" \
               || grep -qF '\ufffd' "$CHANGED_LINES_FILE" \
               || ! python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); sys.exit(0 if any(ranges for ranges in data.values()) else 1)' "$CHANGED_LINES_FILE" \
-              || [ "$EXCLUDED_GENERATED" = true ]; then
+              || [ "$EXCLUDED_GENERATED" = true ] \
+              || [ "$PACK_INCOMPLETE" = true ]; then
             OPAQUE=true
-            echo "::warning title=Opaque diff entries::PR diff contains binary, mode-only, gitlink, rename, omitted lockfile, or otherwise opaque changes; coverage is PARTIAL."
+            echo "::warning title=Opaque diff entries::PR diff contains binary, mode-only, gitlink, rename, omitted lockfile, packed-out files, or otherwise opaque changes; coverage is PARTIAL."
           else
             OPAQUE=false
           fi
@@ -929,6 +1048,42 @@ jobs:
             fi
           else
             echo "::error title=Incomplete review::A review step succeeded but lacked the required valid terminal verdict; inline comments are insufficient review coverage."
+            python3 - "$EXEC_FILE" <<'PY' || true
+          import json, pathlib, sys
+          path = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "")
+          print("Rejected execution file:", path)
+          if not path.is_file():
+              print("Rejected execution file is missing; no reconstructable result shape.")
+              raise SystemExit(0)
+          raw = path.read_text(encoding="utf-8", errors="replace")
+          events = []
+          try:
+              parsed = json.loads(raw)
+              events = parsed if isinstance(parsed, list) else [parsed]
+          except json.JSONDecodeError:
+              for line in raw.splitlines():
+                  line = line.strip()
+                  if not line:
+                      continue
+                  try:
+                      parsed = json.loads(line)
+                  except json.JSONDecodeError:
+                      continue
+                  events.extend(parsed if isinstance(parsed, list) else [parsed])
+          results = [event.get("result") for event in events if isinstance(event, dict) and event.get("type") == "result" and isinstance(event.get("result"), str)]
+          text = results[-1] if results else ""
+          header = "## 🔵 Claude Code Review"
+          print("result_bytes", len(text.encode("utf-8")))
+          print("has_header", header in text)
+          print("header_standalone", any(line == header for line in text.splitlines()))
+          print("has_counts", any(line.lower().startswith("counts:") or line.lower().startswith("`counts:") for line in text.splitlines()))
+          print("has_coverage_partial", "Coverage: PARTIAL" in text)
+          print("has_coverage_full", "Coverage: FULL" in text)
+          print("has_recommendation", "Recommendation:" in text)
+          print("has_partial_lgtm", "Partial LGTM" in text)
+          print("has_full_lgtm", "LGTM — no issues found" in text)
+          print("line_count", len(text.splitlines()))
+          PY
             BODY="## 🔵 Claude Code Review"$'\n\n'"⚠️ The review ran at head \`${HEAD_SHA}\` ([run](${RUN_URL})) but lacked a valid terminal verdict. This check fails closed; inline comments and intermediate planning text are insufficient review coverage. Re-run the review or use the documented exact-head compensating review path."
             python3 -c 'import json,sys;print(json.dumps({"body":sys.argv[1]}))' "$BODY" > "$RUNNER_TEMP/cr_empty.json" || exit 1
             if curl -sS --fail -X POST \
