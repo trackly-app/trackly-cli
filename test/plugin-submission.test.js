@@ -817,6 +817,16 @@ test('submission fixtures reject quoted JSON object-member passwords and secrets
     load().validateSubmissionTests(s, fixtures);
     assert(s.errors.some((error) => /credential values/.test(error)), key);
   }
+  const apostrophe = json('plugins/trackly/listing/submission-tests.json');
+  apostrophe.reviewEnvironment.authentication.password = "it'sasecret";
+  const apostropheState = state();
+  load().validateSubmissionTests(apostropheState, apostrophe);
+  assert(apostropheState.errors.some((error) => /credential values/.test(error)));
+  const nested = json('plugins/trackly/listing/submission-tests.json');
+  nested.positive[0].probe = { password: 'abcdefghij' };
+  const nestedState = state();
+  load().validateSubmissionTests(nestedState, nested);
+  assert(nestedState.errors.some((error) => /credential values/.test(error)));
 });
 
 test('listing metadata rejects TODO placeholders recursively', () => {

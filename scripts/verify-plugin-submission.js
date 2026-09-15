@@ -630,6 +630,25 @@ async function validateAssetsAndTree(state, manifest = readJson(MANIFEST_PATH)) 
   check(state, totalBytes <= 512 * 1024 * 1024, `plugin tree exceeds 512 MiB (${totalBytes} bytes)`);
 }
 
+function containsCredentialObjectMember(value) {
+  if (Array.isArray(value)) return value.some(containsCredentialObjectMember);
+  if (!isObject(value)) return false;
+  for (const [key, nested] of Object.entries(value)) {
+    if (/^(?:password|secret)$/i.test(key) && nested != null && (typeof nested !== 'string' || nested.length >= 8)) {
+      return true;
+    }
+    if (containsCredentialObjectMember(nested)) return true;
+  }
+  return false;
+}
+
+function containsCredentialAssignmentText(value) {
+  if (typeof value === 'string') return /(?:password|secret)\s*[:=]\s*["'][^"']{8,}["']/i.test(value);
+  if (Array.isArray(value)) return value.some(containsCredentialAssignmentText);
+  if (!isObject(value)) return false;
+  return Object.values(value).some(containsCredentialAssignmentText);
+}
+
 function validateSubmissionTests(state, fixtures) {
   check(state, isObject(fixtures), 'submission-tests must be a JSON object');
   if (!isObject(fixtures)) return;
@@ -716,7 +735,7 @@ function validateSubmissionTests(state, fixtures) {
   }
   const serialized = JSON.stringify(fixtures);
   check(state, !/\b(?:Kevin|Astuhuaman)\b/i.test(serialized), 'submission fixtures must not contain a real reviewer identity');
-  check(state, !/(?:["'](?:password|secret)["']|(?:password|secret))\s*[:=]\s*["'][^"']{8,}["']/i.test(serialized), 'submission fixtures must not contain credential values');
+  check(state, !containsCredentialObjectMember(fixtures) && !containsCredentialAssignmentText(fixtures), 'submission fixtures must not contain credential values');
 }
 
 async function runStatic() {
