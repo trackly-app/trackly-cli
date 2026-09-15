@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Omit generated lockfiles from the Claude review inline copy before the 100 KB
+  cap so source hunks are not truncated out of the trusted window. A review that
+  dropped lockfiles stays PARTIAL; lockfile-only PRs still use the raw diff.
+  Terminal-record grammar is unchanged.
+
 - Recover a complete Claude terminal review when the model wraps the taught
   metadata or clean-verdict lines in inline code, or prefixes the required
   header with planning text. Issue autolinks, trailing prose, and incomplete
