@@ -26,6 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   header with planning text. Issue autolinks, trailing prose, and incomplete
   last results still fail closed.
 
+## [0.18.4] - 2026-09-15
+
+### Fixed
+
+- Keep the MCP registry `server.json` description at or under 100 characters
+  after stale public-metrics fallback copy so `publish.yml` can register the
+  package. npm `0.18.3` already shipped; this does not change plugin preflight.
+
 ## [0.18.3] - 2026-09-09
 
 ### Changed

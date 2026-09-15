@@ -42,6 +42,20 @@ test('stale or missing metrics use nonnumeric public copy', () => {
   );
 });
 
+test('stale MCP server description stays within the registry 100-character limit', () => {
+  const numeric = JSON.parse(fs.readFileSync(path.join(root, 'server.json'), 'utf8')).description;
+  assert.ok(numeric.length <= 100, numeric);
+  const prepared = replaceMetricsCopy(
+    fs.readFileSync(path.join(root, 'server.json'), 'utf8'),
+    generated,
+    new Date('2026-10-01T00:00:00-07:00'),
+  );
+  const description = JSON.parse(prepared).description;
+  assert.match(description, /Thousands of jobs/);
+  assert.match(description, /Thousands of companies/);
+  assert.ok(description.length <= 100, description);
+});
+
 test('preparation replaces a previous numeric rounding bucket', () => {
   assert.equal(
     replaceMetricsCopy(
