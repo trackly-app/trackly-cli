@@ -1084,8 +1084,13 @@ jobs:
           print("has_full_lgtm", "LGTM — no issues found" in text)
           print("line_count", len(text.splitlines()))
           isolated = text
-          if header in text:
-              isolated = header + text.split(header)[-1]
+          start = -1
+          lines = text.splitlines()
+          for index, line in enumerate(lines):
+              if line == header:
+                  start = index
+          if start != -1:
+              isolated = "\n".join(lines[start:])
           nonempty = [line for line in isolated.splitlines() if line.strip()]
           print("rejected_nonempty_lines", len(nonempty))
           for index, line in enumerate(nonempty[:20]):

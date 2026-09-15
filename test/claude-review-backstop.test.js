@@ -1344,7 +1344,11 @@ test('Claude review workflow binds a diff over 100 KB to trusted partial coverag
   assert.match(workflow, /node "\$TRUSTED_EXTRACTOR" "\$EXEC_FILE" "\$COVERAGE_FLAG"/);
   assert.match(
     workflow,
-    /OPAQUE_NOTE="\[NOTE: coverage is PARTIAL because some changed files were omitted or opaque\. If there are zero findings, use exactly: Partial LGTM — no issues found in the visible diff \(coverage was partial because the diff was truncated\)\./,
+    /OPAQUE_NOTE="\[NOTE: coverage is PARTIAL because some changed files were omitted or opaque\. If there are zero findings, use exactly: Partial LGTM — no issues found in the visible diff \(coverage was partial because the diff was truncated\)\. Do not claim full coverage\.\]"/,
+  );
+  assert.match(
+    workflow,
+    /for index, line in enumerate\(lines\):\n\s+if line == header:\n\s+start = index/,
   );
   assert.match(workflow, /print\("rejected_line", index, repr\(line\[:200\]\)\)/);
 });
