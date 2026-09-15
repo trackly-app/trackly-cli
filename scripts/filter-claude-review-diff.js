@@ -3,6 +3,8 @@
 
 const fs = require('node:fs');
 
+const DEFAULT_MAX_BYTES = 100000;
+
 const EXCLUDED_BASENAMES = new Set([
   'package-lock.json',
   'npm-shrinkwrap.json',
@@ -96,24 +98,131 @@ function filterDiff(unifiedDiff) {
   return { diff: out.join('\n'), excluded, kept };
 }
 
+function packRank(filePath) {
+  const path = typeof filePath === 'string' ? filePath : '';
+  if (path.startsWith('scripts/')) return 0;
+  if (path.startsWith('lib/') || path.startsWith('src/') || path.startsWith('mcp/')) return 1;
+  if (path === 'package.json' || path === 'server.json') return 2;
+  if (path.startsWith('plugins/')) return 3;
+  if (path.startsWith('.github/')) return 4;
+  if (path.startsWith('docs/')) return 5;
+  if (path.startsWith('test/')) return 8;
+  return 6;
+}
+
+function splitDiffSections(unifiedDiff) {
+  const text = typeof unifiedDiff === 'string' ? unifiedDiff : '';
+  const sections = [];
+  let current = null;
+  for (const line of text.split('\n')) {
+    if (line.startsWith('diff --git ')) {
+      if (current) sections.push(current);
+      current = { path: newPathFromDiffHeader(line), lines: [line] };
+      continue;
+    }
+    if (current) current.lines.push(line);
+  }
+  if (current) sections.push(current);
+  return sections;
+}
+
+function sectionText(section) {
+  return section.lines.join('\n');
+}
+
+function prefixUtf8(text, maxBytes) {
+  const buf = Buffer.from(text);
+  if (buf.length <= maxBytes) return text;
+  let end = maxBytes;
+  while (end > 0 && (buf[end] & 0xc0) === 0x80) end -= 1;
+  const sliced = buf.subarray(0, end).toString('utf8');
+  const lastNewline = sliced.lastIndexOf('\n');
+  return lastNewline > 0 ? sliced.slice(0, lastNewline) : sliced;
+}
+
+function packDiff(unifiedDiff, maxBytes) {
+  const max = Number.isFinite(Number(maxBytes)) && Number(maxBytes) > 0
+    ? Number(maxBytes)
+    : DEFAULT_MAX_BYTES;
+  const sections = splitDiffSections(unifiedDiff);
+  const ranked = sections
+    .map((section, index) => ({ section, index, rank: packRank(section.path) }))
+    .sort((left, right) => left.rank - right.rank || left.index - right.index);
+  const selected = new Set();
+  const skipped = [];
+  let used = 0;
+  for (const item of ranked) {
+    const body = sectionText(item.section);
+    const size = Buffer.byteLength(body) + (selected.size > 0 ? 1 : 0);
+    if (used + size <= max) {
+      selected.add(item.index);
+      used += size;
+      continue;
+    }
+    if (item.section.path) skipped.push(item.section.path);
+  }
+  let truncated = false;
+  let includedSections = sections.filter((_, index) => selected.has(index));
+  if (includedSections.length === 0 && ranked.length > 0) {
+    const first = ranked[0].section;
+    includedSections = [{ ...first, lines: prefixUtf8(sectionText(first), max).split('\n') }];
+    truncated = true;
+    skipped.length = 0;
+    for (const item of ranked.slice(1)) {
+      if (item.section.path) skipped.push(item.section.path);
+    }
+  }
+  return {
+    diff: includedSections.map((section) => sectionText(section)).join('\n'),
+    included: includedSections.map((section) => section.path).filter(Boolean),
+    skipped,
+    truncated,
+  };
+}
+
+function prepareReviewDiff(unifiedDiff, maxBytes) {
+  const filtered = filterDiff(unifiedDiff);
+  const source = filtered.excluded.length > 0 && Buffer.byteLength(filtered.diff) === 0
+    ? unifiedDiff
+    : filtered.diff;
+  const packed = packDiff(source, maxBytes);
+  return {
+    diff: packed.diff,
+    excluded: filtered.excluded,
+    kept: packed.included,
+    skipped: packed.skipped,
+    truncated: packed.truncated,
+  };
+}
+
 function main(argv) {
   const inputPath = argv[0];
   const outputPath = argv[1];
   const metaPath = argv[2];
   if (!inputPath || !outputPath || !metaPath) {
-    process.stderr.write('usage: filter-claude-review-diff.js <input.diff> <output.diff> <meta.json>\n');
+    process.stderr.write('usage: filter-claude-review-diff.js <input.diff> <output.diff> <meta.json> [maxBytes]\n');
     process.exit(2);
   }
-  const { diff, excluded, kept } = filterDiff(fs.readFileSync(inputPath, 'utf8'));
-  fs.writeFileSync(outputPath, diff);
-  fs.writeFileSync(metaPath, `${JSON.stringify({ excluded, kept })}\n`);
+  const maxBytes = Number.parseInt(argv[3] || String(DEFAULT_MAX_BYTES), 10);
+  const prepared = prepareReviewDiff(fs.readFileSync(inputPath, 'utf8'), maxBytes);
+  fs.writeFileSync(outputPath, prepared.diff);
+  fs.writeFileSync(metaPath, `${JSON.stringify({
+    excluded: prepared.excluded,
+    kept: prepared.kept,
+    skipped: prepared.skipped,
+    truncated: prepared.truncated,
+  })}\n`);
 }
 
 module.exports = {
+  DEFAULT_MAX_BYTES,
   EXCLUDED_BASENAMES,
   filterDiff,
   isExcludedPath,
   newPathFromDiffHeader,
+  packDiff,
+  packRank,
+  prepareReviewDiff,
 };
 
 if (require.main === module || process.argv[1] === '-') {
