@@ -181,11 +181,28 @@ function packDiff(unifiedDiff, maxBytes) {
 }
 
 function prepareReviewDiff(unifiedDiff, maxBytes) {
-  const filtered = filterDiff(unifiedDiff);
+  const max = Number.isFinite(Number(maxBytes)) && Number(maxBytes) > 0
+    ? Number(maxBytes)
+    : DEFAULT_MAX_BYTES;
+  const raw = typeof unifiedDiff === 'string' ? unifiedDiff : '';
+  // Omit lockfiles only when the raw review copy exceeds the cap. Small PRs
+  // keep version-pin hunks visible so PARTIAL notes and false "lockfile
+  // missing" findings are not forced.
+  if (Buffer.byteLength(raw) <= max) {
+    const packed = packDiff(raw, max);
+    return {
+      diff: packed.diff,
+      excluded: [],
+      kept: packed.included,
+      skipped: packed.skipped,
+      truncated: packed.truncated,
+    };
+  }
+  const filtered = filterDiff(raw);
   const source = filtered.excluded.length > 0 && Buffer.byteLength(filtered.diff) === 0
-    ? unifiedDiff
+    ? raw
     : filtered.diff;
-  const packed = packDiff(source, maxBytes);
+  const packed = packDiff(source, max);
   return {
     diff: packed.diff,
     excluded: filtered.excluded,

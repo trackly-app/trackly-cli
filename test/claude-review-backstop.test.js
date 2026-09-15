@@ -1163,6 +1163,20 @@ test('Claude review packer keeps complete high-priority files inside the byte ca
   assert.deepEqual(prepared.excluded, ['package-lock.json']);
   assert.deepEqual(prepared.kept, ['scripts/verify-plugin-submission.js']);
   assert.equal(prepared.diff.includes('package-lock.json'), false);
+  const small = [
+    'diff --git a/package-lock.json b/package-lock.json',
+    '@@ -1,1 +1,1 @@',
+    '-  "version": "0.18.3",',
+    '+  "version": "0.18.4",',
+    'diff --git a/package.json b/package.json',
+    '@@ -1,1 +1,1 @@',
+    '-  "version": "0.18.3",',
+    '+  "version": "0.18.4",',
+  ].join('\n');
+  const keptSmall = prepareReviewDiff(small, 100000);
+  assert.deepEqual(keptSmall.excluded, []);
+  assert.deepEqual(keptSmall.kept, ['package-lock.json', 'package.json']);
+  assert.match(keptSmall.diff, /package-lock\.json/);
 });
 
 test('Claude review workflow inlines the exact checked-in generated-diff filter', () => {
@@ -1178,7 +1192,7 @@ test('Claude review workflow inlines the exact checked-in generated-diff filter'
   );
   assert.match(workflow, /\[ "\$EXCLUDED_GENERATED" = true \]/);
   assert.match(workflow, /\[ "\$PACK_INCOMPLETE" = true \]/);
-  assert.match(workflow, /Lockfile-only PRs are packed from the/);
+  assert.match(workflow, /Lockfile-only oversize PRs/);
   assert.match(workflow, /Rejected execution file/);
 });
 
