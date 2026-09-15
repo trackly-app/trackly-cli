@@ -183,6 +183,117 @@ jobs:
           MAXLEN=100000
           DIFF_FILE="${RUNNER_TEMP:-/tmp}/claude-review.diff"
           git diff -U3 "${BASE}...HEAD" > "$DIFF_FILE" 2>/dev/null || true
+          # Drop generated lockfile sections BEFORE the 100 KB env cap so a
+          # source review is not starved by package-lock/shrinkwrap churn.
+          # The inline copy is byte-for-byte scripts/filter-claude-review-diff.js
+          # so a PR cannot swap the filter without tripping the self-change
+          # guard. Fail-safe: keep the raw diff if the filter errors, and keep
+          # the raw diff when every remaining byte would be empty so a
+          # lockfile-only PR is still reviewed (as PARTIAL/opaque).
+          FILTERED_FILE="${RUNNER_TEMP:-/tmp}/claude-review.filtered.diff"
+          FILTER_META="${RUNNER_TEMP:-/tmp}/claude-review.filter.json"
+          EXCLUDED_GENERATED=false
+          if node - "$DIFF_FILE" "$FILTERED_FILE" "$FILTER_META" <<'JS'
+          #!/usr/bin/env node
+          'use strict';
+
+          const fs = require('node:fs');
+
+          const EXCLUDED_BASENAMES = new Set([
+            'package-lock.json',
+            'npm-shrinkwrap.json',
+            'yarn.lock',
+            'pnpm-lock.yaml',
+            'pnpm-lock.yml',
+            'Gemfile.lock',
+            'poetry.lock',
+            'Cargo.lock',
+            'go.sum',
+          ]);
+
+          function unquoteGitPath(value) {
+            if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+              return value.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+            }
+            return value;
+          }
+
+          function newPathFromDiffHeader(line) {
+            if (!line.startsWith('diff --git ')) return null;
+            const body = line.slice('diff --git '.length);
+            const separator = ' b/';
+            const quotedSeparator = ' "b/';
+            let path = null;
+            const quotedAt = body.lastIndexOf(quotedSeparator);
+            const plainAt = body.lastIndexOf(separator);
+            if (quotedAt !== -1 && quotedAt >= plainAt) {
+              path = unquoteGitPath(`"${body.slice(quotedAt + quotedSeparator.length)}`);
+            } else if (plainAt !== -1) {
+              path = unquoteGitPath(body.slice(plainAt + separator.length));
+            }
+            return path || null;
+          }
+
+          function isExcludedPath(filePath) {
+            if (typeof filePath !== 'string' || filePath.length === 0) return false;
+            const base = filePath.split('/').pop();
+            return EXCLUDED_BASENAMES.has(base);
+          }
+
+          function filterDiff(unifiedDiff) {
+            const text = typeof unifiedDiff === 'string' ? unifiedDiff : '';
+            const out = [];
+            const excluded = [];
+            const kept = [];
+            let keep = true;
+            for (const line of text.split('\n')) {
+              if (line.startsWith('diff --git ')) {
+                const filePath = newPathFromDiffHeader(line);
+                keep = !(filePath && isExcludedPath(filePath));
+                if (!keep && filePath) excluded.push(filePath);
+                else if (keep && filePath) kept.push(filePath);
+              }
+              if (keep) out.push(line);
+            }
+            return { diff: out.join('\n'), excluded, kept };
+          }
+
+          function main(argv) {
+            const inputPath = argv[0];
+            const outputPath = argv[1];
+            const metaPath = argv[2];
+            if (!inputPath || !outputPath || !metaPath) {
+              process.stderr.write('usage: filter-claude-review-diff.js <input.diff> <output.diff> <meta.json>\n');
+              process.exit(2);
+            }
+            const { diff, excluded, kept } = filterDiff(fs.readFileSync(inputPath, 'utf8'));
+            fs.writeFileSync(outputPath, diff);
+            fs.writeFileSync(metaPath, `${JSON.stringify({ excluded, kept })}\n`);
+          }
+
+          module.exports = {
+            EXCLUDED_BASENAMES,
+            filterDiff,
+            isExcludedPath,
+            newPathFromDiffHeader,
+          };
+
+          if (require.main === module || process.argv[1] === '-') {
+            main(process.argv.slice(2));
+          }
+          JS
+          then
+            EXCLUDED_COUNT="$(python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); print(len(data.get("excluded") or []))' "$FILTER_META" 2>/dev/null || echo 0)"
+            FILTERED_BYTES="$(wc -c < "$FILTERED_FILE" | tr -d ' ')"
+            if [ "${EXCLUDED_COUNT:-0}" -gt 0 ] && [ "${FILTERED_BYTES:-0}" -gt 0 ]; then
+              mv "$FILTERED_FILE" "$DIFF_FILE"
+              EXCLUDED_GENERATED=true
+              FILES="$(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1])).get("kept") or []))' "$FILTER_META")"
+              echo "::notice title=Generated lockfiles omitted::Omitted ${EXCLUDED_COUNT} generated lockfile(s) from the inline review copy before the byte cap; coverage is PARTIAL."
+            fi
+          else
+            echo "::warning title=Diff filter skipped::Generated-file filter failed; using the raw diff."
+          fi
           BYTES="$(wc -c < "$DIFF_FILE" | tr -d ' ')"
           # Empty diff for real changes => don't let the model post a false LGTM.
           if [ "${BYTES:-0}" -eq 0 ]; then
@@ -374,9 +485,10 @@ jobs:
           # U+FFFD as the six-character \ufffd escape, not the UTF-8 bytes.
           if grep -qE '^(Binary files .* differ|GIT binary patch|old mode [0-7]+|new mode [0-7]+|(new|deleted) file mode 160000|index [0-9a-f]+\.\.[0-9a-f]+ 160000|similarity index 100%)$' "$VISIBLE_DIFF_FILE" \
               || grep -qF '\ufffd' "$CHANGED_LINES_FILE" \
-              || ! python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); sys.exit(0 if any(ranges for ranges in data.values()) else 1)' "$CHANGED_LINES_FILE"; then
+              || ! python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); sys.exit(0 if any(ranges for ranges in data.values()) else 1)' "$CHANGED_LINES_FILE" \
+              || [ "$EXCLUDED_GENERATED" = true ]; then
             OPAQUE=true
-            echo "::warning title=Opaque diff entries::PR diff contains binary, mode-only, gitlink, rename, or otherwise opaque changes; coverage is PARTIAL."
+            echo "::warning title=Opaque diff entries::PR diff contains binary, mode-only, gitlink, rename, omitted lockfile, or otherwise opaque changes; coverage is PARTIAL."
           else
             OPAQUE=false
           fi
