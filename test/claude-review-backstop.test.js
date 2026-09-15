@@ -1123,6 +1123,9 @@ test('Claude review filter drops generated lockfiles and keeps source', () => {
   const quoted = filterDiff('diff --git "a/npm-shrinkwrap.json" "b/npm-shrinkwrap.json"\n+secret\ndiff --git a/lib/a.js b/lib/a.js\n+ok\n');
   assert.deepEqual(quoted.excluded, ['npm-shrinkwrap.json']);
   assert.match(quoted.diff, /lib\/a\.js/);
+  const cafe = filterDiff('diff --git "a/docs/caf\\303\\251.md" "b/docs/caf\\303\\251.md"\n+ok\n');
+  assert.deepEqual(cafe.kept, ['docs/café.md']);
+  assert.equal(cafe.excluded.length, 0);
   const empty = filterDiff('diff --git a/yarn.lock b/yarn.lock\n+only\n');
   assert.equal(empty.diff.trim(), '');
   assert.deepEqual(empty.excluded, ['yarn.lock']);

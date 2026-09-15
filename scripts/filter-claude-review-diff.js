@@ -15,11 +15,45 @@ const EXCLUDED_BASENAMES = new Set([
   'go.sum',
 ]);
 
+const ESCAPES = {
+  a: 7,
+  b: 8,
+  t: 9,
+  n: 10,
+  v: 11,
+  f: 12,
+  r: 13,
+  '"': 34,
+  '\\': 92,
+};
+
 function unquoteGitPath(value) {
-  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
-    return value.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) {
+    return value;
   }
-  return value;
+  const raw = [];
+  const body = value.slice(1, -1);
+  for (let index = 0; index < body.length;) {
+    const character = body[index];
+    if (character !== '\\') {
+      raw.push(...Buffer.from(character, 'utf8'));
+      index += 1;
+      continue;
+    }
+    index += 1;
+    if (index >= body.length) return value;
+    const octal = body.slice(index, index + 3);
+    if (/^[0-7]{3}$/u.test(octal)) {
+      raw.push(Number.parseInt(octal, 8));
+      index += 3;
+      continue;
+    }
+    const escape = body[index];
+    if (!Object.hasOwn(ESCAPES, escape)) return value;
+    raw.push(ESCAPES[escape]);
+    index += 1;
+  }
+  return Buffer.from(raw).toString('utf8');
 }
 
 function newPathFromDiffHeader(line) {
