@@ -1131,19 +1131,55 @@ test('Claude review filter drops generated lockfiles and keeps source', () => {
   assert.deepEqual(empty.excluded, ['yarn.lock']);
 });
 
+test('Claude review packer keeps complete high-priority files inside the byte cap', () => {
+  const { packDiff, prepareReviewDiff } = require('../scripts/filter-claude-review-diff.js');
+  const script = [
+    'diff --git a/scripts/verify-plugin-submission.js b/scripts/verify-plugin-submission.js',
+    'index 111..222 100644',
+    '--- a/scripts/verify-plugin-submission.js',
+    '+++ b/scripts/verify-plugin-submission.js',
+    '@@ -1,1 +1,1 @@',
+    `+${'s'.repeat(80)}`,
+  ].join('\n');
+  const tests = [
+    'diff --git a/test/plugin-submission.test.js b/test/plugin-submission.test.js',
+    'index 333..444 100644',
+    '--- a/test/plugin-submission.test.js',
+    '+++ b/test/plugin-submission.test.js',
+    '@@ -1,1 +1,1 @@',
+    `+${'t'.repeat(80)}`,
+  ].join('\n');
+  const mixed = `${script}\n${tests}`;
+  const packed = packDiff(mixed, Buffer.byteLength(script) + 10);
+  assert.deepEqual(packed.included, ['scripts/verify-plugin-submission.js']);
+  assert.deepEqual(packed.skipped, ['test/plugin-submission.test.js']);
+  assert.equal(packed.truncated, false);
+  assert.equal(packed.diff.includes('plugin-submission.test.js'), false);
+  assert.match(packed.diff, /verify-plugin-submission\.js/);
+  const prepared = prepareReviewDiff(
+    `diff --git a/package-lock.json b/package-lock.json\n+lock\n${mixed}`,
+    Buffer.byteLength(script) + 10,
+  );
+  assert.deepEqual(prepared.excluded, ['package-lock.json']);
+  assert.deepEqual(prepared.kept, ['scripts/verify-plugin-submission.js']);
+  assert.equal(prepared.diff.includes('package-lock.json'), false);
+});
+
 test('Claude review workflow inlines the exact checked-in generated-diff filter', () => {
   const filter = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'filter-claude-review-diff.js'), 'utf8');
   const heredoc = workflow.match(/<<'JS'\n([\s\S]*?)\n {10}JS\n/u);
   assert.ok(heredoc, 'workflow must inline the lockfile filter in a quoted heredoc');
   const inlined = heredoc[1].split('\n').map((line) => line.replace(/^ {10}/u, '')).join('\n');
   assert.equal(`${inlined}\n`, filter);
-  assert.match(workflow, /node - "\$DIFF_FILE" "\$FILTERED_FILE" "\$FILTER_META" <<'JS'/);
+  assert.match(workflow, /node - "\$DIFF_FILE" "\$FILTERED_FILE" "\$FILTER_META" "\$MAXLEN" <<'JS'/);
   assert.match(
     workflow,
     /git diff -U3 "\$\{BASE\}\.\.\.HEAD" > "\$DIFF_FILE"[\s\S]*?FILTERED_FILE=[\s\S]*?BYTES="\$\(wc -c < "\$DIFF_FILE"/,
   );
   assert.match(workflow, /\[ "\$EXCLUDED_GENERATED" = true \]/);
-  assert.match(workflow, /lockfile-only PR is still reviewed/);
+  assert.match(workflow, /\[ "\$PACK_INCOMPLETE" = true \]/);
+  assert.match(workflow, /Lockfile-only PRs are packed from the/);
+  assert.match(workflow, /Rejected execution file/);
 });
 
 test('Claude review backstop normalizes diff-prefixed locators only onto changed paths', () => {
