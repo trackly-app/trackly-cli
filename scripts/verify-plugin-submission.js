@@ -716,7 +716,7 @@ function validateSubmissionTests(state, fixtures) {
   }
   const serialized = JSON.stringify(fixtures);
   check(state, !/\b(?:Kevin|Astuhuaman)\b/i.test(serialized), 'submission fixtures must not contain a real reviewer identity');
-  check(state, !/(?:password|secret)\s*[:=]\s*["'][^"']{8,}["']/i.test(serialized), 'submission fixtures must not contain credential values');
+  check(state, !/(?:["'](?:password|secret)["']|(?:password|secret))\s*[:=]\s*["'][^"']{8,}["']/i.test(serialized), 'submission fixtures must not contain credential values');
 }
 
 async function runStatic() {

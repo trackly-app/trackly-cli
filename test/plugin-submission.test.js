@@ -809,6 +809,16 @@ test('credential scan rejects concrete reviewer email and user ID assignments', 
   }
 });
 
+test('submission fixtures reject quoted JSON object-member passwords and secrets', () => {
+  for (const key of ['password', 'secret']) {
+    const fixtures = json('plugins/trackly/listing/submission-tests.json');
+    fixtures.reviewEnvironment.authentication[key] = 'abcdefghij';
+    const s = state();
+    load().validateSubmissionTests(s, fixtures);
+    assert(s.errors.some((error) => /credential values/.test(error)), key);
+  }
+});
+
 test('listing metadata rejects TODO placeholders recursively', () => {
   const metadata = json('plugins/trackly/listing/metadata.json'); metadata.tagline = '[TODO: tagline]';
   const s = state(); load().validateMetadata(s, metadata); assert(s.errors.some(error => /TODO/.test(error)));
