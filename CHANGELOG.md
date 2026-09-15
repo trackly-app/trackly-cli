@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep the MCP registry `server.json` description at or under 100 characters
   after stale public-metrics fallback copy so `publish.yml` can register the
   package. npm `0.18.3` already shipped; this does not change plugin preflight.
+- Omit generated lockfiles from the Claude review copy only when the raw diff
+  exceeds the 100 KB cap, so small version-bump PRs still show lockfile hunks.
 
 ## [0.18.3] - 2026-09-09
 

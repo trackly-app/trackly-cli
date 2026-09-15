@@ -183,13 +183,14 @@ jobs:
           MAXLEN=100000
           DIFF_FILE="${RUNNER_TEMP:-/tmp}/claude-review.diff"
           git diff -U3 "${BASE}...HEAD" > "$DIFF_FILE" 2>/dev/null || true
-          # Drop generated lockfiles, then pack complete files under the 100 KB
-          # env cap so a source review is not starved by pin churn or mid-file
-          # truncation. The inline copy is byte-for-byte
-          # scripts/filter-claude-review-diff.js so a PR cannot swap the filter
-          # without tripping the self-change guard. Fail-safe: keep the raw
-          # diff if the filter errors. Lockfile-only PRs are packed from the
-          # raw lockfile diff. Skipped files stay PARTIAL/opaque.
+          # Pack complete files under the 100 KB env cap. Omit generated
+          # lockfiles only when the raw copy exceeds that cap, so a source
+          # review is not starved by pin churn on large PRs while small
+          # version bumps keep lockfile hunks visible. The inline copy is
+          # byte-for-byte scripts/filter-claude-review-diff.js so a PR cannot
+          # swap the filter without tripping the self-change guard. Fail-safe:
+          # keep the raw diff if the filter errors. Lockfile-only oversize PRs
+          # are packed from the raw lockfile diff. Skipped files stay PARTIAL.
           FILTERED_FILE="${RUNNER_TEMP:-/tmp}/claude-review.filtered.diff"
           FILTER_META="${RUNNER_TEMP:-/tmp}/claude-review.filter.json"
           EXCLUDED_GENERATED=false
@@ -378,11 +379,28 @@ jobs:
           }
 
           function prepareReviewDiff(unifiedDiff, maxBytes) {
-            const filtered = filterDiff(unifiedDiff);
+            const max = Number.isFinite(Number(maxBytes)) && Number(maxBytes) > 0
+              ? Number(maxBytes)
+              : DEFAULT_MAX_BYTES;
+            const raw = typeof unifiedDiff === 'string' ? unifiedDiff : '';
+            // Omit lockfiles only when the raw review copy exceeds the cap. Small PRs
+            // keep version-pin hunks visible so PARTIAL notes and false "lockfile
+            // missing" findings are not forced.
+            if (Buffer.byteLength(raw) <= max) {
+              const packed = packDiff(raw, max);
+              return {
+                diff: packed.diff,
+                excluded: [],
+                kept: packed.included,
+                skipped: packed.skipped,
+                truncated: packed.truncated,
+              };
+            }
+            const filtered = filterDiff(raw);
             const source = filtered.excluded.length > 0 && Buffer.byteLength(filtered.diff) === 0
-              ? unifiedDiff
+              ? raw
               : filtered.diff;
-            const packed = packDiff(source, maxBytes);
+            const packed = packDiff(source, max);
             return {
               diff: packed.diff,
               excluded: filtered.excluded,
