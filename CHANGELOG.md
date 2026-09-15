@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pack complete files into that same 100 KB window, preferring scripts over
   tests, instead of mid-file truncation. Skipped files stay PARTIAL. A rejected
   terminal result now logs reconstructable shape flags without publishing it.
+- Quote the taught Partial LGTM line in the opaque/packed review NOTE, and log
+  rejected terminal-record lines, so a fail-closed publish can be reconstructed
+  without loosening the extractor grammar.
 
 - Recover a complete Claude terminal review when the model wraps the taught
   metadata or clean-verdict lines in inline code, or prefixes the required
