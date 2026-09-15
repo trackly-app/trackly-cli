@@ -44,6 +44,7 @@ test('stale or missing metrics use nonnumeric public copy', () => {
 
 test('stale MCP server description stays within the registry 100-character limit', () => {
   const numeric = JSON.parse(fs.readFileSync(path.join(root, 'server.json'), 'utf8')).description;
+  assert.match(numeric, /^AI job search:/);
   assert.ok(numeric.length <= 100, numeric);
   const prepared = replaceMetricsCopy(
     fs.readFileSync(path.join(root, 'server.json'), 'utf8'),
@@ -51,9 +52,14 @@ test('stale MCP server description stays within the registry 100-character limit
     new Date('2026-10-01T00:00:00-07:00'),
   );
   const description = JSON.parse(prepared).description;
+  assert.match(description, /^AI job search:/);
   assert.match(description, /Thousands of jobs/);
   assert.match(description, /Thousands of companies/);
   assert.ok(description.length <= 100, description);
+  // Exact 422 body.description from publish run 35030261087 after 0.18.3.
+  const rejected = 'AI job search for Claude, ChatGPT, Cursor. Thousands of jobs, Thousands of companies. OAuth or stdio.';
+  assert.equal(rejected.length, 101);
+  assert.notEqual(description, rejected);
 });
 
 test('preparation replaces a previous numeric rounding bucket', () => {
