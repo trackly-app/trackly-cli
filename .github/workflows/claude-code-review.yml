@@ -652,7 +652,7 @@ jobs:
             echo "::warning title=Diff truncated::PR diff exceeds ${MAXLEN} bytes; inline copy truncated."
           elif [ "$OPAQUE" = "true" ]; then
             echo "partial=true" >> "$GITHUB_OUTPUT"
-            OPAQUE_NOTE="[NOTE: the diff contains binary or otherwise opaque entries that cannot be inspected inline - coverage is PARTIAL; state that explicitly in the verdict and do not claim full coverage.]"
+            OPAQUE_NOTE="[NOTE: coverage is PARTIAL because some changed files were omitted or opaque. If there are zero findings, use exactly: Partial LGTM — no issues found in the visible diff (coverage was partial because the diff was truncated). Do not claim full coverage.]"
             DIFF="$(printf '%s\n%s' "$(cat "$DIFF_FILE")" "$OPAQUE_NOTE")"
           else
             echo "partial=false" >> "$GITHUB_OUTPUT"
@@ -1083,6 +1083,18 @@ jobs:
           print("has_partial_lgtm", "Partial LGTM" in text)
           print("has_full_lgtm", "LGTM — no issues found" in text)
           print("line_count", len(text.splitlines()))
+          isolated = text
+          start = -1
+          lines = text.splitlines()
+          for index, line in enumerate(lines):
+              if line == header:
+                  start = index
+          if start != -1:
+              isolated = "\n".join(lines[start:])
+          nonempty = [line for line in isolated.splitlines() if line.strip()]
+          print("rejected_nonempty_lines", len(nonempty))
+          for index, line in enumerate(nonempty[:20]):
+              print("rejected_line", index, repr(line[:200]))
           PY
             BODY="## 🔵 Claude Code Review"$'\n\n'"⚠️ The review ran at head \`${HEAD_SHA}\` ([run](${RUN_URL})) but lacked a valid terminal verdict. This check fails closed; inline comments and intermediate planning text are insufficient review coverage. Re-run the review or use the documented exact-head compensating review path."
             python3 -c 'import json,sys;print(json.dumps({"body":sys.argv[1]}))' "$BODY" > "$RUNNER_TEMP/cr_empty.json" || exit 1
