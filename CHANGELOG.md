@@ -9,18 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Omit generated lockfiles from the Claude review inline copy before the 100 KB
+  cap so source hunks are not truncated out of the trusted window. A review that
+  dropped lockfiles stays PARTIAL; lockfile-only PRs are packed from the raw
+  lockfile diff. Terminal-record grammar is unchanged.
+- Pack complete files into that same 100 KB window, preferring scripts over
+  tests, instead of mid-file truncation. Skipped files stay PARTIAL. A rejected
+  terminal result now logs reconstructable shape flags without publishing it.
+- Quote the taught Partial LGTM line in the opaque/packed review NOTE, and log
+  rejected terminal-record lines from the last standalone header, so a
+  fail-closed publish can be reconstructed without loosening the extractor
+  grammar.
+
 - Recover a complete Claude terminal review when the model wraps the taught
   metadata or clean-verdict lines in inline code, or prefixes the required
   header with planning text. Issue autolinks, trailing prose, and incomplete
   last results still fail closed.
-
-## [0.18.3] - 2026-09-12
-
-### Fixed
-
 - Mirror Apply MCP contract 3.9.2. Forward bounded legacy adapter codes so the
   backend can authorize existing executions by their frozen contract generation.
   New executions retain strict published-adapter enforcement.
+
+## [0.18.4] - 2026-09-15
+
+### Fixed
+
+- Keep the MCP registry `server.json` description at or under 100 characters
+  after stale public-metrics fallback copy so `publish.yml` can register the
+  package. npm `0.18.3` already shipped; this does not change plugin preflight.
+- Omit generated lockfiles from the Claude review copy only when the raw diff
+  exceeds the 100 KB cap, so small version-bump PRs still show lockfile hunks.
+
+## [0.18.3] - 2026-09-09
+
+### Changed
+
+- Harden the separate OpenAI plugin submission preflight and enforce it in CLI CI.
+- Clarify listing copy, synthetic reviewer cases, and the distinction between a CLI release and OpenAI portal acceptance.
 
 ## [0.18.2] - 2026-09-09
 

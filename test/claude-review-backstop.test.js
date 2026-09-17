@@ -1092,6 +1092,110 @@ test('Claude review workflow inlines the exact checked-in changed-line map build
   assert.match(workflow, /head -c "\$MAXLEN" "\$DIFF_FILE" > "\$VISIBLE_DIFF_FILE"/);
 });
 
+test('Claude review filter drops generated lockfiles and keeps source', () => {
+  const { filterDiff, isExcludedPath } = require('../scripts/filter-claude-review-diff.js');
+  assert.equal(isExcludedPath('package-lock.json'), true);
+  assert.equal(isExcludedPath('npm-shrinkwrap.json'), true);
+  assert.equal(isExcludedPath('apps/web/yarn.lock'), true);
+  assert.equal(isExcludedPath('scripts/verify-plugin-submission.js'), false);
+  const mixed = [
+    'diff --git a/package-lock.json b/package-lock.json',
+    'index 111..222 100644',
+    '--- a/package-lock.json',
+    '+++ b/package-lock.json',
+    '@@ -1,1 +1,1 @@',
+    '-old',
+    '+new',
+    'diff --git a/scripts/verify-plugin-submission.js b/scripts/verify-plugin-submission.js',
+    'index 333..444 100644',
+    '--- a/scripts/verify-plugin-submission.js',
+    '+++ b/scripts/verify-plugin-submission.js',
+    '@@ -1,1 +1,2 @@',
+    " 'use strict';",
+    "+module.exports = {};",
+  ].join('\n');
+  const { diff, excluded, kept } = filterDiff(mixed);
+  assert.deepEqual(excluded, ['package-lock.json']);
+  assert.deepEqual(kept, ['scripts/verify-plugin-submission.js']);
+  assert.equal(diff.includes('package-lock.json'), false);
+  assert.match(diff, /verify-plugin-submission\.js/);
+  assert.match(diff, /\+module\.exports = \{\};/);
+  const quoted = filterDiff('diff --git "a/npm-shrinkwrap.json" "b/npm-shrinkwrap.json"\n+secret\ndiff --git a/lib/a.js b/lib/a.js\n+ok\n');
+  assert.deepEqual(quoted.excluded, ['npm-shrinkwrap.json']);
+  assert.match(quoted.diff, /lib\/a\.js/);
+  const cafe = filterDiff('diff --git "a/docs/caf\\303\\251.md" "b/docs/caf\\303\\251.md"\n+ok\n');
+  assert.deepEqual(cafe.kept, ['docs/café.md']);
+  assert.equal(cafe.excluded.length, 0);
+  const empty = filterDiff('diff --git a/yarn.lock b/yarn.lock\n+only\n');
+  assert.equal(empty.diff.trim(), '');
+  assert.deepEqual(empty.excluded, ['yarn.lock']);
+});
+
+test('Claude review packer keeps complete high-priority files inside the byte cap', () => {
+  const { packDiff, prepareReviewDiff } = require('../scripts/filter-claude-review-diff.js');
+  const script = [
+    'diff --git a/scripts/verify-plugin-submission.js b/scripts/verify-plugin-submission.js',
+    'index 111..222 100644',
+    '--- a/scripts/verify-plugin-submission.js',
+    '+++ b/scripts/verify-plugin-submission.js',
+    '@@ -1,1 +1,1 @@',
+    `+${'s'.repeat(80)}`,
+  ].join('\n');
+  const tests = [
+    'diff --git a/test/plugin-submission.test.js b/test/plugin-submission.test.js',
+    'index 333..444 100644',
+    '--- a/test/plugin-submission.test.js',
+    '+++ b/test/plugin-submission.test.js',
+    '@@ -1,1 +1,1 @@',
+    `+${'t'.repeat(80)}`,
+  ].join('\n');
+  const mixed = `${script}\n${tests}`;
+  const packed = packDiff(mixed, Buffer.byteLength(script) + 10);
+  assert.deepEqual(packed.included, ['scripts/verify-plugin-submission.js']);
+  assert.deepEqual(packed.skipped, ['test/plugin-submission.test.js']);
+  assert.equal(packed.truncated, false);
+  assert.equal(packed.diff.includes('plugin-submission.test.js'), false);
+  assert.match(packed.diff, /verify-plugin-submission\.js/);
+  const prepared = prepareReviewDiff(
+    `diff --git a/package-lock.json b/package-lock.json\n+lock\n${mixed}`,
+    Buffer.byteLength(script) + 10,
+  );
+  assert.deepEqual(prepared.excluded, ['package-lock.json']);
+  assert.deepEqual(prepared.kept, ['scripts/verify-plugin-submission.js']);
+  assert.equal(prepared.diff.includes('package-lock.json'), false);
+  const small = [
+    'diff --git a/package-lock.json b/package-lock.json',
+    '@@ -1,1 +1,1 @@',
+    '-  "version": "0.18.3",',
+    '+  "version": "0.18.4",',
+    'diff --git a/package.json b/package.json',
+    '@@ -1,1 +1,1 @@',
+    '-  "version": "0.18.3",',
+    '+  "version": "0.18.4",',
+  ].join('\n');
+  const keptSmall = prepareReviewDiff(small, 100000);
+  assert.deepEqual(keptSmall.excluded, []);
+  assert.deepEqual(keptSmall.kept, ['package-lock.json', 'package.json']);
+  assert.match(keptSmall.diff, /package-lock\.json/);
+});
+
+test('Claude review workflow inlines the exact checked-in generated-diff filter', () => {
+  const filter = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'filter-claude-review-diff.js'), 'utf8');
+  const heredoc = workflow.match(/<<'JS'\n([\s\S]*?)\n {10}JS\n/u);
+  assert.ok(heredoc, 'workflow must inline the lockfile filter in a quoted heredoc');
+  const inlined = heredoc[1].split('\n').map((line) => line.replace(/^ {10}/u, '')).join('\n');
+  assert.equal(`${inlined}\n`, filter);
+  assert.match(workflow, /node - "\$DIFF_FILE" "\$FILTERED_FILE" "\$FILTER_META" "\$MAXLEN" <<'JS'/);
+  assert.match(
+    workflow,
+    /git diff -U3 "\$\{BASE\}\.\.\.HEAD" > "\$DIFF_FILE"[\s\S]*?FILTERED_FILE=[\s\S]*?BYTES="\$\(wc -c < "\$DIFF_FILE"/,
+  );
+  assert.match(workflow, /\[ "\$EXCLUDED_GENERATED" = true \]/);
+  assert.match(workflow, /\[ "\$PACK_INCOMPLETE" = true \]/);
+  assert.match(workflow, /Lockfile-only oversize PRs/);
+  assert.match(workflow, /Rejected execution file/);
+});
+
 test('Claude review backstop normalizes diff-prefixed locators only onto changed paths', () => {
   const review = (locator) => [
     '## 🔵 Claude Code Review',
@@ -1252,4 +1356,13 @@ test('Claude review workflow binds a diff over 100 KB to trusted partial coverag
   assert.equal(workflow.split(partialVerdict).length - 1, 2);
   assert.match(workflow, /true\) COVERAGE_FLAG="--partial"[\s\S]*?false\) COVERAGE_FLAG="--full"/);
   assert.match(workflow, /node "\$TRUSTED_EXTRACTOR" "\$EXEC_FILE" "\$COVERAGE_FLAG"/);
+  assert.match(
+    workflow,
+    /OPAQUE_NOTE="\[NOTE: coverage is PARTIAL because some changed files were omitted or opaque\. If there are zero findings, use exactly: Partial LGTM — no issues found in the visible diff \(coverage was partial because the diff was truncated\)\. Do not claim full coverage\.\]"/,
+  );
+  assert.match(
+    workflow,
+    /for index, line in enumerate\(lines\):\n\s+if line == header:\n\s+start = index/,
+  );
+  assert.match(workflow, /print\("rejected_line", index, repr\(line\[:200\]\)\)/);
 });
