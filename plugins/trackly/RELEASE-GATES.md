@@ -155,6 +155,11 @@ The fixture-pinned `mutationAnnotationContract` in
 `hosted-contract-fixture.json`, which predates this audit. The next fixture
 recapture must set `trackly_defer_apply_access` and
 `trackly_clear_apply_access_deferment` to `mutationAnnotations(false, true)`.
+The backend helper's signature is
+`mutationAnnotations(destructiveHint, idempotentHint)`, and it always emits
+`readOnlyHint: false` and `openWorldHint: false`. So `(false, true)` means
+non-destructive and idempotent, which matches the table above. The helper
+`readOnlyAnnotations` emits read-only, non-destructive and idempotent.
 
 ## Product verification
 
