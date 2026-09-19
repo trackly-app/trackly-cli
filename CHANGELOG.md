@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.6] - 2026-09-19
+
 ### Changed
 
+- Recapture the hosted contract fixture, `skill-lock.json` digests, and the
+  verifier locks from the deployed close-ai merge `aa74d3e5` (close-ai #1988).
+  `trackly_defer_apply_access` and `trackly_clear_apply_access_deferment` are
+  now locked as non-destructive, and the fixture records Apply 3.9.2. The
+  verifier also reviews the backend changes since the last capture: middleware
+  and CORS ahead of the plugin route, the plugin-scoped MCP CORS, MCP issuer
+  and origin configuration, OAuth default scopes, and new profile field
+  sensitivity classes (#152).
 - Mirror Apply MCP contract 3.9.2. Forward bounded legacy adapter codes so the
   backend can authorize existing executions by their frozen contract generation.
   New executions retain strict published-adapter enforcement.

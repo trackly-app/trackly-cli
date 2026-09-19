@@ -160,12 +160,10 @@ the host's own browser tool, and only the user clicks Submit.
 
 The fixture-pinned `mutationAnnotationContract` in
 `scripts/verify-hosted-contract.js` mirrors the runtime pinned in
-`hosted-contract-fixture.json`, which predates this audit. The next fixture
-recapture must, in the same change, update that `mutationAnnotationContract`
-for `trackly_defer_apply_access` and `trackly_clear_apply_access_deferment` from
-`mutationAnnotations(true, true)` to `mutationAnnotations(false, true)`.
-This recapture is tracked in trackly-app/trackly-cli#152 and must be complete
-before the resubmission Scan Tools.
+`hosted-contract-fixture.json`. trackly-app/trackly-cli#152 recaptured that
+fixture from the deployed close-ai merge `aa74d3e5` (close-ai #1988) and set
+`trackly_defer_apply_access` and `trackly_clear_apply_access_deferment` to
+`mutationAnnotations(false, true)`, matching the table above.
 The backend helper's signature is
 `mutationAnnotations(destructiveHint, idempotentHint)`, and it always emits
 `readOnlyHint: false` and `openWorldHint: false`. So `(false, true)` means
