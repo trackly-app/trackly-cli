@@ -115,6 +115,63 @@ The validation limits follow the [OpenAI submission error reference](https://dev
   `destructiveHint`) must describe actual behavior and have a short reviewer
   justification for every write or external side effect.
 
+### Tool annotation justifications
+
+Audited on 2026-09-18 PDT against the OpenAI plugin submission guide
+(developers.openai.com/plugins/deploy/submission): `readOnlyHint` is true only
+when a tool changes nothing; `openWorldHint` is true only for the public
+internet or open-ended external entities, and false for a bounded private
+account "even if that service is externally hosted"; `destructiveHint` is true
+for a write that can delete, overwrite, revoke access, or cause another
+irreversible side effect. The backend source is
+`close-ai/src/mcp/plugin-server.ts`. `plugin-server.test.ts` locks every row
+below, so a change to any hint fails CI. Paste these one-line justifications
+into the portal.
+
+`openWorldHint` is false for all 21 tools. Every tool calls only Trackly's own
+API, scoped to the signed-in account. The Apply services have no outbound
+network client and never fetch employer sites. Stored postings are served
+without live employer-site hydration. Employer pages are opened and filled by
+the host's own browser tool, and only the user clicks Submit.
+
+| Tool | Read only | Destructive | Justification |
+| --- | --- | --- | --- |
+| `trackly_search_jobs` | true | false | Searches Trackly's stored job index for this account. Writes nothing. |
+| `trackly_get_job` | true | false | Reads one stored posting. No live employer-site fetch. |
+| `trackly_search_companies` | true | false | Searches Trackly's monitored-company list. |
+| `trackly_get_job_brief` | true | false | Reads a precomputed role and company summary. |
+| `trackly_get_preferences` | true | false | Reads the user's saved discovery preferences. |
+| `trackly_get_apply_readiness` | true | false | Makes five parallel GETs for profile, schema, queue, protocol and execution state. |
+| `trackly_lint_application_text` | true | false | Computes in memory only. Text is neither stored nor echoed. |
+| `trackly_list_apply_access_deferments` | true | false | Lists the account's active deferments. |
+| `trackly_prepare_resume_artifact` | true | false | Returns static manual-upload instructions and makes no request. |
+| `trackly_update_status` | false | false | Sets a tracker stage (saved, dismissed or applied). The same tool reverses it. |
+| `trackly_save_application_answers` | false | true | Overwrites saved profile answers. The education list is a confirmed replace-all. |
+| `trackly_grant_sensitive_storage_consent` | false | false | Records consent only. Adds no answers and can be revoked. |
+| `trackly_revoke_sensitive_storage_consent` | false | true | Revokes consent and deletes stored sensitive answers. |
+| `trackly_defer_apply_access` | false | false | Inserts an owner-scoped deferment that keeps Apply off that job, company or provider until `trackly_clear_apply_access_deferment` clears it (it has no expiry). Nothing is deleted. |
+| `trackly_clear_apply_access_deferment` | false | false | Soft-clears one deferment (`cleared_at`), which can be re-deferred. |
+| `trackly_start_or_resume_apply` | false | false | Creates or resumes a no-submit Apply execution and claims its batch lease. |
+| `trackly_get_apply_work` | false | false | Not read-only, because each call claims or renews the private batch lease. |
+| `trackly_report_apply_progress` | false | false | Records value-free observations and dispositions, or advances the execution to its next wave. Advancing only queues new no-submit work and never deletes or overwrites user data. |
+| `trackly_certify_review_ready` | false | false | Records a review-ready checkpoint. Never submits. |
+| `trackly_reconcile_manual_submission` | false | false | Records a submission the user made themselves. Never submits forms. |
+| `trackly_stop_apply` | false | true | Moves the execution to a terminal stopped state. Continuing requires a new execution. |
+
+The fixture-pinned `mutationAnnotationContract` in
+`scripts/verify-hosted-contract.js` mirrors the runtime pinned in
+`hosted-contract-fixture.json`, which predates this audit. The next fixture
+recapture must, in the same change, update that `mutationAnnotationContract`
+for `trackly_defer_apply_access` and `trackly_clear_apply_access_deferment` from
+`mutationAnnotations(true, true)` to `mutationAnnotations(false, true)`.
+This recapture is tracked in trackly-app/trackly-cli#152 and must be complete
+before the resubmission Scan Tools.
+The backend helper's signature is
+`mutationAnnotations(destructiveHint, idempotentHint)`, and it always emits
+`readOnlyHint: false` and `openWorldHint: false`. So `(false, true)` means
+non-destructive, which matches the Destructive column above, and idempotent (retries replay by idempotency key; the table does not list idempotency). The helper
+`readOnlyAnnotations` emits read-only, non-destructive and idempotent.
+
 ## Product verification
 
 - Require an unauthenticated HTTP 200 response from `https://usetrackly.app/plugins/trackly` and verify its logo, support, privacy, and terms links before submission.
