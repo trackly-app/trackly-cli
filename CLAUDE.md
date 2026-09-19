@@ -1,6 +1,6 @@
 # trackly-cli
 
-CLI + MCP server for the Trackly job tracker. Lets users search 170K+ jobs across 3,800+ companies from the terminal or through AI agents (Claude Code, Cursor) via MCP.
+CLI + MCP server for the Trackly job tracker. Lets users search 250K+ jobs across 5,400+ companies from the terminal or through AI agents (Claude Code, Cursor) via MCP.
 
 ## Tech Stack
 
@@ -139,7 +139,9 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `GET /api/network/companies/:id/workspace` -- Get company workspace (jobs, contacts, campaigns)
 - `GET /auth/google/cli` -- OAuth login redirect
 
-The complete 58-tool inventory is in `docs/trackly-tools.md`. Local-only helpers such as `trackly_verify_prepared_resume` and `trackly_validate_apply_resume_upload` intentionally have no HTTP endpoint and therefore do not appear in the endpoint list above.
+The complete 58-tool inventory is in `docs/trackly-tools.md`. Helpers such as `trackly_verify_prepared_resume` and `trackly_validate_apply_resume_upload` intentionally have no CLI HTTP endpoint and therefore do not appear in the endpoint list above.
+
+Hosted `/api/mcp` tool count: the hosted registry lives in close-ai `src/mcp/server.ts` (registered through `registerHostedMcpTool`). It omits exactly four local-only tools (`trackly_diagnose_local_path`, `trackly_lint_application_text`, `trackly_validate_apply_resume_upload`, `trackly_validate_apply_tab_keep_set`) and adds `trackly_chat`, for 55. `trackly_prepare_resume` and `trackly_verify_prepared_resume` are registered on both servers. When a tool is added to or removed from either server, recount the hosted names and update every "N hosted tools" claim in `README.md`; the docs-coverage test only checks that those README claims agree.
 
 ## Gotchas
 

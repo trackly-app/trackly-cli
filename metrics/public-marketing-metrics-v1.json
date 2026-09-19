@@ -4,12 +4,12 @@
   "environment": "production",
   "database": "azure-blue",
   "sourceEndpoint": "/api/admin/public-marketing-metrics",
-  "generatedAt": "2026-08-04T00:40:19-07:00",
+  "generatedAt": "2026-09-18T23:21:39-07:00",
   "metrics": {
-    "totalJobs": 181898,
-    "totalCompanies": 3880,
-    "atsTypes": 48,
-    "mbaJobs": 6239,
-    "internships": 10923
+    "totalJobs": 262201,
+    "totalCompanies": 5486,
+    "atsTypes": 49,
+    "mbaJobs": 7932,
+    "internships": 22406
   }
 }
