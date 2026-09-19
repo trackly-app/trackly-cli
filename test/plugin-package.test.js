@@ -932,6 +932,25 @@ test('the exported plugin router must be mounted on the exact production applica
       /generalLimiter.*must (protect the exact reviewed app.use mount paths|run after only the reviewed middleware on each mount)/,
     );
   }
+  for (const [label, mount] of [
+    ['auth path', "app.use('/auth/', skipEverything, authLimiter);"],
+    ['admin login', "app.use('/api/admin/login', collapseOnboardingTrailingSlashes, authLimiter);"],
+  ]) {
+    const original = label === 'auth path'
+      ? "app.use('/auth/', authLimiter);"
+      : "app.use('/api/admin/login', authLimiter);";
+    assert.notEqual(source.replace(original, mount), source);
+    assert.throws(
+      () => assertLivePluginRouterMount(
+        source.replace(original, mount),
+        'tracklyPluginMcpRoutes',
+        './mcp/plugin-router',
+        '/api/plugin/trackly/mcp',
+        `${label} auth limiter fixture`,
+      ),
+      /authLimiter.*must run after only the reviewed middleware on each mount/,
+    );
+  }
   assert.throws(
     () => assertLivePluginRouterMount(
       source.replace("app.use('/api/', collapseOnboardingTrailingSlashes, generalLimiter);", "app.use('/unrelated', collapseOnboardingTrailingSlashes, generalLimiter);"),

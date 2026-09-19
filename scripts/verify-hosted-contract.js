@@ -7632,6 +7632,17 @@ assertActiveClassMethodAstSha256(
   '62835448113ca2c33089a25b3d10c9f7aaee697591ea6a407dc67fe94e992e0c',
   hostedOAuthProviderPath,
 );
+// authorize() is the only consumer of the locked resource and default-scope
+// helpers: resource = normalizeMcpResource(params.resource?.href,
+// { redirectUri }) then scopes = resolveAuthorizationScopes(params.scopes),
+// each failing closed, before the pending grant is stored (close-ai #1987).
+assertActiveClassMethodAstSha256(
+  hostedOAuthProviderSource,
+  'TracklyOAuthProvider',
+  'authorize',
+  '955fa3dbe040a8d36448f92c54bbb4cf95c6022b69b938f4b6854467f898295c',
+  hostedOAuthProviderPath,
+);
 assertImportBinding(
   hostedPluginSource,
   'default',
