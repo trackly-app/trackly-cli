@@ -83,6 +83,14 @@ The validation limits follow the [OpenAI submission error reference](https://dev
   documented `openid` and `email` scopes. The current public metadata does not
   meet that prerequisite, so selecting the restriction prematurely would make
   review fail.
+- Decision (2026-09-18 PDT): no UserInfo endpoint is required for this
+  submission. OpenAI's submission guide
+  (<https://developers.openai.com/plugins/deploy/submission>) ties it only to
+  workspace domain restrictions: "To support workspace domain restrictions for
+  a plugin that uses OAuth, configure the authorization server to advertise a
+  UserInfo Endpoint that returns the user's email claim and email_verified:
+  true." trackly does not use workspace domain restrictions, so no code change
+  is made. Revisit this only if domain restrictions are ever enabled.
 
 ### Custom UI, CSP, and screenshots
 
