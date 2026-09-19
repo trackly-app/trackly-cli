@@ -11,12 +11,27 @@ const path = require('node:path');
 const { isDeepStrictEqual } = require('node:util');
 
 const sha256ExactBytes = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-const CHECKED_IN_HOSTED_FIXTURE_SHA256 = 'a4f44aabb799d6d9774bde3f8cb372242e7d2ff6febaae9ae24a41b3895bf979';
+const CHECKED_IN_HOSTED_FIXTURE_SHA256 = '78672b96556302bbcff91e756fa6a913a94b9958e6beb1d85544975194631de1';
 const HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256 = Object.freeze({
   applyCheckpointActionVariant: '6d83fd691e69b578f683c5e367cc1706a8f74b336e0ff435195f580c2350587c',
   applyCheckpointActionSchema: '6f0b0698b13997eda7100ec00720fff199d936270d232c7de5f55a8fcef2c2ab',
   applyCheckpointSchema: '4759f1b7e1533e95ec1b5872c8bfe805ea6a6fd1c6e24c14f9499cd536331d1a',
 });
+// Apply 3.9.2 adds exactly the client/upgrade_required checkpoint variant
+// (reviewed in trackly-cli #144: removing it restores the 3.8.1 digest above).
+// Deployed backends that publish 3.9.2 are verified with the 3.9.2 writer
+// generation and this digest; everything else keeps the 3.8.1 pins.
+const APPLY_392_CHECKPOINT_ACTION_SCHEMA_SHA256 = '604ccf2ef203d80f022fde2a10d3e471c64724a3c3473569629f05315953cb21';
+// Exact bytes of close-ai src/mcp/mcp-config.ts at aa74d3e5 (introduced by
+// close-ai #1750): issuer canonicalization, plugin/legacy resources, the MCP
+// browser origin allowlist, and the directory OAuth defaults.
+const HOSTED_MCP_CONFIG_SHA256 = '8deb9acd49bed57e7f154730d65404d4db73e1e248c7561b011ed96b092479b4';
+// Exact bytes of the two middleware modules that now run before the plugin
+// mount or the shared /api/ limiter at close-ai aa74d3e5: the retired Signals
+// containment (close-ai #1770) and collapseOnboardingTrailingSlashes plus the
+// general limiter's skip predicate (close-ai #1811, #1886).
+const HOSTED_LEGACY_SIGNALS_CONTAINMENT_SHA256 = 'd92c5b8a0b0089704e565e5a8fd0eaeb232a76176d048747ae29f938b4b63613';
+const HOSTED_GENERAL_RATE_LIMIT_SHA256 = 'ee0b9a8a92ae2b3a9ebe7c99916ca3f58e7d6448d360c7ca304eb955edf46359';
 const HOSTED_APPLY_REPLAY_HELPER_AST_SHA256 = Object.freeze({
   actionCodeFromStoredCheckpoint: 'b23c10235645aa732c28073adfa2fd72dec0a8f7770b461df8bd5f408f896c6d',
   loadStoredApplyBatchCheckpoint: '598233925c66ca36c69ae3dfe75984ec1d7098f27b8356d51cd6a43a7947bfd6',
@@ -569,12 +584,15 @@ const HOSTED_DEPLOYABLE_PATHS = Object.freeze([
   'src/mcp/mcp-scopes.ts',
   'src/mcp/oauth-provider.ts',
   'src/mcp/mcp-tokens.ts',
+  'src/mcp/mcp-config.ts',
   'src/mcp/hosted-auth-context.ts',
   'src/utils/auth-epoch.ts',
   'src/utils/azure-rehearsal-ip.ts',
   'src/utils/jwt.ts',
   'src/utils/trackly-web-origin.ts',
   'src/middleware/auth-rate-limit.ts',
+  'src/middleware/general-rate-limit.ts',
+  'src/middleware/legacy-signals-containment.ts',
   'src/middleware/channel-attribution.ts',
   'src/middleware/maintenance-mode.ts',
   'src/services/job-brief.ts',
@@ -1462,26 +1480,19 @@ function assertExportedFactoryUsedByPluginRouter(source, expectedFactory, source
     ['enforceTracklyPluginScope', 'enforceTracklyPluginScope', './plugin-scopes.js'],
     ['requireTracklyAccess', 'requireTracklyAccess', '../services/trackly-access.js'],
     ['azureRehearsalRateLimitOptions', 'azureRehearsalRateLimitOptions', '../utils/azure-rehearsal-ip.js'],
+    // close-ai #1750 moved the plugin origin allowlist and resource metadata
+    // URL into mcp-config.ts (pinned by HOSTED_MCP_CONFIG_SHA256). The shared
+    // allowlist adds https://codex.openai.com, https://chat.openai.com and
+    // https://platform.openai.com to the six origins previously locked here.
+    ['isAllowedMcpOrigin', 'isAllowedMcpOrigin', './mcp-config.js'],
+    ['MCP_PLUGIN_RESOURCE_METADATA_URL', 'MCP_PLUGIN_RESOURCE_METADATA_URL', './mcp-config.js'],
   ]) {
     assertImportBinding(source, importedName, localName, moduleName, sourcePath);
   }
   assertActiveVariableInitializerAst(
     source,
     'RESOURCE_METADATA_URL',
-    "`${process.env.MCP_ISSUER_URL || 'https://mcp.usetrackly.app'}/.well-known/oauth-protected-resource/api/plugin/trackly/mcp`",
-    sourcePath,
-  );
-  assertActiveVariableInitializerAst(
-    source,
-    'allowedOrigins',
-    `new Set([
-      'https://closeai.mba',
-      'https://www.closeai.mba',
-      'https://usetrackly.app',
-      'https://www.usetrackly.app',
-      'https://mcp.usetrackly.app',
-      'https://chatgpt.com',
-    ])`,
+    'MCP_PLUGIN_RESOURCE_METADATA_URL',
     sourcePath,
   );
   assertActiveFunctionDefinitionAst(
@@ -1489,7 +1500,7 @@ function assertExportedFactoryUsedByPluginRouter(source, expectedFactory, source
     'validateOrigin',
     `function validateOrigin(req: Request, res: Response, next: NextFunction): void {
       const origin = req.headers.origin;
-      if (origin && !allowedOrigins.has(origin)) {
+      if (!isAllowedMcpOrigin(origin)) {
         res.status(403).json({ error: 'Forbidden origin' });
         return;
       }
@@ -1497,26 +1508,29 @@ function assertExportedFactoryUsedByPluginRouter(source, expectedFactory, source
     }`,
     sourcePath,
   );
-  const allowedOriginsDeclaration = activeVariableDeclarator(
-    source,
-    'allowedOrigins',
-    sourcePath,
-  ).declarator;
   const validateOriginDefinition = activeNamedDefinitionAst(source, 'validateOrigin', sourcePath);
   const lockedAllowedOriginReferences = collectBindingReferences(
     validateOriginDefinition,
-    'allowedOrigins',
+    'isAllowedMcpOrigin',
     () => false,
   );
   assert.equal(
     lockedAllowedOriginReferences.length,
     1,
-    `validateOrigin in ${sourcePath} must perform exactly one locked allowedOrigins membership check`,
+    `validateOrigin in ${sourcePath} must perform exactly one locked isAllowedMcpOrigin check`,
   );
+  const allowedOriginImport = ast.program.body.flatMap((statement) => (
+    statement.type === 'ImportDeclaration'
+      ? statement.specifiers.filter((specifier) => specifier.local?.name === 'isAllowedMcpOrigin')
+      : []
+  ));
+  assert.equal(allowedOriginImport.length, 1, `${sourcePath} must import isAllowedMcpOrigin exactly once`);
   assert.deepEqual(
-    collectBindingReferences(ast, 'allowedOrigins', () => false),
-    [allowedOriginsDeclaration.id, ...lockedAllowedOriginReferences],
-    `allowedOrigins in ${sourcePath} must not be reassigned, mutated, aliased, escaped, or referenced outside its locked origin check`,
+    collectBindingReferences(ast, 'isAllowedMcpOrigin', () => false).filter((reference) => (
+      reference !== allowedOriginImport[0].local && reference !== allowedOriginImport[0].imported
+    )),
+    lockedAllowedOriginReferences,
+    `isAllowedMcpOrigin in ${sourcePath} must not be aliased, escaped, or referenced outside its locked origin check`,
   );
   assert.deepEqual(
     canonicalSchemaAst(activeVariableDeclarator(source, 'bearerAuth', sourcePath).declarator.init),
@@ -1821,16 +1835,33 @@ function canonicalPluginMount(factory, routerBinding, mountPath, sourcePath) {
   return mounts[0];
 }
 
+// Ordered canonical-AST digests of every single-argument app.use(...) that
+// runs before the hosted plugin mount, reviewed at close-ai aa74d3e5:
+// legacySignalsContainment (close-ai #1770: answers only exact retired Signals
+// paths, otherwise next()), app-wide CORS (credentials only for allowed
+// origins per #1770; MCP and discovery preflights continue per #1750),
+// cookieParser, MCP analytics ingress, the JSON body parser (its new carve-out
+// for POST /api/recommendation-research/batches from #1886 leaves the plugin
+// path unchanged), urlencoded, request id, UI redirect, helmet, maintenance.
 const REVIEWED_GLOBAL_MIDDLEWARE_CALL_DIGESTS = Object.freeze([
-  'c9c8443c9a480263e54218e603a7ed927d1e4e411c7a4542e80206cb5b3ddecd',
+  'c1f2b00a4434fb372ed514e7297aac7280a529c9d87aa826b2cf570d3a13eedc',
+  '2e71ae5a0b1e7738e25284ac0b4573dd6274e49dc48b086df0e2ae37f210aa55',
   '81d41aba94334a95d3a6002fd6ced8069b9739cd52c6679c6293e01c3f547f75',
   '1eac0496bd02d2dadc4227b753c0ca2d04169bf3c43bec0f5d1eaa0c4bd4bf96',
-  'bd4ab8e932b5a0322aebc16ad4be159574a9f608887a0b455fff8bf4e572a7d2',
+  '4508c0750d6a83f246ef42f0e898465bb2d8b2346114ffaf2c39f9e2a0954a7c',
   '12def47c0dc1628a891b9045ed9c275af25dd73660929d528943f95a98c34855',
   'bc0d7d12f97ab6e9e79b00fa3701899806387b16353d9575628545a06644b2e9',
   'd63cf7bbc1fae45f475807325f4178283bfea854bf4aeecaf7754f66e509e0a5',
   'e8f6d712ad1044aa865b0cec6ddd51e860ed59ecda3f13f9427f8a84ffa78438',
   '971bb5b2a58a45df2caf26342572fcc3221e86544e0335be81a86cb22a30e284',
+]);
+// Canonical-AST digests of the only reviewed path-scoped middleware allowed
+// on the exact plugin mount path before the plugin router: close-ai #1750's
+// plugin-scoped CORS for MCP browser origins. It keeps preflightContinue so the
+// plugin router still owns its rate-limited OPTIONS response, and it grants
+// those origins no credentialed CORS on any other API route.
+const REVIEWED_PLUGIN_SCOPED_MIDDLEWARE_CALL_DIGESTS = Object.freeze([
+  '0692cd9043104953b52d4965db818921a7769dc138c563a0c1f5f945112e2900',
 ]);
 const EXPRESS_ROUTE_CALL_METHODS = new Set([
   'use', 'all',
@@ -1840,6 +1871,44 @@ const EXPRESS_ROUTE_CALL_METHODS = new Set([
   'search', 'source', 'subscribe', 'trace', 'unbind', 'unlink', 'unlock', 'unsubscribe',
 ]);
 const EXPRESS_APPLICATION_CALL_METHODS = new Set([...EXPRESS_ROUTE_CALL_METHODS, 'set']);
+
+// close-ai #1750 serves the plugin's protected-resource discovery document with
+// app.route('<static path>').options(...).get(...). Only that directly chained
+// shape is a reviewed application reference: the Route must be consumed by an
+// immediate verb call, so it can never be stored, passed, or used out of sight
+// of assertPluginRoutePrecedence, which treats every earlier chain as covering.
+function reviewedChainedAppRouteReferences(factory) {
+  const references = new Set();
+  function visit(node) {
+    if (node === null || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child);
+      return;
+    }
+    if (node.type === 'CallExpression'
+        && node.callee?.type === 'MemberExpression'
+        && !node.callee.computed
+        && EXPRESS_ROUTE_CALL_METHODS.has(staticMemberName(node.callee))) {
+      const routeCall = node.callee.object;
+      if (routeCall?.type === 'CallExpression'
+          && routeCall.callee?.type === 'MemberExpression'
+          && !routeCall.callee.computed
+          && staticMemberName(routeCall.callee) === 'route'
+          && routeCall.callee.object?.type === 'Identifier'
+          && routeCall.callee.object.name === 'app'
+          && routeCall.arguments.length === 1
+          && routeCall.arguments[0]?.type === 'StringLiteral') {
+        references.add(routeCall.callee.object);
+      }
+    }
+    for (const [key, child] of Object.entries(node)) {
+      if (key === 'loc' || key === 'extra') continue;
+      visit(child);
+    }
+  }
+  visit(factory);
+  return references;
+}
 
 function staticMemberName(member) {
   if (member?.type !== 'MemberExpression') return null;
@@ -1856,6 +1925,7 @@ function assertPluginRoutePrecedence(
   {
     resolvedFactory = null,
     reviewedGlobalMiddlewareCallDigests = REVIEWED_GLOBAL_MIDDLEWARE_CALL_DIGESTS,
+    reviewedPluginScopedMiddlewareCallDigests = REVIEWED_PLUGIN_SCOPED_MIDDLEWARE_CALL_DIGESTS,
   } = {},
 ) {
   const factory = resolvedFactory || activeNamedDefinitionAst(source, 'createApp', sourcePath);
@@ -1877,6 +1947,8 @@ function assertPluginRoutePrecedence(
   const routeMethods = EXPRESS_ROUTE_CALL_METHODS;
   const reviewedGlobalMiddlewareCallDigestSet = new Set(reviewedGlobalMiddlewareCallDigests);
   const encounteredReviewedGlobalMiddlewareDigests = [];
+  const reviewedPluginScopedMiddlewareCallDigestSet = new Set(reviewedPluginScopedMiddlewareCallDigests);
+  const encounteredReviewedPluginScopedMiddlewareDigests = [];
   const earlierCoveringHandlers = [];
   function chainedRoutePath(receiver) {
     const candidate = unwrapTransparentExpression(receiver);
@@ -1957,9 +2029,24 @@ function assertPluginRoutePrecedence(
           && reviewedGlobalMiddlewareCallDigestSet.has(globalMiddlewareDigest)
           && directCreateAppCalls.has(node);
         if (reviewedGlobalMiddleware) encounteredReviewedGlobalMiddlewareDigests.push(globalMiddlewareDigest);
-        const covers = pathArgument?.type === 'StringLiteral'
-          ? staticExpressPathCovers(pathArgument.value, mountPath, method)
-          : !knownDisjointLegalRedirectPaths && !reviewedGlobalMiddleware;
+        const pluginScopedMiddlewareDigest = directAppCall
+          && method === 'use'
+          && node.arguments.length === 2
+          && pathArgument?.type === 'StringLiteral'
+          && pathArgument.value === mountPath
+          ? sha256ExactBytes(JSON.stringify(canonicalSchemaAst(node)))
+          : null;
+        const reviewedPluginScopedMiddleware = pluginScopedMiddlewareDigest !== null
+          && reviewedPluginScopedMiddlewareCallDigestSet.has(pluginScopedMiddlewareDigest)
+          && directCreateAppCalls.has(node);
+        if (reviewedPluginScopedMiddleware) {
+          encounteredReviewedPluginScopedMiddlewareDigests.push(pluginScopedMiddlewareDigest);
+        }
+        const covers = reviewedPluginScopedMiddleware
+          ? false
+          : pathArgument?.type === 'StringLiteral'
+            ? staticExpressPathCovers(pathArgument.value, mountPath, method)
+            : !knownDisjointLegalRedirectPaths && !reviewedGlobalMiddleware;
         if (covers) earlierCoveringHandlers.push(node);
       }
     }
@@ -1973,6 +2060,11 @@ function assertPluginRoutePrecedence(
     encounteredReviewedGlobalMiddlewareDigests,
     reviewedGlobalMiddlewareCallDigests,
     `createApp in ${sourcePath} must preserve the complete ordered reviewed global middleware inventory before ${mountPath}`,
+  );
+  assert.deepEqual(
+    encounteredReviewedPluginScopedMiddlewareDigests,
+    reviewedPluginScopedMiddlewareCallDigests,
+    `createApp in ${sourcePath} must preserve the complete reviewed plugin-scoped middleware inventory before ${mountPath}`,
   );
   assert.equal(
     earlierCoveringHandlers.length,
@@ -2163,7 +2255,11 @@ function assertLivePluginRouterMount(
     'app',
     `createApp in ${sourcePath} must return the exact application receiving ${mountPath}`,
   );
-  const permittedAppReferences = new Set([appDeclarations[0].id, directReturns[0].argument]);
+  const permittedAppReferences = new Set([
+    appDeclarations[0].id,
+    directReturns[0].argument,
+    ...reviewedChainedAppRouteReferences(factory),
+  ]);
   const unverifiedAppReferences = [];
   function visitAppReferences(node, parent = null, parentKey = null, grandparent = null) {
     if (node === null || typeof node !== 'object') return;
@@ -2296,6 +2392,14 @@ function assertRateLimitBindingSemantics(source, sourcePath) {
     [rateLimitImport.local, ...rateLimitCalls],
     `rateLimit in ${sourcePath} must come only from express-rate-limit and remain confined to its reviewed limiter initializers`,
   );
+  // Reviewed middleware that may run between a limiter's mount path and the
+  // limiter itself. close-ai #1811 added collapseOnboardingTrailingSlashes,
+  // which only rewrites repeated trailing slashes on /api/onboarding URLs so
+  // the limiter's skip predicate sees the same path Express routes.
+  const reviewedPreLimiterMiddleware = {
+    generalLimiter: [['collapseOnboardingTrailingSlashes']],
+    authLimiter: [[], []],
+  };
   for (const [name, expectedMountPaths, importedBindings] of [
     ['generalLimiter', ['/api/'], null],
     ['authLimiter', ['/auth/', '/api/admin/login'], [authLimiterImport.imported, authLimiterImport.local]],
@@ -2337,9 +2441,14 @@ function assertRateLimitBindingSemantics(source, sourcePath) {
       return call.arguments.flatMap((argument, index) => (
         argument?.type === 'Identifier' && argument.name === name
           ? [{
-            path: index === 1 && call.arguments[0]?.type === 'StringLiteral'
+            path: index >= 1
+              && index === call.arguments.length - 1
+              && call.arguments[0]?.type === 'StringLiteral'
               ? call.arguments[0].value
               : null,
+            preceding: call.arguments.slice(1, index).map((middleware) => (
+              middleware?.type === 'Identifier' ? middleware.name : null
+            )),
             reference: argument,
           }]
           : []
@@ -2349,6 +2458,11 @@ function assertRateLimitBindingSemantics(source, sourcePath) {
       appUseMounts.map((mount) => mount.path),
       expectedMountPaths,
       `${name} in ${sourcePath} must protect the exact reviewed app.use mount paths`,
+    );
+    assert.deepEqual(
+      appUseMounts.map((mount) => mount.preceding),
+      reviewedPreLimiterMiddleware[name],
+      `${name} in ${sourcePath} must run after only the reviewed middleware on each mount`,
     );
     assert.deepEqual(
       collectBindingReferences(ast, name, () => false),
@@ -3469,6 +3583,53 @@ function assertImportBinding(source, importedName, localName, moduleName, source
     `${sourcePath} must import ${importedName} as ${localName} exactly once from ${moduleName}`,
   );
   return matches[0];
+}
+
+// Unlike assertUnshadowedImportBinding, this permits passing the binding as a
+// call argument (app.use(middleware)) and only forbids any other declaration
+// or assignment of the same name anywhere in the file, so the import binding
+// is the one every reference resolves to.
+function assertImportedBindingNeverRedeclared(source, importedName, localName, moduleName, sourcePath) {
+  assertImportBinding(source, importedName, localName, moduleName, sourcePath);
+  const ast = parseFullSource(source, sourcePath);
+  const redeclarations = [];
+  function patternContainsName(pattern) {
+    if (!pattern) return false;
+    if (pattern.type === 'Identifier') return pattern.name === localName;
+    if (pattern.type === 'AssignmentPattern') return patternContainsName(pattern.left);
+    if (pattern.type === 'RestElement') return patternContainsName(pattern.argument);
+    if (pattern.type === 'ArrayPattern') return pattern.elements.some(patternContainsName);
+    if (pattern.type === 'ObjectPattern') return pattern.properties.some((property) => (
+      property.type === 'RestElement' ? patternContainsName(property.argument) : patternContainsName(property.value)
+    ));
+    if (pattern.type === 'TSParameterProperty') return patternContainsName(pattern.parameter);
+    return false;
+  }
+  function visit(node) {
+    if (node === null || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child);
+      return;
+    }
+    if (node.type === 'VariableDeclarator' && patternContainsName(node.id)) redeclarations.push(node);
+    if (['FunctionDeclaration', 'FunctionExpression', 'ClassDeclaration', 'ClassExpression', 'TSEnumDeclaration', 'TSModuleDeclaration']
+      .includes(node.type) && node.id?.name === localName) redeclarations.push(node);
+    if (['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression', 'ObjectMethod', 'ClassMethod']
+      .includes(node.type) && (node.params || []).some(patternContainsName)) redeclarations.push(node);
+    if (node.type === 'CatchClause' && patternContainsName(node.param)) redeclarations.push(node);
+    if (node.type === 'AssignmentExpression' && patternContainsName(node.left)) redeclarations.push(node);
+    if (node.type === 'UpdateExpression' && patternContainsName(node.argument)) redeclarations.push(node);
+    for (const [key, child] of Object.entries(node)) {
+      if (key === 'loc' || key === 'extra') continue;
+      visit(child);
+    }
+  }
+  visit(ast);
+  assert.equal(
+    redeclarations.length,
+    0,
+    `${localName} in ${sourcePath} must resolve only to its import from ${moduleName}`,
+  );
 }
 
 function assertUnshadowedImportBinding(source, importedName, localName, moduleName, sourcePath) {
@@ -6548,12 +6709,17 @@ function verifyCheckedInHostedContractFixture(
     timestamps.capturedAt - timestamps.mergedCommittedAt <= 24 * 60 * 60 * 1000,
     `${fixturePath} snapshot must be captured within 24 hours of its recorded runtime merge`,
   );
-  // This immutable snapshot describes its recorded merge, not today's Apply
-  // contract. Current cross-repository parity requires backendDir mode below.
+  // This immutable snapshot describes its recorded merge. It was recaptured
+  // from a runtime that publishes the checked-in Apply contract, so the two
+  // versions must agree; backendDir mode below proves full parity.
+  const localApplyContract = JSON.parse(fs.readFileSync(
+    path.join(cliRoot, 'contracts', 'trackly-apply-tools.json'),
+    'utf8',
+  ));
   assert.equal(
     fixture.applyContractVersion,
-    '3.8.1',
-    `${fixturePath} must retain its captured historical Apply contract version`,
+    localApplyContract.contractVersion,
+    `${fixturePath} must identify the checked-in local Apply contract version it was captured against`,
   );
   assert.equal(fixture.pluginContractVersion, '1.0.0');
   const lock = JSON.parse(fs.readFileSync(path.join(path.dirname(fixturePath), 'skill-lock.json'), 'utf8'));
@@ -6814,6 +6980,22 @@ assertExactHostedSourceSha256(
   hostedAuthRateLimitPath,
 );
 assertServerListenSemantics(hostedApplicationSource, hostedApplicationPath);
+for (const [importedName, localName, moduleName] of [
+  ['default', 'cors', 'cors'],
+  ['MCP_ALLOWED_ORIGINS', 'MCP_ALLOWED_ORIGINS', './mcp/mcp-config.js'],
+  ['legacySignalsContainment', 'legacySignalsContainment', './middleware/legacy-signals-containment'],
+  ['collapseOnboardingTrailingSlashes', 'collapseOnboardingTrailingSlashes', './middleware/general-rate-limit'],
+  ['shouldSkipGeneralRateLimit', 'shouldSkipGeneralRateLimit', './middleware/general-rate-limit'],
+]) {
+  assertImportedBindingNeverRedeclared(hostedApplicationSource, importedName, localName, moduleName, hostedApplicationPath);
+}
+for (const [relativePath, expectedSha256] of [
+  [['src', 'middleware', 'legacy-signals-containment.ts'], HOSTED_LEGACY_SIGNALS_CONTAINMENT_SHA256],
+  [['src', 'middleware', 'general-rate-limit.ts'], HOSTED_GENERAL_RATE_LIMIT_SHA256],
+]) {
+  const absolutePath = path.join(backendRoot, ...relativePath);
+  assertExactHostedSourceSha256(fs.readFileSync(absolutePath, 'utf8'), expectedSha256, absolutePath);
+}
 assertInstallProcessGuardsSemantics(hostedApplicationSource, hostedApplicationPath);
 assertExactHostedSourceSha256(
   hostedAzureRehearsalIpSource,
@@ -6866,6 +7048,15 @@ assertCoordinatedCheckpointHelperSemantics({
     hostedApply: hostedApplySourcePath,
     hostedCheckpointContract: hostedCheckpointContractPath,
   },
+  ...(local.contractVersion === '3.9.2'
+    ? {
+      checkpointWriterGeneration: 'candidate-3.9.2',
+      expectedHostedDigests: {
+        ...HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256,
+        applyCheckpointActionSchema: APPLY_392_CHECKPOINT_ACTION_SCHEMA_SHA256,
+      },
+    }
+    : {}),
 });
 
 const LOCAL_ONLY_TOOLS = [
@@ -7181,23 +7372,21 @@ assertActiveTopLevelStatementAst(
   hostedMcpTokensPath,
 );
 assertActiveVariableInitializerAst(hostedMcpTokensSource, 'MCP_JWT_SECRET', "BASE_SECRET + '-mcp'", hostedMcpTokensPath);
-assertActiveVariableInitializerAst(
-  hostedMcpTokensSource,
-  'MCP_ISSUER',
-  "process.env.MCP_ISSUER_URL || 'https://mcp.usetrackly.app'",
-  hostedMcpTokensPath,
-);
-assertActiveVariableInitializerAst(
-  hostedMcpTokensSource,
+// close-ai #1750 moved the issuer and resource identifiers into mcp-config.ts,
+// which canonicalizes MCP_ISSUER_URL to an origin and fails closed in
+// production unless it is exactly https://mcp.usetrackly.app. The whole
+// mcp-config.ts file is pinned by HOSTED_MCP_CONFIG_SHA256.
+for (const importedName of [
   'MCP_LEGACY_RESOURCE',
-  '`${MCP_ISSUER}/api/mcp`',
-  hostedMcpTokensPath,
-);
-assertActiveVariableInitializerAst(
-  hostedMcpTokensSource,
   'MCP_PLUGIN_RESOURCE',
-  '`${MCP_ISSUER}/api/plugin/trackly/mcp`',
-  hostedMcpTokensPath,
+  'configuredMcpPluginDefaultRedirectUris',
+]) {
+  assertImportBinding(hostedMcpTokensSource, importedName, importedName, './mcp-config.js', hostedMcpTokensPath);
+}
+assertExactHostedSourceSha256(
+  fs.readFileSync(path.join(backendRoot, 'src', 'mcp', 'mcp-config.ts'), 'utf8'),
+  HOSTED_MCP_CONFIG_SHA256,
+  path.join(backendRoot, 'src', 'mcp', 'mcp-config.ts'),
 );
 assertActiveVariableInitializerAst(
   hostedMcpTokensSource,
@@ -7212,7 +7401,19 @@ assertActiveVariableInitializerAst(hostedMcpTokensSource, 'MCP_ACCESS_IDENTITY_V
 assertActiveFunctionDefinitionAst(
   hostedMcpTokensSource,
   'normalizeMcpResource',
-  `function normalizeMcpResource(resource?: string): string {
+  // A resource-less request binds to the plugin resource only when its
+  // redirect_uri exactly matches the operator allowlist
+  // MCP_PLUGIN_DEFAULT_REDIRECT_URIS (default empty; https-only, no wildcard,
+  // loopback, credentials, or fragment), per close-ai #1750's directory
+  // OAuth defaults. Otherwise an omitted resource still means /api/mcp.
+  `function normalizeMcpResource(
+    resource?: string,
+    options: NormalizeMcpResourceOptions = {},
+  ): string {
+    if (!resource && options.redirectUri) {
+      const allowlist = options.defaultRedirectUris ?? configuredMcpPluginDefaultRedirectUris();
+      if (allowlist.includes(options.redirectUri)) return MCP_PLUGIN_RESOURCE;
+    }
     const candidate = resource || MCP_LEGACY_RESOURCE;
     if (!MCP_ALLOWED_RESOURCES.includes(candidate)) {
       throw new Error('Unsupported MCP resource');
@@ -7368,9 +7569,27 @@ for (const [importedName, localName, moduleName] of [
   ['getTracklyEntitlements', 'getTracklyEntitlements', '../services/trackly-access.js'],
   ['normalizeMcpScopes', 'normalizeMcpScopes', './mcp-scopes.js'],
   ['isScopeSubset', 'isScopeSubset', './mcp-scopes.js'],
+  ['MCP_DEFAULT_SCOPES', 'MCP_DEFAULT_SCOPES', './mcp-config.js'],
+  ['mcpDefaultScopesEnabled', 'mcpDefaultScopesEnabled', './mcp-config.js'],
 ]) {
   assertImportBinding(hostedOAuthProviderSource, importedName, localName, moduleName, hostedOAuthProviderPath);
 }
+// close-ai #1987: an authorization request with no usable scope receives only
+// MCP_DEFAULT_SCOPES (jobs:read, tracking:read, tracking:write, pinned with
+// mcp-config.ts); any unknown scope still fails, and refresh never widens.
+assertActiveFunctionDefinitionAst(
+  hostedOAuthProviderSource,
+  'resolveAuthorizationScopes',
+  `function resolveAuthorizationScopes(
+    requested: readonly string[] | undefined,
+    defaultsEnabled = mcpDefaultScopesEnabled(),
+  ): McpScope[] {
+    const nonEmpty = (requested ?? []).filter((scope) => scope.trim() !== '');
+    if (nonEmpty.length === 0 && defaultsEnabled) return [...MCP_DEFAULT_SCOPES];
+    return normalizeMcpScopes(nonEmpty);
+  }`,
+  hostedOAuthProviderPath,
+);
 assertImportBinding(hostedOAuthProviderSource, 'pool', 'pool', '../config/database.js', hostedOAuthProviderPath);
 assertActiveFunctionDefinitionAst(
   hostedOAuthProviderSource,
@@ -7411,6 +7630,17 @@ assertActiveClassMethodAstSha256(
   'TracklyOAuthProvider',
   'verifyAccessToken',
   '62835448113ca2c33089a25b3d10c9f7aaee697591ea6a407dc67fe94e992e0c',
+  hostedOAuthProviderPath,
+);
+// authorize() is the only consumer of the locked resource and default-scope
+// helpers: resource = normalizeMcpResource(params.resource?.href,
+// { redirectUri }) then scopes = resolveAuthorizationScopes(params.scopes),
+// each failing closed, before the pending grant is stored (close-ai #1987).
+assertActiveClassMethodAstSha256(
+  hostedOAuthProviderSource,
+  'TracklyOAuthProvider',
+  'authorize',
+  '955fa3dbe040a8d36448f92c54bbb4cf95c6022b69b938f4b6854467f898295c',
   hostedOAuthProviderPath,
 );
 assertImportBinding(
@@ -7711,7 +7941,13 @@ const applicationFieldSensitivityMap = staticApplicationFieldSensitivityMap(
 );
 assert.equal(
   sha256ExactBytes(JSON.stringify(applicationFieldSensitivityMap)),
-  '0a4988ea45beb4ceb9156cfb2e8094656409e9af90ea084022d79a65df2a5529',
+  // Reviewed at close-ai aa74d3e5: existing keys keep their order and class;
+  // close-ai #1811 and #1936 added full_name, preferred_last_name,
+  // relocation_preferred_locations and reliable_transportation as standard,
+  // expected_salary_text as sensitive, and workplace accommodations,
+  // sponsorship by country, active clearance, foreign-government family ties
+  // and application notes as restricted.
+  '3e55e5bcca026212f672cf4eaeb30f9f6fd03f31e3409dfbb00f7f52ec606840',
   'Application profile field keys and sensitivity classifications drifted from the reviewed conditional-scope catalog',
 );
 assert.deepEqual(
@@ -7990,8 +8226,8 @@ const mutationAnnotationContract = {
   trackly_save_application_answers: 'mutationAnnotations(true, false)',
   trackly_grant_sensitive_storage_consent: 'mutationAnnotations(false, true)',
   trackly_revoke_sensitive_storage_consent: 'mutationAnnotations(true, false)',
-  trackly_defer_apply_access: 'mutationAnnotations(true, true)',
-  trackly_clear_apply_access_deferment: 'mutationAnnotations(true, true)',
+  trackly_defer_apply_access: 'mutationAnnotations(false, true)',
+  trackly_clear_apply_access_deferment: 'mutationAnnotations(false, true)',
   trackly_start_or_resume_apply: 'mutationAnnotations(false, true)',
   trackly_get_apply_work: 'mutationAnnotations()',
   trackly_report_apply_progress: 'mutationAnnotations()',
@@ -8870,7 +9106,7 @@ assertWrappedHandlerStatementSequenceAst(
   `const started = await orchestrationRequest(
     'POST', '/api/jobscout/apply/executions',
     { mode: 'complete_next_n_accessible', target },
-    { 'Idempotency-Key': idempotencyKey },
+    { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': '3.9.2' },
   );
   startResult = projectApplyStartResult(started, target, {
     resumed: false, started: true, targetMismatch: false,
@@ -9521,9 +9757,12 @@ console.log(
 
 module.exports = {
   CHECKED_IN_HOSTED_FIXTURE_SHA256,
+  APPLY_392_CHECKPOINT_ACTION_SCHEMA_SHA256,
   HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256,
   HOSTED_DEPLOYABLE_PATHS,
   HOSTED_GIT_MAX_BUFFER,
+  REVIEWED_GLOBAL_MIDDLEWARE_CALL_DIGESTS,
+  REVIEWED_PLUGIN_SCOPED_MIDDLEWARE_CALL_DIGESTS,
   activeNamedDefinitionAst,
   activeToolRegistrations,
   assertApplicationFieldByKeyReferenceSemantics,
@@ -9534,6 +9773,7 @@ module.exports = {
   assertExactHostedSourceSha256,
   assertInternalSecretCompatibility,
   assertImportBinding,
+  assertImportedBindingNeverRedeclared,
   assertUnshadowedImportBinding,
   assertInstallProcessGuardsSemantics,
   assertPluginManualSubmissionRouteSemantics,

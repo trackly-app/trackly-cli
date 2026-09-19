@@ -32,6 +32,7 @@ const {
   assertExactSchemaProperties,
   assertExportedFactoryUsedByPluginRouter,
   assertImmutablePluginScopeFreeMethods,
+  assertImportedBindingNeverRedeclared,
   assertImmutablePluginToolScopesSemantics,
   assertLivePluginRouterMount: assertLivePluginRouterMountProduction,
   assertMcpScopeHelperSemantics,
@@ -74,6 +75,7 @@ const {
 
 const FIXTURE_ROUTE_OPTIONS = Object.freeze({
   reviewedGlobalMiddlewareCallDigests: Object.freeze([]),
+  reviewedPluginScopedMiddlewareCallDigests: Object.freeze([]),
 });
 function assertLivePluginRouterMount(
   source,
@@ -804,7 +806,7 @@ test('the exported plugin router must be mounted on the exact production applica
       const app = express();
       const generalLimiter = rateLimit({ ...azureRehearsalRateLimitOptions() });
       app.use('/api/plugin/trackly/mcp', tracklyPluginMcpRoutes);
-      app.use('/api/', generalLimiter);
+      app.use('/api/', collapseOnboardingTrailingSlashes, generalLimiter);
       app.use('/auth/', authLimiter);
       app.use('/api/admin/login', authLimiter);
       return app;
@@ -825,6 +827,48 @@ test('the exported plugin router must be mounted on the exact production applica
     '/api/plugin/trackly/mcp',
     'application mount fixture',
   ));
+  const chainedRouteSource = source.replace(
+    'return app;',
+    "app.route('/.well-known/oauth-protected-resource/api/plugin/trackly/mcp').options(metadataCors).get(metadataCors, sendMetadata);\n      return app;",
+  );
+  assert.notEqual(chainedRouteSource, source);
+  assert.doesNotThrow(() => assertLivePluginRouterMount(
+    chainedRouteSource,
+    'tracklyPluginMcpRoutes',
+    './mcp/plugin-router',
+    '/api/plugin/trackly/mcp',
+    'chained discovery route fixture',
+  ));
+  for (const [label, routeStatement] of [
+    ['stored', "const shadow = app.route('/.well-known/oauth-protected-resource/api/plugin/trackly/mcp');\n      shadow.get(sendMetadata);"],
+    ['two-argument', "app.route('/.well-known/oauth-protected-resource/api/plugin/trackly/mcp', extra).get(sendMetadata);"],
+    ['dynamic path', 'app.route(metadataPath).get(sendMetadata);'],
+    ['unconsumed', "app.route('/.well-known/oauth-protected-resource/api/plugin/trackly/mcp');"],
+  ]) {
+    assert.throws(
+      () => assertLivePluginRouterMount(
+        source.replace('return app;', `${routeStatement}\n      return app;`),
+        'tracklyPluginMcpRoutes',
+        './mcp/plugin-router',
+        '/api/plugin/trackly/mcp',
+        `${label} discovery route fixture`,
+      ),
+      /must not alias, escape, or otherwise reference the canonical Express application/,
+    );
+  }
+  assert.throws(
+    () => assertLivePluginRouterMount(
+      source.replace(
+        "app.use('/api/plugin/trackly/mcp', tracklyPluginMcpRoutes);",
+        "const shadow = app.route('/api/plugin/trackly/mcp');\n      shadow.all(earlyHandler);\n      app.use('/api/plugin/trackly/mcp', tracklyPluginMcpRoutes);",
+      ),
+      'tracklyPluginMcpRoutes',
+      './mcp/plugin-router',
+      '/api/plugin/trackly/mcp',
+      'stored shadowing route fixture',
+    ),
+    /must not alias, escape, or otherwise reference the canonical Express application|must not have an earlier Express route/,
+  );
   assert.throws(
     () => assertLivePluginRouterMount(
       source.replace("from 'express-rate-limit'", "from './utils/decoy-rate-limit'"),
@@ -861,8 +905,8 @@ test('the exported plugin router must be mounted on the exact production applica
   assert.throws(
     () => assertLivePluginRouterMount(
       source.replace(
-        "app.use('/api/', generalLimiter);",
-        "if (false) { app.use('/api/', generalLimiter); }",
+        "app.use('/api/', collapseOnboardingTrailingSlashes, generalLimiter);",
+        "if (false) { app.use('/api/', collapseOnboardingTrailingSlashes, generalLimiter); }",
       ),
       'tracklyPluginMcpRoutes',
       './mcp/plugin-router',
@@ -871,9 +915,45 @@ test('the exported plugin router must be mounted on the exact production applica
     ),
     /generalLimiter.*must protect the exact reviewed app.use mount paths/,
   );
+  for (const [label, mount] of [
+    ['missing pre-limiter middleware', "app.use('/api/', generalLimiter);"],
+    ['unreviewed pre-limiter middleware', "app.use('/api/', skipEverything, generalLimiter);"],
+    ['extra pre-limiter middleware', "app.use('/api/', collapseOnboardingTrailingSlashes, skipEverything, generalLimiter);"],
+    ['limiter before middleware', "app.use('/api/', generalLimiter, collapseOnboardingTrailingSlashes);"],
+  ]) {
+    assert.throws(
+      () => assertLivePluginRouterMount(
+        source.replace("app.use('/api/', collapseOnboardingTrailingSlashes, generalLimiter);", mount),
+        'tracklyPluginMcpRoutes',
+        './mcp/plugin-router',
+        '/api/plugin/trackly/mcp',
+        `${label} general limiter fixture`,
+      ),
+      /generalLimiter.*must (protect the exact reviewed app.use mount paths|run after only the reviewed middleware on each mount)/,
+    );
+  }
+  for (const [label, mount] of [
+    ['auth path', "app.use('/auth/', skipEverything, authLimiter);"],
+    ['admin login', "app.use('/api/admin/login', collapseOnboardingTrailingSlashes, authLimiter);"],
+  ]) {
+    const original = label === 'auth path'
+      ? "app.use('/auth/', authLimiter);"
+      : "app.use('/api/admin/login', authLimiter);";
+    assert.notEqual(source.replace(original, mount), source);
+    assert.throws(
+      () => assertLivePluginRouterMount(
+        source.replace(original, mount),
+        'tracklyPluginMcpRoutes',
+        './mcp/plugin-router',
+        '/api/plugin/trackly/mcp',
+        `${label} auth limiter fixture`,
+      ),
+      /authLimiter.*must run after only the reviewed middleware on each mount/,
+    );
+  }
   assert.throws(
     () => assertLivePluginRouterMount(
-      source.replace("app.use('/api/', generalLimiter);", "app.use('/unrelated', generalLimiter);"),
+      source.replace("app.use('/api/', collapseOnboardingTrailingSlashes, generalLimiter);", "app.use('/unrelated', collapseOnboardingTrailingSlashes, generalLimiter);"),
       'tracklyPluginMcpRoutes',
       './mcp/plugin-router',
       '/api/plugin/trackly/mcp',
@@ -884,8 +964,8 @@ test('the exported plugin router must be mounted on the exact production applica
   assert.throws(
     () => assertLivePluginRouterMount(
       source.replace(
-        "app.use('/api/', generalLimiter);",
-        "generalLimiter = (_req, _res, next) => next();\n      app.use('/api/', generalLimiter);",
+        "app.use('/api/', collapseOnboardingTrailingSlashes, generalLimiter);",
+        "generalLimiter = (_req, _res, next) => next();\n      app.use('/api/', collapseOnboardingTrailingSlashes, generalLimiter);",
       ),
       'tracklyPluginMcpRoutes',
       './mcp/plugin-router',
@@ -934,7 +1014,7 @@ test('the exported plugin router must be mounted on the exact production applica
       './mcp/plugin-router',
       '/api/plugin/trackly/mcp',
       'missing reviewed middleware inventory fixture',
-      { reviewedGlobalMiddlewareCallDigests: ['0'.repeat(64)] },
+      { ...FIXTURE_ROUTE_OPTIONS, reviewedGlobalMiddlewareCallDigests: ['0'.repeat(64)] },
     ),
     /must preserve the complete ordered reviewed global middleware inventory/,
   );
@@ -959,7 +1039,7 @@ test('the exported plugin router must be mounted on the exact production applica
     './mcp/plugin-router',
     '/api/plugin/trackly/mcp',
     'reviewed middleware fixture',
-    { reviewedGlobalMiddlewareCallDigests: [reviewedMiddlewareDigest] },
+    { ...FIXTURE_ROUTE_OPTIONS, reviewedGlobalMiddlewareCallDigests: [reviewedMiddlewareDigest] },
   ));
   assert.throws(
     () => assertLivePluginRouterMount(
@@ -971,7 +1051,7 @@ test('the exported plugin router must be mounted on the exact production applica
       './mcp/plugin-router',
       '/api/plugin/trackly/mcp',
       'unreachable reviewed middleware fixture',
-      { reviewedGlobalMiddlewareCallDigests: [reviewedMiddlewareDigest] },
+      { ...FIXTURE_ROUTE_OPTIONS, reviewedGlobalMiddlewareCallDigests: [reviewedMiddlewareDigest] },
     ),
     /must preserve straight-line setup/,
   );
@@ -985,7 +1065,7 @@ test('the exported plugin router must be mounted on the exact production applica
       './mcp/plugin-router',
       '/api/plugin/trackly/mcp',
       'unreachable direct reviewed middleware fixture',
-      { reviewedGlobalMiddlewareCallDigests: [reviewedMiddlewareDigest] },
+      { ...FIXTURE_ROUTE_OPTIONS, reviewedGlobalMiddlewareCallDigests: [reviewedMiddlewareDigest] },
     ),
     /must not place an unconditional return or throw before the canonical plugin mount/,
   );
@@ -999,7 +1079,7 @@ test('the exported plugin router must be mounted on the exact production applica
       './mcp/plugin-router',
       '/api/plugin/trackly/mcp',
       'nested unreachable reviewed middleware fixture',
-      { reviewedGlobalMiddlewareCallDigests: [reviewedMiddlewareDigest] },
+      { ...FIXTURE_ROUTE_OPTIONS, reviewedGlobalMiddlewareCallDigests: [reviewedMiddlewareDigest] },
     ),
     /must preserve straight-line setup/,
   );
@@ -1885,19 +1965,15 @@ test('plugin registration proof binds the exported factory to the live POST rout
     import { azureRehearsalRateLimitOptions } from '../utils/azure-rehearsal-ip.js';
     import { createTracklyPluginMcpServer } from './plugin-server.js';
     import { generateHostedOAuthInternalToken } from './server.js';
+    import {
+      isAllowedMcpOrigin,
+      MCP_PLUGIN_RESOURCE_METADATA_URL,
+    } from './mcp-config.js';
     const router = Router();
-    const RESOURCE_METADATA_URL = \`\${process.env.MCP_ISSUER_URL || 'https://mcp.usetrackly.app'}/.well-known/oauth-protected-resource/api/plugin/trackly/mcp\`;
-    const allowedOrigins = new Set([
-      'https://closeai.mba',
-      'https://www.closeai.mba',
-      'https://usetrackly.app',
-      'https://www.usetrackly.app',
-      'https://mcp.usetrackly.app',
-      'https://chatgpt.com',
-    ]);
-    function validateOrigin(req: Request, res: Response, next: NextFunction): void {
+    export const RESOURCE_METADATA_URL = MCP_PLUGIN_RESOURCE_METADATA_URL;
+    export function validateOrigin(req: Request, res: Response, next: NextFunction): void {
       const origin = req.headers.origin;
-      if (origin && !allowedOrigins.has(origin)) {
+      if (!isAllowedMcpOrigin(origin)) {
         res.status(403).json({ error: 'Forbidden origin' });
         return;
       }
@@ -2187,8 +2263,8 @@ test('plugin registration proof binds the exported factory to the live POST rout
   assert.throws(
     () => assertExportedFactoryUsedByPluginRouter(
       routerSource.replace(
-        "if (origin && !allowedOrigins.has(origin))",
-        "if (false)",
+        'if (!isAllowedMcpOrigin(origin))',
+        'if (false)',
       ),
       'createTracklyPluginMcpServer',
       'no-op origin middleware fixture',
@@ -2196,19 +2272,26 @@ test('plugin registration proof binds the exported factory to the live POST rout
     /validateOrigin.*must preserve its locked executable branch semantics/,
   );
   for (const [label, mutation] of [
-    ['mutated', "allowedOrigins.add('https://attacker.example');"],
-    ['aliased', 'const escapedOrigins = allowedOrigins;'],
-    ['reassigned', 'allowedOrigins = new Set();'],
+    ['aliased', 'const escapedOriginCheck = isAllowedMcpOrigin;'],
+    ['bypassed', 'const alwaysAllowed = isAllowedMcpOrigin(undefined);'],
   ]) {
     assert.throws(
       () => assertExportedFactoryUsedByPluginRouter(
-        routerSource.replace('function validateOrigin', `${mutation}\n    function validateOrigin`),
+        routerSource.replace('export function validateOrigin', `${mutation}\n    export function validateOrigin`),
         'createTracklyPluginMcpServer',
-        `${label} allowedOrigins fixture`,
+        `${label} isAllowedMcpOrigin fixture`,
       ),
-      /allowedOrigins.*must (?:not be reassigned, mutated, aliased, escaped, or referenced outside its locked origin check|never be assigned or updated)/,
+      /isAllowedMcpOrigin.*must not be aliased, escaped, or referenced outside its locked origin check/,
     );
   }
+  assert.throws(
+    () => assertExportedFactoryUsedByPluginRouter(
+      routerSource.replace("} from './mcp-config.js';", "} from './decoy-mcp-config.js';"),
+      'createTracklyPluginMcpServer',
+      'redirected mcp-config import fixture',
+    ),
+    /must import isAllowedMcpOrigin as isAllowedMcpOrigin exactly once from \.\/mcp-config\.js/,
+  );
 });
 
 test('descriptor extraction binds active annotation and input-schema expressions instead of comments', () => {
@@ -4199,4 +4282,39 @@ test('plugin README directs maintainers to the current portal without a develope
   assert.match(readme, /https:\/\/platform\.openai\.com\/plugins/);
   assert.match(readme, /\.app\.json` remains intentionally absent/);
   assert.doesNotMatch(readme, /registers? the production MCP server in ChatGPT developer mode/i);
+});
+
+test('trusted pre-plugin middleware must resolve only to its reviewed import', () => {
+  const source = `
+    import { legacySignalsContainment } from './middleware/legacy-signals-containment';
+    export function createApp() {
+      const app = express();
+      app.use(legacySignalsContainment);
+      return app;
+    }
+  `;
+  const check = (candidate, label) => () => assertImportedBindingNeverRedeclared(
+    candidate,
+    'legacySignalsContainment',
+    'legacySignalsContainment',
+    './middleware/legacy-signals-containment',
+    label,
+  );
+  assert.doesNotThrow(check(source, 'reviewed containment fixture'));
+  assert.throws(
+    check(source.replace("'./middleware/legacy-signals-containment'", "'./middleware/anything-else'"), 'redirected fixture'),
+    /must import legacySignalsContainment as legacySignalsContainment exactly once/,
+  );
+  for (const [label, shadow] of [
+    ['const', 'const legacySignalsContainment = (req, res, next) => next();'],
+    ['function', 'function legacySignalsContainment(req, res, next) { next(); }'],
+    ['parameter', 'const wrap = (legacySignalsContainment) => legacySignalsContainment;'],
+    ['destructured', 'const { legacySignalsContainment } = decoys;'],
+    ['assigned', 'legacySignalsContainment = decoy;'],
+  ]) {
+    assert.throws(
+      check(source.replace('const app = express();', `${shadow}\n      const app = express();`), `${label} shadow fixture`),
+      /must resolve only to its import/,
+    );
+  }
 });

@@ -35,6 +35,7 @@ const {
   gitOutput,
   parseSchemaExpression,
   sha256ExactBytes,
+  REVIEWED_PLUGIN_SCOPED_MIDDLEWARE_CALL_DIGESTS,
   verifyHostedContract,
 } = require('../scripts/verify-hosted-contract.js');
 
@@ -152,7 +153,7 @@ test('coordinated hosted bindings resolve to unshadowed reviewed imports', () =>
 
 const assertPluginRoutePrecedence = (...args) => assertPluginRoutePrecedenceProduction(
   ...args,
-  { reviewedGlobalMiddlewareCallDigests: [] },
+  { reviewedGlobalMiddlewareCallDigests: [], reviewedPluginScopedMiddlewareCallDigests: [] },
 );
 
 function activeFunctionDigest(sourceText, name, sourcePath) {
@@ -2600,8 +2601,12 @@ test('standalone hosted verifier executes tool, schema, and handler snapshot wir
 
   assert.doesNotThrow(verifyFixture(structuredClone(originalFixture)));
   const versionDrift = structuredClone(originalFixture);
-  versionDrift.applyContractVersion = contract.contractVersion;
-  assert.throws(verifyFixture(versionDrift), /must retain its captured historical Apply contract version/);
+  versionDrift.applyContractVersion = '3.8.1';
+  assert.notEqual(versionDrift.applyContractVersion, contract.contractVersion);
+  assert.throws(
+    verifyFixture(versionDrift),
+    /must identify the checked-in local Apply contract version it was captured against/,
+  );
   const lifecycleDrift = structuredClone(originalFixture);
   lifecycleDrift.hostedPluginLifecycle.accessDefermentRecovery = 'owner_scoped_list_create_and_same_session_idempotent_clear';
   assert.throws(
@@ -3313,4 +3318,56 @@ test('Apply MCP profile contract supports jurisdiction and office context while 
   assert.match(contract.tools.trackly_get_application_profile, /jurisdiction/);
   assert.match(contract.tools.trackly_get_application_profile, /office/);
   assert.doesNotMatch(contract.tools.trackly_update_application_profile, /corporate_family/);
+});
+
+test('hosted plugin route accepts only the exact reviewed plugin-scoped middleware before its mount', () => {
+  const pluginCors = `app.use('/api/plugin/trackly/mcp', cors({
+        origin: [...MCP_ALLOWED_ORIGINS],
+        credentials: true,
+        exposedHeaders: ['WWW-Authenticate'],
+        preflightContinue: true,
+      }));`;
+  const source = `
+    export function createApp() {
+      const app = express();
+      ${pluginCors}
+      app.use('/api/plugin/trackly/mcp', tracklyPluginMcpRoutes);
+      return app;
+    }
+  `;
+  const pluginCorsCall = activeNamedDefinitionAst(source, 'createApp', 'plugin cors fixture')
+    .body.body.find((statement) => statement.expression?.arguments?.[1]?.type === 'CallExpression')
+    .expression;
+  const pluginCorsDigest = sha256ExactBytes(JSON.stringify(canonicalSchemaAst(pluginCorsCall)));
+  assert.deepEqual(
+    REVIEWED_PLUGIN_SCOPED_MIDDLEWARE_CALL_DIGESTS,
+    [pluginCorsDigest],
+    'the reviewed production plugin-scoped CORS digest must be exactly this call',
+  );
+  const check = (candidate, label) => () => assertPluginRoutePrecedenceProduction(
+    candidate,
+    'tracklyPluginMcpRoutes',
+    '/api/plugin/trackly/mcp',
+    label,
+    { reviewedGlobalMiddlewareCallDigests: [] },
+  );
+  assert.doesNotThrow(check(source, 'reviewed plugin cors fixture'));
+  for (const [label, mutated] of [
+    ['answering preflight', source.replace('preflightContinue: true', 'preflightContinue: false')],
+    ['wildcard origin', source.replace('[...MCP_ALLOWED_ORIGINS]', "'*'")],
+    ['broader path', source.replace("app.use('/api/plugin/trackly/mcp', cors(", "app.use('/api/plugin', cors(")],
+  ]) {
+    assert.throws(
+      check(mutated, `${label} plugin cors fixture`),
+      /must not have an earlier Express route or path-scoped middleware covering|must preserve the complete reviewed plugin-scoped middleware inventory/,
+    );
+  }
+  assert.throws(
+    check(source.replace(pluginCors, ''), 'missing plugin cors fixture'),
+    /must preserve the complete reviewed plugin-scoped middleware inventory/,
+  );
+  assert.throws(
+    check(source.replace(pluginCors, `if (enabled) { ${pluginCors} }`), 'conditional plugin cors fixture'),
+    /must preserve straight-line setup|must not have an earlier Express route or path-scoped middleware covering/,
+  );
 });

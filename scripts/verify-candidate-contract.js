@@ -5,6 +5,7 @@ const path = require('node:path');
 const { parseExpression } = require('@babel/parser');
 const {
   gitOutput, activeToolRegistrations, registrationInputSchemaAst, HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256,
+  APPLY_392_CHECKPOINT_ACTION_SCHEMA_SHA256,
   canonicalSchemaAst, verifyCoordinatedBackendCore,
   assertCoordinatedCheckpointHelperSemantics, assertBoundedApplyAdapterValidation,
   directToolRegistrationsInNamedParameterFunction, directHostedToolRegistrationsInNamedFactory,
@@ -14,7 +15,7 @@ const {
 const LOCAL_ONLY = new Set(['trackly_lint_application_text', 'trackly_diagnose_local_path',
   'trackly_validate_apply_tab_keep_set', 'trackly_validate_apply_resume_upload']);
 
-const CANDIDATE_CHECKPOINT_ACTION_SHA256 = '604ccf2ef203d80f022fde2a10d3e471c64724a3c3473569629f05315953cb21';
+const CANDIDATE_CHECKPOINT_ACTION_SHA256 = APPLY_392_CHECKPOINT_ACTION_SCHEMA_SHA256;
 function assertCandidateCheckpointActionSchema(source, version) {
   assert.equal(version, '3.9.2', 'Candidate checkpoint pin requires contract 3.9.2');
   assertActiveFunctionAstSha256(source, 'applyCheckpointActionSchema', CANDIDATE_CHECKPOINT_ACTION_SHA256, 'candidate checkpoint');
