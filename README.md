@@ -109,8 +109,8 @@ needed for headless clients that cannot complete an interactive sign-in: send
 
 Remote connections get 55 hosted tools. They share the search, company, status, and
 Apply tools with the local server and add `trackly_chat`; the 4 local-only
-tools listed below are not available remotely. See the
-[full hosted tool catalog](https://usetrackly.app/connector).
+tools listed below are not available remotely. Hosted setup and tool details
+are at [usetrackly.app/connector](https://usetrackly.app/connector).
 
 ### Local (CLI via stdio, for Cursor / Windsurf / Claude Code)
 

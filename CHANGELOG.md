@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in with OAuth; the `trk_` API key is optional for headless clients.
 - README: add the hosted Claude Code OAuth command, state tool counts precisely
   (58 local stdio tools, 55 hosted tools: the hosted server omits 4 local-only
-  tools and adds `trackly_chat`), link the hosted tool catalog, and point the
+  tools and adds `trackly_chat`), link the hosted connector page, and point the
   Claude Code manual config at a project `.mcp.json`.
 - Record that the plugin submission needs no UserInfo endpoint because trackly
   does not use workspace domain restrictions.
