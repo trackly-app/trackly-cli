@@ -38,5 +38,14 @@
   },
   "3.8.1": {
     "contractSha256": "49028b8a8e1d75a8db6e54dd91001195f8a2e50b1f0ff6554750bd243dde4c6e"
+  },
+  "3.9.0": {
+    "contractSha256": "1d6afc41df1b72ec6eb340df8c080b7dfac2843e9fd6d9d9795d8de6f413559a"
+  },
+  "3.9.1": {
+    "contractSha256": "26dfb900c2782a5437475c06d2e30c718dee4781daa938bc4fa3b6a03a505323"
+  },
+  "3.9.2": {
+    "contractSha256": "d3a82489330d0b0062a1baec8d226b510628accc434731136dca9951ec64c302"
   }
 }

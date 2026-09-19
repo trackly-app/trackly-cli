@@ -96,7 +96,7 @@ test('checkpoint tool enforces canonical continuation, question, and lifecycle s
   const actionItems = checkpointTool.inputSchema
     .properties.checkpoints.items.properties.actions.items;
   const variants = actionItems.oneOf ?? actionItems.anyOf;
-  assert.equal(variants.length, 12);
+  assert.equal(variants.length, 13);
   assert.deepEqual(Object.fromEntries(variants.map((variant) => [
     variant.properties.actionCode.const,
     variant.properties.continuationAllowed.const,
