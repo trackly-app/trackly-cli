@@ -32,6 +32,7 @@ const {
   assertExactSchemaProperties,
   assertExportedFactoryUsedByPluginRouter,
   assertImmutablePluginScopeFreeMethods,
+  assertImportedBindingNeverRedeclared,
   assertImmutablePluginToolScopesSemantics,
   assertLivePluginRouterMount: assertLivePluginRouterMountProduction,
   assertMcpScopeHelperSemantics,
@@ -826,6 +827,48 @@ test('the exported plugin router must be mounted on the exact production applica
     '/api/plugin/trackly/mcp',
     'application mount fixture',
   ));
+  const chainedRouteSource = source.replace(
+    'return app;',
+    "app.route('/.well-known/oauth-protected-resource/api/plugin/trackly/mcp').options(metadataCors).get(metadataCors, sendMetadata);\n      return app;",
+  );
+  assert.notEqual(chainedRouteSource, source);
+  assert.doesNotThrow(() => assertLivePluginRouterMount(
+    chainedRouteSource,
+    'tracklyPluginMcpRoutes',
+    './mcp/plugin-router',
+    '/api/plugin/trackly/mcp',
+    'chained discovery route fixture',
+  ));
+  for (const [label, routeStatement] of [
+    ['stored', "const shadow = app.route('/.well-known/oauth-protected-resource/api/plugin/trackly/mcp');\n      shadow.get(sendMetadata);"],
+    ['two-argument', "app.route('/.well-known/oauth-protected-resource/api/plugin/trackly/mcp', extra).get(sendMetadata);"],
+    ['dynamic path', 'app.route(metadataPath).get(sendMetadata);'],
+    ['unconsumed', "app.route('/.well-known/oauth-protected-resource/api/plugin/trackly/mcp');"],
+  ]) {
+    assert.throws(
+      () => assertLivePluginRouterMount(
+        source.replace('return app;', `${routeStatement}\n      return app;`),
+        'tracklyPluginMcpRoutes',
+        './mcp/plugin-router',
+        '/api/plugin/trackly/mcp',
+        `${label} discovery route fixture`,
+      ),
+      /must not alias, escape, or otherwise reference the canonical Express application/,
+    );
+  }
+  assert.throws(
+    () => assertLivePluginRouterMount(
+      source.replace(
+        "app.use('/api/plugin/trackly/mcp', tracklyPluginMcpRoutes);",
+        "const shadow = app.route('/api/plugin/trackly/mcp');\n      shadow.all(earlyHandler);\n      app.use('/api/plugin/trackly/mcp', tracklyPluginMcpRoutes);",
+      ),
+      'tracklyPluginMcpRoutes',
+      './mcp/plugin-router',
+      '/api/plugin/trackly/mcp',
+      'stored shadowing route fixture',
+    ),
+    /must not alias, escape, or otherwise reference the canonical Express application|must not have an earlier Express route/,
+  );
   assert.throws(
     () => assertLivePluginRouterMount(
       source.replace("from 'express-rate-limit'", "from './utils/decoy-rate-limit'"),
@@ -4220,4 +4263,39 @@ test('plugin README directs maintainers to the current portal without a develope
   assert.match(readme, /https:\/\/platform\.openai\.com\/plugins/);
   assert.match(readme, /\.app\.json` remains intentionally absent/);
   assert.doesNotMatch(readme, /registers? the production MCP server in ChatGPT developer mode/i);
+});
+
+test('trusted pre-plugin middleware must resolve only to its reviewed import', () => {
+  const source = `
+    import { legacySignalsContainment } from './middleware/legacy-signals-containment';
+    export function createApp() {
+      const app = express();
+      app.use(legacySignalsContainment);
+      return app;
+    }
+  `;
+  const check = (candidate, label) => () => assertImportedBindingNeverRedeclared(
+    candidate,
+    'legacySignalsContainment',
+    'legacySignalsContainment',
+    './middleware/legacy-signals-containment',
+    label,
+  );
+  assert.doesNotThrow(check(source, 'reviewed containment fixture'));
+  assert.throws(
+    check(source.replace("'./middleware/legacy-signals-containment'", "'./middleware/anything-else'"), 'redirected fixture'),
+    /must import legacySignalsContainment as legacySignalsContainment exactly once/,
+  );
+  for (const [label, shadow] of [
+    ['const', 'const legacySignalsContainment = (req, res, next) => next();'],
+    ['function', 'function legacySignalsContainment(req, res, next) { next(); }'],
+    ['parameter', 'const wrap = (legacySignalsContainment) => legacySignalsContainment;'],
+    ['destructured', 'const { legacySignalsContainment } = decoys;'],
+    ['assigned', 'legacySignalsContainment = decoy;'],
+  ]) {
+    assert.throws(
+      check(source.replace('const app = express();', `${shadow}\n      const app = express();`), `${label} shadow fixture`),
+      /must resolve only to its import/,
+    );
+  }
 });

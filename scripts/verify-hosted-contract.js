@@ -26,6 +26,12 @@ const APPLY_392_CHECKPOINT_ACTION_SCHEMA_SHA256 = '604ccf2ef203d80f022fde2a10d3e
 // close-ai #1750): issuer canonicalization, plugin/legacy resources, the MCP
 // browser origin allowlist, and the directory OAuth defaults.
 const HOSTED_MCP_CONFIG_SHA256 = '8deb9acd49bed57e7f154730d65404d4db73e1e248c7561b011ed96b092479b4';
+// Exact bytes of the two middleware modules that now run before the plugin
+// mount or the shared /api/ limiter at close-ai aa74d3e5: the retired Signals
+// containment (close-ai #1770) and collapseOnboardingTrailingSlashes plus the
+// general limiter's skip predicate (close-ai #1811, #1886).
+const HOSTED_LEGACY_SIGNALS_CONTAINMENT_SHA256 = 'd92c5b8a0b0089704e565e5a8fd0eaeb232a76176d048747ae29f938b4b63613';
+const HOSTED_GENERAL_RATE_LIMIT_SHA256 = 'ee0b9a8a92ae2b3a9ebe7c99916ca3f58e7d6448d360c7ca304eb955edf46359';
 const HOSTED_APPLY_REPLAY_HELPER_AST_SHA256 = Object.freeze({
   actionCodeFromStoredCheckpoint: 'b23c10235645aa732c28073adfa2fd72dec0a8f7770b461df8bd5f408f896c6d',
   loadStoredApplyBatchCheckpoint: '598233925c66ca36c69ae3dfe75984ec1d7098f27b8356d51cd6a43a7947bfd6',
@@ -1475,7 +1481,9 @@ function assertExportedFactoryUsedByPluginRouter(source, expectedFactory, source
     ['requireTracklyAccess', 'requireTracklyAccess', '../services/trackly-access.js'],
     ['azureRehearsalRateLimitOptions', 'azureRehearsalRateLimitOptions', '../utils/azure-rehearsal-ip.js'],
     // close-ai #1750 moved the plugin origin allowlist and resource metadata
-    // URL into mcp-config.ts; their definitions are locked separately there.
+    // URL into mcp-config.ts (pinned by HOSTED_MCP_CONFIG_SHA256). The shared
+    // allowlist adds https://codex.openai.com, https://chat.openai.com and
+    // https://platform.openai.com to the six origins previously locked here.
     ['isAllowedMcpOrigin', 'isAllowedMcpOrigin', './mcp-config.js'],
     ['MCP_PLUGIN_RESOURCE_METADATA_URL', 'MCP_PLUGIN_RESOURCE_METADATA_URL', './mcp-config.js'],
   ]) {
@@ -1862,12 +1870,45 @@ const EXPRESS_ROUTE_CALL_METHODS = new Set([
   'patch', 'post', 'propfind', 'proppatch', 'purge', 'put', 'query', 'rebind', 'report',
   'search', 'source', 'subscribe', 'trace', 'unbind', 'unlink', 'unlock', 'unsubscribe',
 ]);
-// `route` returns a fresh Route bound to one static path and never exposes the
-// application itself. close-ai #1750 serves the plugin's protected-resource
-// discovery document through app.route(...) after the plugin mount, and
-// assertPluginRoutePrecedence already treats any earlier app.route chain as a
-// potentially covering handler.
-const EXPRESS_APPLICATION_CALL_METHODS = new Set([...EXPRESS_ROUTE_CALL_METHODS, 'set', 'route']);
+const EXPRESS_APPLICATION_CALL_METHODS = new Set([...EXPRESS_ROUTE_CALL_METHODS, 'set']);
+
+// close-ai #1750 serves the plugin's protected-resource discovery document with
+// app.route('<static path>').options(...).get(...). Only that directly chained
+// shape is a reviewed application reference: the Route must be consumed by an
+// immediate verb call, so it can never be stored, passed, or used out of sight
+// of assertPluginRoutePrecedence, which treats every earlier chain as covering.
+function reviewedChainedAppRouteReferences(factory) {
+  const references = new Set();
+  function visit(node) {
+    if (node === null || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child);
+      return;
+    }
+    if (node.type === 'CallExpression'
+        && node.callee?.type === 'MemberExpression'
+        && !node.callee.computed
+        && EXPRESS_ROUTE_CALL_METHODS.has(staticMemberName(node.callee))) {
+      const routeCall = node.callee.object;
+      if (routeCall?.type === 'CallExpression'
+          && routeCall.callee?.type === 'MemberExpression'
+          && !routeCall.callee.computed
+          && staticMemberName(routeCall.callee) === 'route'
+          && routeCall.callee.object?.type === 'Identifier'
+          && routeCall.callee.object.name === 'app'
+          && routeCall.arguments.length === 1
+          && routeCall.arguments[0]?.type === 'StringLiteral') {
+        references.add(routeCall.callee.object);
+      }
+    }
+    for (const [key, child] of Object.entries(node)) {
+      if (key === 'loc' || key === 'extra') continue;
+      visit(child);
+    }
+  }
+  visit(factory);
+  return references;
+}
 
 function staticMemberName(member) {
   if (member?.type !== 'MemberExpression') return null;
@@ -2214,7 +2255,11 @@ function assertLivePluginRouterMount(
     'app',
     `createApp in ${sourcePath} must return the exact application receiving ${mountPath}`,
   );
-  const permittedAppReferences = new Set([appDeclarations[0].id, directReturns[0].argument]);
+  const permittedAppReferences = new Set([
+    appDeclarations[0].id,
+    directReturns[0].argument,
+    ...reviewedChainedAppRouteReferences(factory),
+  ]);
   const unverifiedAppReferences = [];
   function visitAppReferences(node, parent = null, parentKey = null, grandparent = null) {
     if (node === null || typeof node !== 'object') return;
@@ -3538,6 +3583,53 @@ function assertImportBinding(source, importedName, localName, moduleName, source
     `${sourcePath} must import ${importedName} as ${localName} exactly once from ${moduleName}`,
   );
   return matches[0];
+}
+
+// Unlike assertUnshadowedImportBinding, this permits passing the binding as a
+// call argument (app.use(middleware)) and only forbids any other declaration
+// or assignment of the same name anywhere in the file, so the import binding
+// is the one every reference resolves to.
+function assertImportedBindingNeverRedeclared(source, importedName, localName, moduleName, sourcePath) {
+  assertImportBinding(source, importedName, localName, moduleName, sourcePath);
+  const ast = parseFullSource(source, sourcePath);
+  const redeclarations = [];
+  function patternContainsName(pattern) {
+    if (!pattern) return false;
+    if (pattern.type === 'Identifier') return pattern.name === localName;
+    if (pattern.type === 'AssignmentPattern') return patternContainsName(pattern.left);
+    if (pattern.type === 'RestElement') return patternContainsName(pattern.argument);
+    if (pattern.type === 'ArrayPattern') return pattern.elements.some(patternContainsName);
+    if (pattern.type === 'ObjectPattern') return pattern.properties.some((property) => (
+      property.type === 'RestElement' ? patternContainsName(property.argument) : patternContainsName(property.value)
+    ));
+    if (pattern.type === 'TSParameterProperty') return patternContainsName(pattern.parameter);
+    return false;
+  }
+  function visit(node) {
+    if (node === null || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child);
+      return;
+    }
+    if (node.type === 'VariableDeclarator' && patternContainsName(node.id)) redeclarations.push(node);
+    if (['FunctionDeclaration', 'FunctionExpression', 'ClassDeclaration', 'ClassExpression', 'TSEnumDeclaration', 'TSModuleDeclaration']
+      .includes(node.type) && node.id?.name === localName) redeclarations.push(node);
+    if (['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression', 'ObjectMethod', 'ClassMethod']
+      .includes(node.type) && (node.params || []).some(patternContainsName)) redeclarations.push(node);
+    if (node.type === 'CatchClause' && patternContainsName(node.param)) redeclarations.push(node);
+    if (node.type === 'AssignmentExpression' && patternContainsName(node.left)) redeclarations.push(node);
+    if (node.type === 'UpdateExpression' && patternContainsName(node.argument)) redeclarations.push(node);
+    for (const [key, child] of Object.entries(node)) {
+      if (key === 'loc' || key === 'extra') continue;
+      visit(child);
+    }
+  }
+  visit(ast);
+  assert.equal(
+    redeclarations.length,
+    0,
+    `${localName} in ${sourcePath} must resolve only to its import from ${moduleName}`,
+  );
 }
 
 function assertUnshadowedImportBinding(source, importedName, localName, moduleName, sourcePath) {
@@ -6888,6 +6980,22 @@ assertExactHostedSourceSha256(
   hostedAuthRateLimitPath,
 );
 assertServerListenSemantics(hostedApplicationSource, hostedApplicationPath);
+for (const [importedName, localName, moduleName] of [
+  ['default', 'cors', 'cors'],
+  ['MCP_ALLOWED_ORIGINS', 'MCP_ALLOWED_ORIGINS', './mcp/mcp-config.js'],
+  ['legacySignalsContainment', 'legacySignalsContainment', './middleware/legacy-signals-containment'],
+  ['collapseOnboardingTrailingSlashes', 'collapseOnboardingTrailingSlashes', './middleware/general-rate-limit'],
+  ['shouldSkipGeneralRateLimit', 'shouldSkipGeneralRateLimit', './middleware/general-rate-limit'],
+]) {
+  assertImportedBindingNeverRedeclared(hostedApplicationSource, importedName, localName, moduleName, hostedApplicationPath);
+}
+for (const [relativePath, expectedSha256] of [
+  [['src', 'middleware', 'legacy-signals-containment.ts'], HOSTED_LEGACY_SIGNALS_CONTAINMENT_SHA256],
+  [['src', 'middleware', 'general-rate-limit.ts'], HOSTED_GENERAL_RATE_LIMIT_SHA256],
+]) {
+  const absolutePath = path.join(backendRoot, ...relativePath);
+  assertExactHostedSourceSha256(fs.readFileSync(absolutePath, 'utf8'), expectedSha256, absolutePath);
+}
 assertInstallProcessGuardsSemantics(hostedApplicationSource, hostedApplicationPath);
 assertExactHostedSourceSha256(
   hostedAzureRehearsalIpSource,
@@ -9654,6 +9762,7 @@ module.exports = {
   assertExactHostedSourceSha256,
   assertInternalSecretCompatibility,
   assertImportBinding,
+  assertImportedBindingNeverRedeclared,
   assertUnshadowedImportBinding,
   assertInstallProcessGuardsSemantics,
   assertPluginManualSubmissionRouteSemantics,
