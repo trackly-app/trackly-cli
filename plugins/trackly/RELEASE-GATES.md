@@ -141,7 +141,7 @@ the host's own browser tool, and only the user clicks Submit.
 | `trackly_save_application_answers` | false | true | Overwrites saved profile answers. The education list is a confirmed replace-all. |
 | `trackly_grant_sensitive_storage_consent` | false | false | Records consent only. Adds no answers and can be revoked. |
 | `trackly_revoke_sensitive_storage_consent` | false | true | Revokes consent and deletes stored sensitive answers. |
-| `trackly_defer_apply_access` | false | false | Inserts a scheduling preference that is cleared by the next tool. Nothing is deleted. |
+| `trackly_defer_apply_access` | false | false | Inserts an owner-scoped deferment that keeps Apply off that job, company or provider until `trackly_clear_apply_access_deferment` clears it (it has no expiry). Nothing is deleted. |
 | `trackly_clear_apply_access_deferment` | false | false | Soft-clears one deferment (`cleared_at`), which can be re-deferred. |
 | `trackly_start_or_resume_apply` | false | false | Creates or resumes a no-submit Apply execution and claims its batch lease. |
 | `trackly_get_apply_work` | false | false | Not read-only, because each call claims or renews the private batch lease. |
@@ -153,8 +153,9 @@ the host's own browser tool, and only the user clicks Submit.
 The fixture-pinned `mutationAnnotationContract` in
 `scripts/verify-hosted-contract.js` mirrors the runtime pinned in
 `hosted-contract-fixture.json`, which predates this audit. The next fixture
-recapture must set `trackly_defer_apply_access` and
-`trackly_clear_apply_access_deferment` to `mutationAnnotations(false, true)`.
+recapture must, in the same change, update that `mutationAnnotationContract`
+for `trackly_defer_apply_access` and `trackly_clear_apply_access_deferment` from
+`mutationAnnotations(true, true)` to `mutationAnnotations(false, true)`.
 This recapture is tracked in trackly-app/trackly-cli#152 and must be complete
 before the resubmission Scan Tools.
 The backend helper's signature is
