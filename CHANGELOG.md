@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Mirror Apply MCP contract 3.9.2. Forward bounded legacy adapter codes so the
+  backend can authorize existing executions by their frozen contract generation.
+  New executions retain strict published-adapter enforcement.
+
 ## [0.18.5] - 2026-09-18
 
 ### Changed
@@ -42,9 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   metadata or clean-verdict lines in inline code, or prefixes the required
   header with planning text. Issue autolinks, trailing prose, and incomplete
   last results still fail closed.
-- Mirror Apply MCP contract 3.9.2. Forward bounded legacy adapter codes so the
-  backend can authorize existing executions by their frozen contract generation.
-  New executions retain strict published-adapter enforcement.
 
 ## [0.18.4] - 2026-09-15
 
