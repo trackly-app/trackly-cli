@@ -145,7 +145,7 @@ the host's own browser tool, and only the user clicks Submit.
 | `trackly_clear_apply_access_deferment` | false | false | Soft-clears one deferment (`cleared_at`), which can be re-deferred. |
 | `trackly_start_or_resume_apply` | false | false | Creates or resumes a no-submit Apply execution and claims its batch lease. |
 | `trackly_get_apply_work` | false | false | Not read-only, because each call claims or renews the private batch lease. |
-| `trackly_report_apply_progress` | false | false | Records value-free observations and dispositions, or advances the execution. |
+| `trackly_report_apply_progress` | false | false | Records value-free observations and dispositions, or advances the execution to its next wave. Advancing only queues new no-submit work and never deletes or overwrites user data. |
 | `trackly_certify_review_ready` | false | false | Records a review-ready checkpoint. Never submits. |
 | `trackly_reconcile_manual_submission` | false | false | Records a submission the user made themselves. Never submits forms. |
 | `trackly_stop_apply` | false | true | Moves the execution to a terminal stopped state. Continuing requires a new execution. |
@@ -155,10 +155,12 @@ The fixture-pinned `mutationAnnotationContract` in
 `hosted-contract-fixture.json`, which predates this audit. The next fixture
 recapture must set `trackly_defer_apply_access` and
 `trackly_clear_apply_access_deferment` to `mutationAnnotations(false, true)`.
+This recapture is tracked in trackly-app/trackly-cli#152 and must be complete
+before the resubmission Scan Tools.
 The backend helper's signature is
 `mutationAnnotations(destructiveHint, idempotentHint)`, and it always emits
 `readOnlyHint: false` and `openWorldHint: false`. So `(false, true)` means
-non-destructive and idempotent, which matches the table above. The helper
+non-destructive, which matches the Destructive column above, and idempotent (retries replay by idempotency key; the table does not list idempotency). The helper
 `readOnlyAnnotations` emits read-only, non-destructive and idempotent.
 
 ## Product verification
