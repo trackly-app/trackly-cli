@@ -17,7 +17,7 @@ function daysAfterSnapshot(days) {
   return at;
 }
 const freshAt = daysAfterSnapshot(0);
-const staleAt = daysAfterSnapshot(generated.maximumAgeInDays);
+const staleAt = daysAfterSnapshot(generated.maximumAgeInDays + 1);
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 test('current CLI and MCP metadata use the conservative public metrics snapshot', () => {
@@ -30,6 +30,14 @@ test('current CLI and MCP metadata use the conservative public metrics snapshot'
     assert.doesNotMatch(source, /128(?:K|,000)\+ jobs/i, relativePath);
     assert.doesNotMatch(source, /1,900\+ companies/i, relativePath);
     assert.match(source, new RegExp(escapeRegExp(generated.display.jobs)), relativePath);
+    // Every numeric metric phrase must be the current snapshot value, so a
+    // previous bucket (for example 170K+ or 3,800+) cannot linger.
+    for (const match of source.match(/\b\d+K\+ jobs\b/g) ?? []) {
+      assert.equal(match, generated.display.jobs, relativePath);
+    }
+    for (const match of source.match(/\b\d{1,3}(?:,\d{3})*\+ companies\b/g) ?? []) {
+      assert.equal(match, generated.display.companies, relativePath);
+    }
     assert.match(source, new RegExp(escapeRegExp(generated.display.companies)), relativePath);
   }
 });
