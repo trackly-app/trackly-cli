@@ -117,6 +117,15 @@ test('README "N tools" count claims all match the real tool count', () => {
   }
 });
 
+test('README hosted tool count claims agree with each other', () => {
+  // The hosted registry lives in close-ai (src/mcp/server.ts), so this repo can
+  // only keep its own README claims consistent; the local claims are checked
+  // against the real registrations above.
+  const hosted = [...readmeSrc.matchAll(/(\d+)\s+hosted\s+(?:MCP\s+)?tools\b/gi)].map((m) => Number(m[1]));
+  assert.ok(hosted.length > 0, 'expected at least one "N hosted tools" claim in README');
+  assert.equal(new Set(hosted).size, 1, `README hosted tool claims disagree: ${hosted.join(', ')}`);
+});
+
 test('contributor guide MCP tool counts match the real tool count', () => {
   const count = extractToolNames(serverSrc).length;
   const claims = toolCountClaims(contributorSrc);

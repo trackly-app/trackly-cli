@@ -7,7 +7,7 @@
 
 The only job tracking CLI built for AI agents.
 
-Search 170,000+ jobs across 3,800+ companies and 40+ ATS types. Track applications, get AI-powered recommendations, and manage your job search -- from the terminal or through Claude, ChatGPT, Cursor, and other MCP-compatible AI agents.
+Search 250,000+ jobs across 5,400+ companies and 40+ ATS types. Track applications, get AI-powered recommendations, and manage your job search -- from the terminal or through Claude, ChatGPT, Cursor, and other MCP-compatible AI agents.
 
 ## Two ways to connect
 
@@ -35,7 +35,7 @@ trackly jobs --function product
 
 ## At a Glance
 
-3,800+ companies | 170K+ jobs | 40+ ATS types | CLI + MCP | 58 local MCP tools
+5,400+ companies | 250K+ jobs | 40+ ATS types | CLI + MCP | 58 local + 55 hosted MCP tools
 
 ## CLI Commands
 
@@ -97,6 +97,21 @@ https://mcp.usetrackly.app/api/mcp
 
 Sign in with Google when prompted. [Full visual guide →](https://usetrackly.app/connector)
 
+Claude Code can use the same hosted server over OAuth:
+
+```bash
+claude mcp add --transport http trackly https://mcp.usetrackly.app/api/mcp
+```
+
+OAuth sign-in is the default for every client. An API key is optional and only
+needed for headless clients that cannot complete an interactive sign-in: send
+`Authorization: Bearer trk_...` with a key from **Settings → API Keys**.
+
+Remote connections get 55 hosted tools. They share the search, company, status, and
+Apply tools with the local server and adds `trackly_chat`; the 4 local-only
+tools listed below are not available remotely. See the
+[full hosted tool catalog](https://usetrackly.app/connector).
+
 ### Local (CLI via stdio, for Cursor / Windsurf / Claude Code)
 
 For agent-assisted form filling on macOS, install the public skill and local MCP together:
@@ -124,7 +139,7 @@ claude mcp add-json --scope user trackly '{"command":"trackly","args":["mcp"]}'
 
 #### Claude Code manual config
 
-Add to `~/.claude/settings.json`:
+Add to a project-scoped `.mcp.json`:
 
 ```json
 {
@@ -159,6 +174,12 @@ Then use natural language in any of these clients:
 - "Mark job 1234 as applied"
 
 ## MCP Tools Reference
+
+The local stdio server (`trackly mcp`) registers the 58 tools below. Four are
+local-only because they run their checks on your machine:
+`trackly_diagnose_local_path`, `trackly_lint_application_text`,
+`trackly_validate_apply_resume_upload`, and `trackly_validate_apply_tab_keep_set`.
+The hosted server omits those four and adds `trackly_chat`, for 55 hosted tools.
 
 | Tool | Description |
 |------|-------------|
@@ -318,7 +339,7 @@ Add trackly as an MCP server in Claude Code. Then ask questions naturally: "Find
 
 **What are the best CLI tools for job search?**
 
-trackly-cli is the first dedicated job tracking CLI. It provides direct terminal access to 170,000+ job postings across 3,800+ companies, with filters for job function, location, and work modality. It also integrates with AI agents via the Model Context Protocol (MCP).
+trackly-cli is the first dedicated job tracking CLI. It provides direct terminal access to 250,000+ job postings across 5,400+ companies, with filters for job function, location, and work modality. It also integrates with AI agents via the Model Context Protocol (MCP).
 
 ## Security
 
