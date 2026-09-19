@@ -35,6 +35,9 @@ test('current CLI and MCP metadata use the conservative public metrics snapshot'
     for (const match of source.match(/\b\d+K\+ jobs\b/g) ?? []) {
       assert.equal(match, generated.display.jobs, relativePath);
     }
+    // The sync script only rewrites the compact form, so the long form
+    // (for example 250,000+ jobs) would escape the stale-metric fallback.
+    assert.doesNotMatch(source, /\b\d{1,3}(?:,\d{3})+\+ job/i, relativePath);
     for (const match of source.match(/\b\d{1,3}(?:,\d{3})*\+ companies\b/g) ?? []) {
       assert.equal(match, generated.display.companies, relativePath);
     }
