@@ -108,7 +108,7 @@ needed for headless clients that cannot complete an interactive sign-in: send
 `Authorization: Bearer trk_...` with a key from **Settings → API Keys**.
 
 Remote connections get 55 hosted tools. They share the search, company, status, and
-Apply tools with the local server and adds `trackly_chat`; the 4 local-only
+Apply tools with the local server and add `trackly_chat`; the 4 local-only
 tools listed below are not available remotely. See the
 [full hosted tool catalog](https://usetrackly.app/connector).
 
