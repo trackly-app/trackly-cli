@@ -5250,6 +5250,9 @@ function assertCheckpointWriterCallChain(source, sourcePath, checkpointWriterGen
     `, `${sourcePath} production writer uniqueness validation`),
   ];
   if (checkpointWriterGeneration === 'candidate-3.9.2') {
+    // The readiness cache compares against Date.now(); a module-level Date
+    // shadow could keep every locked digest while skipping the database probe.
+    assertUnshadowedIntrinsicBinding(source, 'Date', sourcePath);
     // Reviewed executable dependency chain from backend b1b2fbf7155f1eadd4a22bcef10525800dcad63f.
     // Lock the wrapper and its database probe, not only the awaited call site.
     assertActiveFunctionAstSha256(source, 'upgradeClientActionTypeSchemaReady',
@@ -9575,6 +9578,7 @@ module.exports = {
   directToolRegistrationsInNamedParameterFunction,
   exactSchemaDefinition,
   gitOutput,
+  hostedCheckpointActionMappings,
   parseSchemaExpression,
   referencedConstantIdentifiers,
   referencedFreeIdentifiers,

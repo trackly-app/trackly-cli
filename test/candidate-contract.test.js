@@ -122,6 +122,21 @@ test('candidate writer requires the exact awaited schema guard and preserves the
   assert.throws(() => assertCheckpointWriterCallChain(source, 'deployed fixture'), /locked validation prefix/);
 });
 
+test('candidate writer refuses a shadowed Date that could bypass the readiness probe', () => {
+  const { assertCheckpointWriterCallChain } = require('../scripts/verify-hosted-contract');
+  const source = fs.readFileSync(path.join(__dirname, 'fixtures/candidate-checkpoint-writer.txt'), 'utf8');
+  for (const shadow of [
+    'const Date = { now: () => -1 };',
+    'class Date { static now() { return -1; } }',
+    'globalThis.Date = { now: () => -1 };',
+  ]) {
+    assert.throws(
+      () => assertCheckpointWriterCallChain(`${shadow}\n${source}`, 'shadowed Date candidate', 'candidate-3.9.2'),
+      /Date in shadowed Date candidate must be the unshadowed intrinsic/,
+    );
+  }
+});
+
 
 test('candidate rejects the same whitespace-sensitive literal drift in both executable lanes', t => {
   const f = fixture(t);

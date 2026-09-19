@@ -18,6 +18,7 @@ const {
   assertBoundedApplyAdapterValidation,
   assertCheckpointRouteCallChain,
   assertCoordinatedCheckpointHelperSemantics,
+  hostedCheckpointActionMappings,
   assertExactHostedSourceSha256,
   assertInternalSecretCompatibility,
   assertUnshadowedImportBinding,
@@ -383,6 +384,60 @@ test('hosted checkpoint helper drift fails coordinated semantic parity even when
   };
 
   assert.doesNotThrow(() => assertCoordinatedCheckpointHelperSemantics(fixture));
+  // Candidate 3.9.2 backends freeze client/upgrade_required immediately before
+  // observability/unverifiable_state rather than at the contract's tail.
+  const candidateActionOrder = contract.constants.applyCheckpointActionCodes
+    .filter((code) => code !== 'client/upgrade_required')
+    .flatMap((code) => (code === 'observability/unverifiable_state' ? ['client/upgrade_required', code] : [code]));
+  assert.notDeepEqual(candidateActionOrder, contract.constants.applyCheckpointActionCodes);
+  const candidateOrderedContractSource = hostedCheckpointContractSource.replace(
+    `Object.freeze({${frozenCheckpointMappings}})`,
+    `Object.freeze({${candidateActionOrder
+      .map((actionCode) => `${JSON.stringify(actionCode)}: Object.freeze(${JSON.stringify(checkpointMappings[actionCode])})`)
+      .join(',')}})`,
+  );
+  assert.notEqual(candidateOrderedContractSource, hostedCheckpointContractSource);
+  const checkpointOrderError = /checkpoint mappings must exactly match action-code order/;
+  const candidateMappings = hostedCheckpointActionMappings(
+    candidateOrderedContractSource,
+    'candidate-ordered checkpoint contract fixture',
+    'candidate-3.9.2',
+  );
+  assert.deepEqual(candidateMappings.actionCodes, contract.constants.applyCheckpointActionCodes);
+  assert.deepEqual(
+    Object.keys(candidateMappings.continuationByAction),
+    candidateActionOrder,
+  );
+  assert.throws(
+    () => hostedCheckpointActionMappings(
+      hostedCheckpointContractSource,
+      'tail-ordered candidate checkpoint contract fixture',
+      'candidate-3.9.2',
+    ),
+    checkpointOrderError,
+  );
+  assert.throws(
+    () => hostedCheckpointActionMappings(
+      candidateOrderedContractSource,
+      'candidate-ordered deployed checkpoint contract fixture',
+    ),
+    checkpointOrderError,
+  );
+  const misplacedUpgradeOrder = candidateActionOrder.filter((code) => code !== 'client/upgrade_required');
+  misplacedUpgradeOrder.splice(0, 0, 'client/upgrade_required');
+  assert.throws(
+    () => hostedCheckpointActionMappings(
+      hostedCheckpointContractSource.replace(
+        `Object.freeze({${frozenCheckpointMappings}})`,
+        `Object.freeze({${misplacedUpgradeOrder
+          .map((actionCode) => `${JSON.stringify(actionCode)}: Object.freeze(${JSON.stringify(checkpointMappings[actionCode])})`)
+          .join(',')}})`,
+      ),
+      'misplaced candidate checkpoint contract fixture',
+      'candidate-3.9.2',
+    ),
+    checkpointOrderError,
+  );
   assert.throws(
     () => assertCoordinatedCheckpointHelperSemantics({
       ...fixture,
