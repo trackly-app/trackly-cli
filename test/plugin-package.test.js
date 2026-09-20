@@ -485,6 +485,8 @@ test('coordinated hosted provenance rejects merge commits that alter reviewed de
     HOSTED_DEPLOYABLE_PATHS.includes('src/mcp/plugin-ui.ts'),
     'the hosted MCP App UI must be covered by exact reviewed-to-merged byte provenance',
   );
+  const resumePaths = Object.keys(HOSTED_RESUME_SECURITY_SOURCE_SHA256);
+  for (const file of resumePaths) assert.ok(HOSTED_DEPLOYABLE_PATHS.includes(file), file + ' must retain reviewed-to-merged provenance');
   const repository = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'trackly-merge-provenance-'));
   t.after(() => fs.rmSync(repository, { recursive: true, force: true }));
   const git = (...args) => childProcess.execFileSync('git', ['-C', repository, ...args], {
@@ -495,7 +497,8 @@ test('coordinated hosted provenance rejects merge commits that alter reviewed de
   git('config', 'user.name', 'Trackly Test');
   git('config', 'user.email', 'test@usetrackly.app');
   fs.writeFileSync(path.join(repository, 'deployable.ts'), 'export const reviewed = true;\n');
-  git('add', 'deployable.ts');
+  for (const file of resumePaths) { fs.mkdirSync(path.dirname(path.join(repository, file)), {recursive:true}); fs.writeFileSync(path.join(repository,file), 'reviewed security boundary\n'); }
+  git('add', '.');
   git('commit', '-m', 'reviewed source');
   const sourceCommit = git('rev-parse', 'HEAD');
   git('commit', '--allow-empty', '-m', 'preserving merge fixture');
@@ -514,6 +517,13 @@ test('coordinated hosted provenance rejects merge commits that alter reviewed de
     () => assertMergeCommitPreservesPaths(repository, sourceCommit, driftedCommit, ['deployable.ts']),
     /must exactly preserve reviewed source/,
   );
+  for (const file of resumePaths) {
+    fs.writeFileSync(path.join(repository,file), 'altered security boundary\n'); git('add', file);
+    const changedTree = git('write-tree');
+    const changedCommit = git('commit-tree', changedTree, '-p', sourceCommit, '-m', 'security drift');
+    assert.throws(() => assertMergeCommitPreservesPaths(repository, sourceCommit, changedCommit, [file]), /must exactly preserve/);
+    git('reset', '--', file);
+  }
   const firstParent = driftedCommit;
   const tree = git('rev-parse', firstParent + '^{tree}');
   const mergeCommit = git('commit-tree', tree, '-p', firstParent, '-p', sourceCommit, '-m', 'inherited baseline');
@@ -4250,8 +4260,8 @@ test('submission fixtures cover six internal cases and the exact five-case porta
     monitored.turns.map((turn) => turn.expected || []),
     [[], ['trackly_search_jobs'], [], ['trackly_update_status', 'trackly_update_status']],
   );
-  assert.match(monitored.turns[2].content, /two jobs I explicitly choose from the returned results/);
-  assert.match(monitored.turns[3].content, /two explicitly chosen returned job IDs once/);
+  assert.match(monitored.turns[2].content, /first and second jobs in the numbered results/);
+  assert.match(monitored.turns[3].content, /first and second displayed results to their exact returned job IDs/);
   assert.match(monitored.turns[3].content, /Do not invent IDs or update any other job/);
   assert.deepEqual(
     monitored.expected,
@@ -4266,46 +4276,27 @@ test('submission fixtures cover six internal cases and the exact five-case porta
   assert.deepEqual(applyToReview.attachmentBranches.manual.expectedOperations, ['approve_resume']);
   assert.ok(!applyToReview.expectedResultShape.includes('document.openUrl'));
   assert.match(applyToReview.mustNot.join(' '), /private preview capability in model-visible content/);
-  assert.deepEqual(applyToReview.turns.map((turn) => turn.role), ['user', 'assistant', 'user', 'assistant', 'user', 'assistant']);
-  assert.deepEqual(
-    applyToReview.turns.map((turn) => turn.expected || []),
-    [
-      [],
-      [
-        'trackly_get_apply_readiness',
-        'trackly_start_or_resume_apply',
-        'trackly_get_apply_work',
-        'trackly_get_job',
-        'trackly_report_apply_progress',
-        'trackly_prepare_resume_artifact',
-      ],
-      [],
-      ['trackly_report_apply_progress'],
-      [],
-      ['trackly_certify_review_ready', 'trackly_get_apply_work'],
-    ],
-  );
-  assert.deepEqual(
-    applyToReview.expected,
-    [
-      'trackly_get_apply_readiness',
-      'trackly_start_or_resume_apply',
-      'trackly_get_apply_work',
-      'trackly_get_job',
-      'trackly_report_apply_progress',
-      'trackly_prepare_resume_artifact',
-      'trackly_report_apply_progress',
-      'trackly_certify_review_ready',
-      'trackly_get_apply_work',
-    ],
-  );
-  assert.match(applyToReview.turns[1].content, /Bind the verified visible browser/);
-  assert.match(applyToReview.turns[1].content, /Ask for explicit approval; do not attach yet/);
-  assert.match(applyToReview.turns[2].content, /approve the exact résumé just previewed/);
-  assert.match(applyToReview.turns[3].content, /Never infer attachment from approval/);
-  assert.match(applyToReview.turns[4].content, /completed application shown is accurate/);
-  assert.ok(applyToReview.turns.slice(0, 5).every((turn) => !(turn.expected || []).includes('trackly_certify_review_ready')));
-  assert.match(applyToReview.turns[5].content, /Refetch durable state.*before Submit/s);
+  assert.deepEqual(applyToReview.turns.map((turn) => turn.role), ['user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user', 'assistant']);
+  const commonTurns = [[], ['trackly_get_apply_readiness', 'trackly_start_or_resume_apply', 'trackly_get_apply_work', 'trackly_get_job'], [], ['trackly_get_apply_work', 'trackly_report_apply_progress', 'trackly_prepare_resume_artifact'], [], [], [], ['trackly_certify_review_ready', 'trackly_get_apply_work']];
+  assert.deepEqual(applyToReview.turns.map((turn) => turn.expected || []), commonTurns);
+  assert.deepEqual(applyToReview.expected, commonTurns.flat());
+  assert.match(applyToReview.turns[1].content, /Ask permission.*named employer.*wait/s);
+  assert.match(applyToReview.turns[2].content, /Yes, enter.*may autosave before Submit/s);
+  assert.match(applyToReview.turns[3].content, /minimal profileKeys intersection/);
+  assert.match(applyToReview.turns[3].content, /Bind the verified visible browser/);
+  assert.match(applyToReview.turns[3].content, /explicit approval of the exact document; do not attach yet/);
+  assert.match(applyToReview.turns[4].content, /approve the exact résumé just previewed/);
+  assert.match(applyToReview.turns[5].content, /Never infer attachment from approval/);
+  for (const branch of ['automatic', 'manual']) {
+    const expectedCalls = Array(branch === 'automatic' ? 2 : 1).fill('trackly_report_apply_progress');
+    assert.deepEqual(applyToReview.turns[5].expectedByAttachmentBranch[branch], expectedCalls);
+    assert.deepEqual(applyToReview.attachmentBranches[branch].expectedCalls, expectedCalls);
+    assert.equal(expectedCalls.length, applyToReview.attachmentBranches[branch].expectedOperations.length);
+  }
+  assert.match(applyToReview.expectedTracePolicy, /common calls only.*Insert the selected attachmentBranches expectedCalls/s);
+  assert.match(applyToReview.turns[6].content, /completed application shown is accurate/);
+  assert.ok(applyToReview.turns.slice(0, 7).every((turn) => !(turn.expected || []).includes('trackly_certify_review_ready')));
+  assert.match(applyToReview.turns[7].content, /Refetch durable state.*before Submit/s);
   assert.deepEqual(
     applyToReview.expectedResultShape,
     [
