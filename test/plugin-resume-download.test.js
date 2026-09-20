@@ -78,3 +78,23 @@ test('CLI errors never echo private input or filesystem exceptions', () => {
   assert.equal(result.stdout, '');
   assert.equal(result.stderr, 'Resume verification failed. Check the approved file and metadata.\n');
 });
+test('CLI rejects duplicate and unknown flags before materializing a valid file', async t => {
+  const { file } = await fixture(t);
+  const valid = ['--path', file, '--filename', approved.filename, '--sha256', approved.sha256, '--size', String(approved.sizeBytes)];
+  for (const extra of [['--path', file], ['--filename', approved.filename], ['--sha256', approved.sha256], ['--size', String(approved.sizeBytes)], ['--unknown', 'value'], ['--size'], ['--unknown']]) {
+    const result = spawnSync(process.execPath, [require.resolve(helper), ...valid, ...extra], { encoding: 'utf8' });
+    assert.equal(result.status, 1, `must reject ${extra[0]}`);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, 'Resume verification failed. Check the approved file and metadata.\n');
+  }
+  assert.deepEqual(await fs.readFile(file), bytes);
+});
+test('hosted skill links the transfer reference and its executable verifier', async () => {
+  const skillDirectory = path.resolve(__dirname, '../plugins/trackly/skills/trackly-apply');
+  const skill = await fs.readFile(path.join(skillDirectory, 'SKILL.md'), 'utf8');
+  const referenceName = 'references/approved-download-transfer.md';
+  assert.ok(skill.includes(`](${referenceName})`), 'transfer reference must be reachable from the skill');
+  const reference = await fs.readFile(path.join(skillDirectory, referenceName), 'utf8');
+  assert.ok(reference.includes('scripts/verify-downloaded-resume.js'), 'reference must name the packaged verifier');
+  assert.equal(await fs.realpath(path.join(skillDirectory, 'scripts/verify-downloaded-resume.js')), await fs.realpath(require.resolve(helper)));
+});
