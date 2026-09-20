@@ -1644,6 +1644,7 @@ test('hosted application sensitivity map rejects mutation, reassignment, and ref
 
 test('hosted UI semantic lock rejects MIME, metadata, tool-output, and HTML drift', () => {
   const uiSource = `
+    import { MCP_ISSUER } from './mcp-config.js';
     export const TRACKLY_PLUGIN_UI_MIME_TYPE = 'text/html;profile=mcp-app';
     export const TRACKLY_PLUGIN_UI = Object.freeze({
       readiness: 'ui://trackly/apply-readiness-v1.html',
@@ -1651,7 +1652,7 @@ test('hosted UI semantic lock rejects MIME, metadata, tool-output, and HTML drif
       resume: 'ui://trackly/resume-handoff-v1.html',
       review: 'ui://trackly/review-ready-v1.html',
     });
-    const UI_DOMAIN = 'https://mcp.usetrackly.app';
+    const UI_DOMAIN = MCP_ISSUER;
     export const TRACKLY_PLUGIN_UI_RESOURCE_META = Object.freeze({
       ui: { prefersBorder: true, domain: UI_DOMAIN, csp: { connectDomains: [], resourceDomains: [] } },
       'openai/widgetDescription': 'A private trackly Apply status card. Preparation stops before Submit.',

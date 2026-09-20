@@ -9,9 +9,11 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { isDeepStrictEqual } = require('node:util');
+const { HOSTED_RESUME_SECURITY_SOURCE_SHA256, assertHostedResumeSecuritySourceSnapshots, createResumeParserVerifier, verifyResumeToolContract } = require('./verify-hosted-resume-contract.js');
+const assertResumeGlobalParserCarveout = createResumeParserVerifier({ activeNamedDefinitionAst, staticMemberName, parseFullSource, canonicalSchemaAst });
 
 const sha256ExactBytes = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-const CHECKED_IN_HOSTED_FIXTURE_SHA256 = '78672b96556302bbcff91e756fa6a913a94b9958e6beb1d85544975194631de1';
+const CHECKED_IN_HOSTED_FIXTURE_SHA256 = '8a4b659da5d93b549aac81e6c551333fb5fa03ac83ddb6cab7eab03211dda70a';
 const HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256 = Object.freeze({
   applyCheckpointActionVariant: '6d83fd691e69b578f683c5e367cc1706a8f74b336e0ff435195f580c2350587c',
   applyCheckpointActionSchema: '6f0b0698b13997eda7100ec00720fff199d936270d232c7de5f55a8fcef2c2ab',
@@ -609,16 +611,45 @@ const HOSTED_DEPLOYABLE_PATHS = Object.freeze([
   'src/routes/auth.ts',
 ]);
 
-function assertMergeCommitPreservesPaths(repository, sourceCommit, mergeCommit, relativePaths) {
+const REVIEWED_INHERITED_BASELINE = Object.freeze([Object.freeze({
+  sourceCommit: '07c3eb027eb615097c8c4d934bebadda4aec2da9',
+  mergeCommit: 'dded739620bcdee1e6863324c8f660e6b999d0cc',
+  firstParent: '355df4ddbd628d973aa00c619075089a59c8b3e8',
+  relativePath: 'src/services/application-profile/catalog.ts',
+  sourceSha256: 'f4b004c604e69fca5dcf261def0aa0a95709a802d731f85af5c6b8e923e352de',
+  inheritedSha256: '96aacbeeffaa1a80eb554ee7f31a5ffd91b3011130003666d59e8802fd7b9960',
+  originCommit: '1a02a9d81fb44cc7ca2ff0fde173280701695db3', // close-ai PR #1975
+})]);
+
+function assertMergeCommitPreservesPaths(repository, sourceCommit, mergeCommit, relativePaths, inheritedBaseline = []) {
+  const unused = new Set(inheritedBaseline);
+  const digest = (commit, file) => sha256ExactBytes(gitOutput(repository, ['show', commit + ':' + file], null));
   for (const relativePath of relativePaths) {
-    const sourceBytes = gitOutput(repository, ['show', `${sourceCommit}:${relativePath}`], null);
-    const mergedBytes = gitOutput(repository, ['show', `${mergeCommit}:${relativePath}`], null);
-    assert.equal(
-      sha256ExactBytes(mergedBytes),
-      sha256ExactBytes(sourceBytes),
-      `${relativePath} bytes at merge ${mergeCommit} must exactly preserve reviewed source ${sourceCommit}`,
-    );
+    const sourceHash = digest(sourceCommit, relativePath);
+    const mergedHash = digest(mergeCommit, relativePath);
+    if (sourceHash !== mergedHash) {
+      const records = inheritedBaseline.filter((record) => record.relativePath === relativePath);
+      assert.ok(records.length <= 1, 'Inherited baseline paths must be unique');
+      if (records.length === 1) {
+        const record = records[0];
+        assert.equal(record.sourceCommit, sourceCommit);
+        assert.equal(record.mergeCommit, mergeCommit);
+        assert.deepEqual(gitOutput(repository, ['show', '-s', '--format=%P', mergeCommit]).trim().split(/\s+/),
+          [record.firstParent, sourceCommit], 'Inherited baseline requires exact ordered merge parents');
+        assert.equal(sourceHash, record.sourceSha256, 'Inherited baseline source hash changed');
+        assert.equal(mergedHash, record.inheritedSha256, 'Inherited baseline merged hash changed');
+        for (const commit of [record.firstParent, record.originCommit]) {
+          assert.equal(digest(commit, relativePath), record.inheritedSha256,
+            'Inherited baseline must preserve first-parent and reviewed origin bytes');
+        }
+        gitOutput(repository, ['merge-base', '--is-ancestor', record.originCommit, record.firstParent]);
+        unused.delete(record);
+        continue;
+      }
+    }
+    assert.equal(mergedHash, sourceHash, relativePath + ' bytes must exactly preserve reviewed source ' + sourceCommit);
   }
+  assert.equal(unused.size, 0, 'Inherited baseline records must all be used exactly once');
 }
 
 function assertHostedCommitTimestamps(repository, fixture) {
@@ -673,6 +704,7 @@ function verifyHostedSnapshotGitProvenance(cliRoot, backendRoot) {
     sourceCommit,
     mergeCommit,
     HOSTED_DEPLOYABLE_PATHS,
+    REVIEWED_INHERITED_BASELINE,
   );
   for (const relativePath of HOSTED_DEPLOYABLE_PATHS) {
     assert.equal(
@@ -1015,7 +1047,10 @@ function directToolRegistrationsInExportedFunction(
   expectedFunction,
   expectedCallee,
   sourcePath,
-  { requireUiResourceLoop = false } = {},
+  {
+    requireUiResourceLoop = false,
+    expectedParameters = 'authToken: string, requestApi: PluginApiRequest = apiRequest',
+  } = {},
 ) {
   assertImportBinding(
     source,
@@ -1037,7 +1072,7 @@ function directToolRegistrationsInExportedFunction(
   );
   const factory = factories[0].declaration;
   const factoryParameterFixture = parseFullSource(
-    'function expected(authToken: string, requestApi: PluginApiRequest = apiRequest) {}',
+    `function expected(${expectedParameters}) {}`,
     `${expectedFunction} expected parameters`,
   ).program.body[0];
   assert.deepEqual(
@@ -1328,7 +1363,12 @@ function directToolRegistrationsInExportedFunction(
   return registrations;
 }
 
-function assertExportedFactoryUsedByPluginRouter(source, expectedFactory, sourcePath) {
+function assertExportedFactoryUsedByPluginRouter(
+  source,
+  expectedFactory,
+  sourcePath,
+  expectedFactoryArguments = ['authToken'],
+) {
   const ast = parseFullSource(source, sourcePath);
   assertImportBinding(source, 'Router', 'Router', 'express', sourcePath);
   assertActiveVariableInitializerAst(source, 'router', 'Router()', sourcePath);
@@ -1651,9 +1691,14 @@ function assertExportedFactoryUsedByPluginRouter(source, expectedFactory, source
   );
   assert.equal(factoryCalls[0].id?.type, 'Identifier');
   assert.equal(factoryCalls[0].id.name, 'server');
-  assert.equal(factoryCalls[0].init.arguments.length, 1);
-  assert.equal(factoryCalls[0].init.arguments[0]?.type, 'Identifier');
-  assert.equal(factoryCalls[0].init.arguments[0].name, 'authToken');
+  assert.equal(factoryCalls[0].init.arguments.length, expectedFactoryArguments.length);
+  expectedFactoryArguments.forEach((expectedArgument, index) => {
+    assert.deepEqual(
+      canonicalSchemaAst(factoryCalls[0].init.arguments[index]),
+      canonicalSchemaAst(babelParser.parseExpression(expectedArgument, { plugins: ['typescript'] })),
+      `${expectedFactory} argument ${index + 1} in ${sourcePath} must preserve its locked provenance`,
+    );
+  });
 
   const transportDeclarations = handler.body.body.flatMap((statement) => {
     if (statement.type !== 'VariableDeclaration') return [];
@@ -1842,19 +1887,22 @@ function canonicalPluginMount(factory, routerBinding, mountPath, sourcePath) {
 // origins per #1770; MCP and discovery preflights continue per #1750),
 // cookieParser, MCP analytics ingress, the JSON body parser (its new carve-out
 // for POST /api/recommendation-research/batches from #1886 leaves the plugin
-// path unchanged), urlencoded, request id, UI redirect, helmet, maintenance.
+// path unchanged), URL-encoded parser (PR #2014 now bypasses only the normalized
+// POST resume route; assertResumeGlobalParserCarveout independently locks both
+// parser bodies and fallbacks), request id, UI redirect, helmet, maintenance.
 const REVIEWED_GLOBAL_MIDDLEWARE_CALL_DIGESTS = Object.freeze([
   'c1f2b00a4434fb372ed514e7297aac7280a529c9d87aa826b2cf570d3a13eedc',
   '2e71ae5a0b1e7738e25284ac0b4573dd6274e49dc48b086df0e2ae37f210aa55',
   '81d41aba94334a95d3a6002fd6ced8069b9739cd52c6679c6293e01c3f547f75',
   '1eac0496bd02d2dadc4227b753c0ca2d04169bf3c43bec0f5d1eaa0c4bd4bf96',
-  '4508c0750d6a83f246ef42f0e898465bb2d8b2346114ffaf2c39f9e2a0954a7c',
-  '12def47c0dc1628a891b9045ed9c275af25dd73660929d528943f95a98c34855',
+  '70e0515d24b30ada7ecb6cd17ed81b261f43ac221957f3fbbaca09dfd3c00993',
+  '06822e230ea036dfb409fd343eedc11f7eed113c985dc436a72b6202c95aa3e9',
   'bc0d7d12f97ab6e9e79b00fa3701899806387b16353d9575628545a06644b2e9',
   'd63cf7bbc1fae45f475807325f4178283bfea854bf4aeecaf7754f66e509e0a5',
   'e8f6d712ad1044aa865b0cec6ddd51e860ed59ecda3f13f9427f8a84ffa78438',
   '971bb5b2a58a45df2caf26342572fcc3221e86544e0335be81a86cb22a30e284',
 ]);
+
 // Canonical-AST digests of the only reviewed path-scoped middleware allowed
 // on the exact plugin mount path before the plugin router: close-ai #1750's
 // plugin-scoped CORS for MCP browser origins. It keeps preflightContinue so the
@@ -2981,7 +3029,7 @@ function assertActiveFunctionAstSha256(source, name, expectedSha256, sourcePath)
 function assertPluginUiContractSemantics(
   source,
   sourcePath,
-  { htmlAstSha256 = 'fdf5383a28895b7052955d56ecb7ddea73fa1a281fa557818123e7fe57392721' } = {},
+  { htmlAstSha256 = '1d2f1eaa9ae730b67a6216ceb82a7304ea7231d5e40567c7d53481ac6a2e7bd4' } = {},
 ) {
   assertActiveVariableInitializerAst(
     source,
@@ -2989,7 +3037,8 @@ function assertPluginUiContractSemantics(
     "'text/html;profile=mcp-app'",
     sourcePath,
   );
-  assertActiveVariableInitializerAst(source, 'UI_DOMAIN', "'https://mcp.usetrackly.app'", sourcePath);
+  assertImportBinding(source, 'MCP_ISSUER', 'MCP_ISSUER', './mcp-config.js', sourcePath);
+  assertActiveVariableInitializerAst(source, 'UI_DOMAIN', 'MCP_ISSUER', sourcePath);
   assertActiveVariableInitializerAst(
     source,
     'TRACKLY_PLUGIN_UI',
@@ -3069,8 +3118,8 @@ function assertPluginReviewReadyPersistenceSemantics(
   serviceSourcePath,
   expectedRouteStatement,
   {
-    routeAstSha256 = 'a4b0a5ba28a0c80c2ddbc438b3cde25f61a7bb092ead4efe1813384f9e7d46ec',
-    certifyAstSha256 = '134b267af1163f83330181ff151e2604271d6980d701c2a93bd5878ab326a852',
+    routeAstSha256 = 'e6c37dc1c8bea1d35d04f436327cf55a990443d2b77001540485fa07a3229bb6',
+    certifyAstSha256 = '972ecb8823d769e609092b4a724e2220978e66518c5af8e70277c3c1477c2a8d',
     serviceSourceSha256 = null,
   } = {},
 ) {
@@ -6738,16 +6787,8 @@ function verifyCheckedInHostedContractFixture(
   for (const [name, schemaSha256, handlerSha256] of fixture.publicTools) {
     assert.match(schemaSha256, /^[a-f0-9]{64}$/);
     assert.match(handlerSha256, /^[a-f0-9]{64}$/);
-    assert.equal(
-      schemaSha256,
-      lock.publicExecutableContract.descriptorSha256[name],
-      `${fixturePath} ${name} schema snapshot drifted from the packaged executable lock`,
-    );
-    assert.equal(
-      handlerSha256,
-      lock.publicExecutableContract.handlerSha256[name],
-      `${fixturePath} ${name} handler snapshot drifted from the packaged executable lock`,
-    );
+    assert.equal(schemaSha256, lock.publicExecutableContract.descriptorSha256[name], fixturePath + ' schema snapshot drifted for ' + name);
+    assert.equal(handlerSha256, lock.publicExecutableContract.handlerSha256[name], fixturePath + ' handler snapshot drifted for ' + name);
   }
   assert.deepEqual(
     fixture.hostedMcpToolNames,
@@ -6755,11 +6796,7 @@ function verifyCheckedInHostedContractFixture(
     `${fixturePath} hosted MCP tool-name snapshot drifted`,
   );
   assert.equal(new Set(fixture.hostedMcpToolNames).size, fixture.hostedMcpToolNames.length);
-  assert.deepEqual(
-    fixture.hostedPluginLifecycle,
-    lock.publicLifecycleContract,
-    `${fixturePath} hosted plugin lifecycle snapshot drifted from the packaged public lifecycle contract`,
-  );
+  assert.deepEqual(fixture.hostedPluginLifecycle, lock.publicLifecycleContract, fixturePath + ' hosted plugin lifecycle snapshot drifted from the packaged public lifecycle contract');
   // CI only runs this fixture-only mode, so the backend-independent local
   // registration reachability checks must execute here on the real sources
   // rather than only behind TRACKLY_BACKEND_DIR.
@@ -6942,6 +6979,21 @@ const hostedApplicationProfileCatalogSource = fs.readFileSync(hostedApplicationP
 const hostedApplicationProfileServiceSource = fs.readFileSync(hostedApplicationProfileServicePath, 'utf8');
 const hostedJobscoutFilterUtilsSource = fs.readFileSync(hostedJobscoutFilterUtilsPath, 'utf8');
 const hostedTracklyApplySource = fs.readFileSync(hostedTracklyApplyPath, 'utf8');
+const hostedResumeSecuritySources = Object.fromEntries(
+  Object.keys(HOSTED_RESUME_SECURITY_SOURCE_SHA256).map((relativePath) => [
+    relativePath,
+    fs.readFileSync(path.join(backendRoot, relativePath), 'utf8'),
+  ]),
+);
+
+assertHostedResumeSecuritySourceSnapshots(
+  hostedResumeSecuritySources,
+  Object.fromEntries(Object.keys(hostedResumeSecuritySources).map((relativePath) => [
+    relativePath,
+    path.join(backendRoot, relativePath),
+  ])),
+);
+assertResumeGlobalParserCarveout(hostedApplicationSource, hostedApplicationPath);
 
 verifyHostedSnapshotGitProvenance(cliRoot, backendRoot);
 assertUnshadowedImportBinding(hostedApplySource, 'z', 'z', 'zod', hostedApplySourcePath);
@@ -7124,6 +7176,17 @@ assertExportedFactoryUsedByPluginRouter(
   hostedPluginRouterSource,
   'createTracklyPluginMcpServer',
   hostedPluginRouterPath,
+  [
+    'authToken',
+    'apiRequest',
+    `async () => {
+      const { capability, filenameSha256: _filenameHash, ...document } = await pluginResumeDocuments().prepare({
+        userId: authInfo.extra.userId, authEpoch: authInfo.extra.authEpoch,
+        clientId: authInfo.clientId, grantId: authInfo.extra.grantId,
+      });
+      return { ...document, openUrl: \`\${MCP_PLUGIN_RESOURCE}/resume#\${capability}\` };
+    }`,
+  ],
 );
 assertActiveFunctionDefinitionAst(
   hostedTracklyAccessSource,
@@ -7893,7 +7956,10 @@ const executablePluginRegistrations = directToolRegistrationsInExportedFunction(
   'createTracklyPluginMcpServer',
   'registerPluginTool',
   hostedPluginSourcePath,
-  { requireUiResourceLoop: true },
+  {
+    requireUiResourceLoop: true,
+    expectedParameters: 'authToken: string, requestApi: PluginApiRequest = apiRequest, prepareResume?: () => Promise<PluginResumePreview>',
+  },
 );
 const executablePluginTools = executablePluginRegistrations.map((registration) => registration.name);
 const sortedExecutablePluginTools = [...executablePluginTools].sort();
@@ -7946,8 +8012,9 @@ assert.equal(
   // relocation_preferred_locations and reliable_transportation as standard,
   // expected_salary_text as sensitive, and workplace accommodations,
   // sponsorship by country, active clearance, foreign-government family ties
-  // and application notes as restricted.
-  '3e55e5bcca026212f672cf4eaeb30f9f6fd03f31e3409dfbb00f7f52ec606840',
+  // and application notes as restricted. PR #1975 adds only restricted
+  // eeo.military_service; every preexisting key keeps its classification.
+  '3464ba5b11d15958be49ce309e08957a7fa8c710d8755f1832f00793bb4438bd',
   'Application profile field keys and sensitivity classifications drifted from the reviewed conditional-scope catalog',
 );
 assert.deepEqual(
@@ -7984,6 +8051,9 @@ assertActiveFunctionDefinitionAst(
     if (required === null) return null;
     if (!args || typeof args !== 'object' || Array.isArray(args)) return required;
     const input = args as Record<string, unknown>;
+    if (toolName === 'trackly_prepare_resume_artifact' && input.operation === 'preview') {
+      required.push('profile:read', 'sensitive:read');
+    }
     if (toolName === 'trackly_update_status' && input.action === 'applied') {
       required.push('apply:write');
     }
@@ -8874,6 +8944,15 @@ assertActiveFunctionDefinitionAst(
 );
 assertActiveFunctionDefinitionAst(
   hostedPluginSource,
+  'readinessMissingProfileKey',
+  `function readinessMissingProfileKey(key: unknown): key is string {
+    return typeof key === 'string' && key.length <= 200
+      && (CANONICAL_PROFILE_KEY.test(key) || CANONICAL_EDUCATION_KEYS.has(key));
+  }`,
+  hostedPluginSourcePath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedPluginSource,
   'readinessProfileAvailable',
   `function readinessProfileAvailable(value: unknown): value is Record<string, unknown> {
     if (!readinessRecord(value)
@@ -8899,9 +8978,7 @@ assertActiveFunctionDefinitionAst(
       || percent !== expectedPercent
       || !Array.isArray(value.completeness.missingKeys)
       || value.completeness.missingKeys.length > 100
-      || !value.completeness.missingKeys.every((key) => (
-        typeof key === 'string' && key.length <= 200 && CANONICAL_PROFILE_KEY.test(key)
-      ))) return false;
+      || !value.completeness.missingKeys.every(readinessMissingProfileKey)) return false;
     const fields = Object.entries(value.fields);
     return fields.length <= 1_000 && fields.every(([key, field]) => (
       key.length <= 200
@@ -8937,13 +9014,15 @@ for (const statement of [
   }`,
   `const missingRequiredKeys = Array.isArray(profile?.completeness?.missingKeys)
     ? (profile.completeness.missingKeys as unknown[]).flatMap((key): string[] => (
-      typeof key === 'string' && key.length <= 200 && CANONICAL_PROFILE_KEY.test(key)
+      readinessMissingProfileKey(key)
         ? [key]
         : []
     )).slice(0, 100)
     : [];`,
   `const missingRequired = missingRequiredKeys.flatMap((key) => (
-    fieldLabels.has(key) ? [{ key, label: fieldLabels.get(key)! }] : []
+    key === 'documents.default_resume' && schemaProjectionAvailable
+      ? [{ key, label: 'Default resume' }]
+      : fieldLabels.has(key) ? [{ key, label: fieldLabels.get(key)! }] : []
   ));`,
   `const profileProjectionAvailable = schemaProjectionAvailable
     && profileBodyAvailable
@@ -9305,7 +9384,21 @@ const progressDescriptorProperties = staticBabelObjectProperties(
 assertBabelPropertyExpression(
   progressDescriptorProperties,
   'inputSchema',
-  `z.discriminatedUnion('operation', [
+  String.raw`z.discriminatedUnion('operation', [
+    z.object({
+      operation: z.literal('approve_resume'),
+      executionId: z.number().int().positive(),
+      expectedRevision: z.number().int().positive(),
+      originalSnapshotHash: z.string().regex(SHA256),
+      profileRevision: z.number().int().positive(),
+      resumeId: z.number().int().positive(),
+      resumeSha256: z.string().regex(SHA256),
+      resumeFilename: z.string().min(1).max(255).regex(/^[^\x00-\x1f/\\]+$/),
+      resumeSizeBytes: z.number().int().positive(),
+      expiresAt: z.string().datetime(),
+      explicitUserResumeApproval: z.literal(true),
+      idempotencyKey: z.string().min(16).max(200).regex(SAFE_IDEMPOTENCY_KEY),
+    }).strict(),
     z.object({
       operation: z.literal('bind_surface'),
       batchId: z.number().int().min(1),
@@ -9389,6 +9482,10 @@ assertActiveVariableInitializerAst(
       browserSurface: z.enum(APPLY_BROWSER_SURFACES),
       browserBindingHash: z.string().regex(SHA256).optional(),
       resumedAfterHandoff: z.boolean().optional(),
+      resumeId: z.number().int().positive().optional(),
+      resumeSha256: z.string().regex(SHA256).optional(),
+      resumeFilenameSha256: z.string().regex(SHA256).optional(),
+      resumeSizeBytes: z.number().int().positive().optional(),
     }).strict(),
   }).strict()`,
   hostedPluginSourcePath,
@@ -9398,6 +9495,21 @@ assertDescriptorUsesTopLevelBinding(
   progressRegistration,
   'outputSchema',
   'progressOutputSchema',
+  hostedPluginSourcePath,
+);
+assertWrappedHandlerGuardedBlockAst(
+  progressRegistration,
+  "params.operation === 'approve_resume'",
+  `{
+    const { operation, executionId, idempotencyKey, ...body } = params;
+    const response = await requestApi('POST', \`/api/jobscout/apply/executions/\${executionId}/resume-approval\`,
+      authToken, body, { 'Idempotency-Key': idempotencyKey });
+    if (response?.success !== true || response?.approval?.resumeId !== params.resumeId
+      || response?.approval?.resumeSha256 !== params.resumeSha256) {
+      throw new Error('Trackly did not persist the exact resume approval');
+    }
+    return { success: true, operation, recordedCount: 1, noSubmit: true as const };
+  }`,
   hostedPluginSourcePath,
 );
 assertWrappedHandlerAssignedRequestEndpoint(
@@ -9424,7 +9536,7 @@ const progressOutputProperties = schemaObjectPropertyAsts(
 );
 const progressOutputContract = {
   success: 'z.boolean()',
-  operation: "z.enum(['bind_surface', 'resume_parked', 'record_dispositions', 'record_observations', 'advance'])",
+  operation: "z.enum(['approve_resume', 'bind_surface', 'resume_parked', 'record_dispositions', 'record_observations', 'advance'])",
   recordedCount: 'z.number().int().nonnegative()',
   enabled: 'z.boolean().optional()',
   batchId: 'nullableCountSchema.optional()',
@@ -9459,65 +9571,7 @@ assert.deepEqual(
 for (const [field, expression] of Object.entries(progressOutputContract)) {
   assertSchemaPropertyExpression(progressOutputProperties, field, expression, 'progressOutputSchema');
 }
-const resumeRegistration = pluginToolRegistration('trackly_prepare_resume_artifact');
-const resumeDescriptorProperties = staticBabelObjectProperties(
-  resumeRegistration.call.arguments[1],
-  'trackly_prepare_resume_artifact descriptor',
-);
-assertBabelPropertyExpression(
-  resumeDescriptorProperties,
-  'inputSchema',
-  'z.object({}).strict()',
-  'trackly_prepare_resume_artifact descriptor',
-);
-assertDescriptorUsesTopLevelBinding(
-  hostedPluginSource,
-  resumeRegistration,
-  'outputSchema',
-  'resumeOutputSchema',
-  hostedPluginSourcePath,
-);
-const resumeOutputProperties = schemaObjectPropertyAsts(
-  hostedPluginSource,
-  'resumeOutputSchema',
-  hostedPluginSourcePath,
-);
-const resumeOutputContract = {
-  view: "z.literal('resume')",
-  success: 'z.boolean()',
-  requiresLocalAgentOrManualUpload: 'z.literal(true)',
-  automaticEmployerAttachment: 'z.literal(false)',
-  noSubmit: 'z.literal(true)',
-  nextAction: "z.literal('Choose or upload the resume manually, attach it to the visible Resume or CV field, then verify the visible filename before continuing.')",
-  privacy: "z.literal('No resume bytes, file identifiers, filenames, download URLs, tokens, or local paths were returned or stored.')",
-};
-assertExactSchemaProperties(resumeOutputProperties, resumeOutputContract, 'resumeOutputSchema');
-const resumeProjectionProperties = wrappedHandlerReturnedObjectProperties(
-  resumeRegistration,
-  hostedPluginSourcePath,
-);
-const resumeProjectionContract = {
-  view: "'resume' as const",
-  success: 'true',
-  requiresLocalAgentOrManualUpload: 'true',
-  automaticEmployerAttachment: 'false as const',
-  noSubmit: 'true as const',
-  nextAction: "'Choose or upload the resume manually, attach it to the visible Resume or CV field, then verify the visible filename before continuing.' as const",
-  privacy: "'No resume bytes, file identifiers, filenames, download URLs, tokens, or local paths were returned or stored.' as const",
-};
-assert.deepEqual(
-  Object.keys(resumeProjectionProperties),
-  Object.keys(resumeProjectionContract),
-  'trackly_prepare_resume_artifact handler must return only its locked manual-handoff fields',
-);
-for (const [field, expression] of Object.entries(resumeProjectionContract)) {
-  assertBabelPropertyExpression(
-    resumeProjectionProperties,
-    field,
-    expression,
-    'trackly_prepare_resume_artifact output projection',
-  );
-}
+verifyResumeToolContract({ hostedPluginSource, hostedPluginSourcePath, pluginToolRegistration, staticBabelObjectProperties, assertBabelPropertyExpression, assertDescriptorUsesTopLevelBinding, schemaObjectPropertyAsts, assertExactSchemaProperties, canonicalSchemaAst, parseFullSource });
 
 const certifyRegistration = pluginToolRegistration('trackly_certify_review_ready');
 const certifyInputProperties = namedProperties(objectSchemaProperties(
@@ -9537,7 +9591,10 @@ const certifyInputContract = {
   inspectionEpoch: 'z.number().int().min(0)',
   answerSnapshotHash: 'z.string().regex(SHA256)',
   wordingFingerprint: 'z.string().regex(SHA256)',
-  resumeDependency: "z.literal('not_applicable')",
+  resumeDependency: "z.enum(['not_applicable', 'approved'])",
+  resumeId: 'z.number().int().positive().optional()',
+  resumeSha256: 'z.string().regex(SHA256).optional()',
+  browserBindingHash: 'z.string().regex(SHA256).optional()',
   explicitUserTruthConfirmed: 'z.literal(true)',
   knownFieldsCommitted: 'z.literal(true)',
   idempotencyKey: 'z.string().min(16).max(170).regex(SAFE_IDEMPOTENCY_KEY)',
@@ -9558,6 +9615,11 @@ for (const [field, expression] of Object.entries(certifyInputContract)) {
 assertWrappedHandlerAst(
   certifyRegistration,
   `async ({ runId, idempotencyKey, ...binding }) => {
+    if (binding.resumeDependency === 'approved'
+      ? (!binding.resumeId || !binding.resumeSha256 || !binding.browserBindingHash)
+      : (binding.resumeId !== undefined || binding.resumeSha256 !== undefined || binding.browserBindingHash !== undefined)) {
+      throw new Error('Approved resume certification requires exact document and browser bindings');
+    }
     const response = await requestApi(
       'POST', \`/api/jobscout/apply/runs/\${runId}/plugin-review-ready\`, authToken,
       binding,
@@ -9755,11 +9817,18 @@ console.log(
 );
 }
 
+function verifyHostedResumeToolContract(source, sourcePath) {
+ const registrations = activeToolRegistrations(source, 'registerPluginTool', sourcePath);
+ return verifyResumeToolContract({ hostedPluginSource: source, hostedPluginSourcePath: sourcePath, pluginToolRegistration: name => { const matches = registrations.filter(item => item.name === name); assert.equal(matches.length, 1); return matches[0]; }, staticBabelObjectProperties, assertBabelPropertyExpression, assertDescriptorUsesTopLevelBinding, schemaObjectPropertyAsts, assertExactSchemaProperties, canonicalSchemaAst, parseFullSource });
+}
+
 module.exports = {
+  verifyHostedResumeToolContract,
   CHECKED_IN_HOSTED_FIXTURE_SHA256,
   APPLY_392_CHECKPOINT_ACTION_SCHEMA_SHA256,
   HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256,
   HOSTED_DEPLOYABLE_PATHS,
+  HOSTED_RESUME_SECURITY_SOURCE_SHA256,
   HOSTED_GIT_MAX_BUFFER,
   REVIEWED_GLOBAL_MIDDLEWARE_CALL_DIGESTS,
   REVIEWED_PLUGIN_SCOPED_MIDDLEWARE_CALL_DIGESTS,
@@ -9779,6 +9848,7 @@ module.exports = {
   assertPluginManualSubmissionRouteSemantics,
   assertPluginReviewReadyPersistenceSemantics,
   assertPluginRoutePrecedence,
+  assertResumeGlobalParserCarveout,
   assertPluginUiContractSemantics,
   assertServerListenSemantics,
   assertCommonJsDestructuredRequire,
@@ -9793,6 +9863,7 @@ module.exports = {
   assertMcpScopeHelperSemantics,
   assertMergeCommitPreservesPaths,
   assertHostedCommitTimestamps,
+  assertHostedResumeSecuritySourceSnapshots,
   assertHostedStartApplyRunBatchBindingGuard,
   assertJsonRpcResponseClassifierSemantics,
   assertStartRunWrapperCompatibility,

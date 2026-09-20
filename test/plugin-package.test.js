@@ -20,7 +20,10 @@ const ROOT = path.join(__dirname, '..');
 const PLUGIN = path.join(ROOT, 'plugins', 'trackly');
 
 const {
+  verifyHostedResumeToolContract,
+  assertResumeGlobalParserCarveout,
   HOSTED_DEPLOYABLE_PATHS,
+  HOSTED_RESUME_SECURITY_SOURCE_SHA256,
   activeNamedDefinitionAst,
   activeToolRegistrations,
   assertCommonJsDestructuredRequire,
@@ -39,6 +42,7 @@ const {
   assertMergeCommitPreservesPaths,
   assertHostedCommitTimestamps,
   assertHostedStartApplyRunBatchBindingGuard,
+  assertHostedResumeSecuritySourceSnapshots,
   assertJsonRpcResponseClassifierSemantics,
   assertStartRunWrapperCompatibility,
   assertWrappedHandlerParsesWithSchema,
@@ -510,6 +514,32 @@ test('coordinated hosted provenance rejects merge commits that alter reviewed de
     () => assertMergeCommitPreservesPaths(repository, sourceCommit, driftedCommit, ['deployable.ts']),
     /must exactly preserve reviewed source/,
   );
+  const firstParent = driftedCommit;
+  const tree = git('rev-parse', firstParent + '^{tree}');
+  const mergeCommit = git('commit-tree', tree, '-p', firstParent, '-p', sourceCommit, '-m', 'inherited baseline');
+  const record = {sourceCommit, mergeCommit, firstParent, relativePath: 'deployable.ts',
+    sourceSha256: sha256ExactBytes(git('show', sourceCommit + ':deployable.ts') + '\n'),
+    inheritedSha256: sha256ExactBytes(git('show', firstParent + ':deployable.ts') + '\n'),
+    originCommit: firstParent};
+  const verify = (records, commit = mergeCommit) => assertMergeCommitPreservesPaths(repository, sourceCommit, commit, ['deployable.ts'], records);
+  assert.doesNotThrow(() => verify([record]));
+  assert.throws(() => verify([]), /must exactly preserve/);
+  for (const mutation of [
+    {firstParent: sourceCommit}, {sourceCommit: firstParent}, {mergeCommit: sourceCommit},
+    {sourceSha256: '0'.repeat(64)}, {inheritedSha256: '0'.repeat(64)},
+    {originCommit: sourceCommit}, {relativePath: 'unused.ts'},
+  ]) assert.throws(() => verify([{...record, ...mutation}]));
+  assert.throws(() => verify([record, {...record}]), /unique/);
+  assert.throws(() => verify([record, {...record, relativePath: 'unused.ts'}]), /must all be used/);
+  const unrelatedOrigin = git('commit-tree', tree, '-m', 'unrelated matching bytes');
+  assert.throws(() => verify([{...record, originCommit: unrelatedOrigin}]), /Git provenance/);
+  fs.writeFileSync(path.join(repository, 'deployable.ts'), 'export const mergeOnly = true;\n');
+  git('add', 'deployable.ts');
+  const alteredTree = git('write-tree');
+  const alteredMerge = git('commit-tree', alteredTree, '-p', firstParent, '-p', sourceCommit, '-m', 'merge-only alteration');
+  assert.throws(() => verify([{...record, mergeCommit: alteredMerge}], alteredMerge), /merged hash changed/);
+  assert.throws(() => assertMergeCommitPreservesPaths(repository, sourceCommit, preservingCommit, ['deployable.ts'], [record]), /must all be used/);
+
 });
 
 test('coordinated hosted provenance binds fixture timestamps to exact Git commit metadata', (t) => {
@@ -3432,6 +3462,9 @@ test('conditional scope verification compares active function branch semantics',
   const expected = `
     function requiredScopesForPluginToolCall(toolName, input) {
       const required = requiredScopesForPluginTool(toolName);
+      if (toolName === 'trackly_prepare_resume_artifact' && input.operation === 'preview') {
+        required.push('profile:read', 'sensitive:read');
+      }
       if (toolName === 'trackly_update_status' && input.action === 'applied') {
         required.push('apply:write');
       }
@@ -3445,6 +3478,19 @@ test('conditional scope verification compares active function branch semantics',
     expected,
     'scope fixture',
   ));
+  const missingPreviewScopes = expected.replace(
+    "      if (toolName === 'trackly_prepare_resume_artifact' && input.operation === 'preview') {\n        required.push('profile:read', 'sensitive:read');\n      }\n",
+    '',
+  );
+  assert.throws(
+    () => assertActiveFunctionDefinitionAst(
+      missingPreviewScopes.replace('function requiredScopesForPluginToolCall', 'export function requiredScopesForPluginToolCall'),
+      'requiredScopesForPluginToolCall',
+      expected,
+      'missing preview scopes fixture',
+    ),
+    /must preserve its locked executable branch semantics/,
+  );
   const decoy = `
     export function requiredScopesForPluginToolCall(toolName, input) {
       // required.push('apply:write');
@@ -3517,6 +3563,58 @@ test('resume handoff projection supports expression handlers and excludes artifa
       resumeUrl: 'resume.url',
     }, 'resume fixture'),
     /must publish only its locked fields/,
+  );
+});
+
+test('hosted resume security snapshots reject every trust-boundary mutation and missing source', () => {
+  const adversarialMutations = {
+    'src/mcp/plugin-router.ts': ["import { pluginResumeDocuments } from './plugin-resume-store.js'; router.use('/resume', ipLimiter, requirePluginEnabled, pluginResumeRouter);", "import { pluginResumeDocuments } from './unreviewed-store.js';"],
+    'src/mcp/plugin-resume-capability.ts': ['cipher.setAAD(AAD);', '// cipher.setAAD(AAD);'],
+    'src/mcp/plugin-resume-document.ts': ['await dependencies.authorize(identity);', '/* authorization bypass */'],
+    'src/mcp/plugin-resume-router.ts': ["passport.initialize(), json({ limit: '8kb' })", "json({ limit: '8kb' })"],
+    'src/mcp/plugin-resume-store.ts': ['g.revoked_at IS NULL', 'TRUE'],
+    'src/services/application-profile/plugin-resume-attachment.ts': ["observation.resolution_code = 'attached'", "observation.resolution_code <> 'failed'"],
+    'src/index.ts': ["req.method === 'POST' && normalizedPath === '/api/plugin/trackly/mcp/resume'", "normalizedPath.startsWith('/api/plugin/trackly/mcp')"],
+  };
+  assert.deepEqual(
+    Object.keys(adversarialMutations).sort(),
+    Object.keys(HOSTED_RESUME_SECURITY_SOURCE_SHA256).sort(),
+  );
+  const sources = Object.fromEntries(Object.entries(adversarialMutations).map(
+    ([relativePath, [locked]]) => [relativePath, `reviewed ${locked} source`],
+  ));
+  const expected = Object.fromEntries(Object.entries(sources).map(
+    ([relativePath, source]) => [relativePath, sha256(source)],
+  ));
+  assert.doesNotThrow(() => assertHostedResumeSecuritySourceSnapshots(sources, {}, expected));
+  for (const [relativePath, mutation] of Object.entries(adversarialMutations)) {
+    const [locked, weakened] = mutation;
+    assert.ok(sources[relativePath].includes(locked));
+    assert.throws(
+      () => assertHostedResumeSecuritySourceSnapshots({
+        ...sources,
+        [relativePath]: sources[relativePath].replace(locked, weakened),
+      }, {}, expected),
+      /must preserve its exact reviewed source bytes/,
+      relativePath + ' security weakening must fail closed',
+    );
+  }
+  const routerPath = 'src/mcp/plugin-router.ts';
+  for (const changedRouter of [
+    sources[routerPath].replace("router.use('/resume', ipLimiter, requirePluginEnabled, pluginResumeRouter);", ''),
+    sources[routerPath].replace('ipLimiter, requirePluginEnabled, ', ''),
+    sources[routerPath].replace('./plugin-resume-store.js', './unreviewed-store.js'),
+  ]) {
+    assert.notEqual(changedRouter, sources[routerPath]);
+    assert.throws(() => assertHostedResumeSecuritySourceSnapshots({
+      ...sources, [routerPath]: changedRouter,
+    }, {}, expected), /must preserve its exact reviewed source bytes/);
+  }
+  const missing = { ...sources };
+  delete missing['src/mcp/plugin-resume-router.ts'];
+  assert.throws(
+    () => assertHostedResumeSecuritySourceSnapshots(missing, {}, expected),
+    /must inspect every locked security source exactly once/,
   );
 });
 
@@ -3906,8 +4004,8 @@ test('public skills reference only the locked 21-tool facade', () => {
     conditionalSensitiveScopes: 'required_only_for_requested_sensitive_fields',
     appliedStatusScope: 'tracking_write_plus_apply_write_for_run_reconciliation',
     jobBriefRecentPosts: 'validated_posted_at_only',
-    resumeHandling: 'manual_unbound_not_attested',
-    certifyReviewReady: 'atomic_checkpoint_truth_outcome_manual_resume_unbound',
+    resumeHandling: 'private_original_preview_exact_approval_verified_attachment_or_manual_unbound',
+    certifyReviewReady: 'atomic_checkpoint_truth_outcome_verified_original_or_manual_unbound',
     reconcileManualSubmission: 'atomic_current_epoch_evidence_outcome',
     submissionBoundary: 'manual_only_no_submit_tool',
   });
@@ -3961,7 +4059,10 @@ test('adapted trackly Apply skill is traceable to its source and safety invarian
   assert.match(skill, /exact frozen company, title, requisition URL, authorized origins/);
   assert.match(skill, /CAPTCHA, OTP, login credentials, account creation/);
   assert.match(skill, /visible success state or the user's explicit confirmation/);
-  assert.match(skill, /requiresLocalAgentOrManualUpload/);
+  assert.match(skill, /call `trackly_prepare_resume_artifact` with `operation: preview`/i);
+  assert.match(skill, /Previewing or opening the file is not approval/);
+  assert.match(skill, /literal `explicitUserResumeApproval: true`/);
+  assert.match(skill, /Never emit `attached` for a manual upload or from filename visibility alone/);
   assert.match(skill, /profile\.missingRequired/);
   assert.match(skill, /onboarding packet is schema\/readiness-driven because no employer form exists yet/);
   assert.match(skill, /before generating an employer-form question packet or filling controls/);
@@ -4062,7 +4163,9 @@ test('adapted trackly Apply skill is traceable to its source and safety invarian
   assert.doesNotMatch(lifecycle, /explicitUserResumeApproved/);
   assert.match(lifecycle, /`browserBindingHash`/);
   assert.match(lifecycle, /`evidenceFingerprint`/);
-  assert.match(lifecycle, /Do not send server-owned internals, resume IDs, filenames, paths, contents, download URLs, or answer values/);
+  assert.match(lifecycle, /Keep it out of logs, progress payloads, employer fields, and handoffs/);
+  assert.match(lifecycle, /A preview proves neither user approval nor employer attachment/);
+  assert.match(lifecycle, /Never record `attached` for a manual upload, from a visible filename alone, or from stale browser evidence/);
   assert.match(handoff, /filename check does not bind or attest the browser-local bytes/);
   assert.match(handoff, /verified preservation receipt and user-visible reachability proof/);
   assert.match(handoff, /Inventory membership alone is not visibility proof/);
@@ -4088,7 +4191,7 @@ test('submission fixtures cover six internal cases and the exact five-case porta
       'search-monitored-remote',
       'job-brief',
       'apply-to-review',
-      'reconcile-manual-submission',
+      'resume-apply',
     ],
     'portal submission must preserve the exact reviewed five-case sequence',
   );
@@ -4101,7 +4204,7 @@ test('submission fixtures cover six internal cases and the exact five-case porta
   assert.match(fixtures.reviewEnvironment.identifierPolicy, /never expose private lease/i);
   assert.match(fixtures.reviewEnvironment.reviewerProtocol.authenticationProof, /PKCE S256/i);
   assert.match(fixtures.reviewEnvironment.reviewerProtocol.discoveryProbeProof, /200[\s\S]*-32601/);
-  assert.match(fixtures.reviewEnvironment.reviewerProtocol.safetyBoundary, /No case may activate/i);
+  assert.match(fixtures.reviewEnvironment.reviewerProtocol.safetyBoundary, /Never activate.*Submit/i);
   const portalBriefs = fixtures.reviewEnvironment.portalCaseBriefs;
   assert.equal(portalBriefs.length, 8);
   assert.deepEqual(
@@ -4129,7 +4232,7 @@ test('submission fixtures cover six internal cases and the exact five-case porta
     credentialSource: 'The exact unexpired demo email and password entered in the OpenAI Platform reviewer-access fields',
     requiredEvidence: 'A clean external browser must complete consent, direct sign-in, authorization-code exchange, MCP initialization, tools/list, and one read-only fixture using the submitted credentials',
   });
-  assert.match(fixtures.reviewEnvironment.submissionPolicy, /No fixture may submit/);
+  assert.match(fixtures.reviewEnvironment.submissionPolicy, /Never submit an application/);
   assert.doesNotMatch(JSON.stringify(fixtures), /\b(?:Kevin|Astuhuaman)\b/i, 'submission fixtures must not leak a real reviewer identity');
   assert.doesNotMatch(
     JSON.stringify(fixtures.reviewEnvironment.authentication),
@@ -4147,8 +4250,9 @@ test('submission fixtures cover six internal cases and the exact five-case porta
     monitored.turns.map((turn) => turn.expected || []),
     [[], ['trackly_search_jobs'], [], ['trackly_update_status', 'trackly_update_status']],
   );
-  assert.match(monitored.turns[2].content, /4101 and 4103/);
-  assert.match(monitored.turns[3].content, /job 4101 once and fixture job 4103 once/);
+  assert.match(monitored.turns[2].content, /two jobs I explicitly choose from the returned results/);
+  assert.match(monitored.turns[3].content, /two explicitly chosen returned job IDs once/);
+  assert.match(monitored.turns[3].content, /Do not invent IDs or update any other job/);
   assert.deepEqual(
     monitored.expected,
     ['trackly_search_jobs', 'trackly_update_status', 'trackly_update_status'],
@@ -4158,6 +4262,10 @@ test('submission fixtures cover six internal cases and the exact five-case porta
   assert.ok(fixtures.negative.every((item) => item.whyOutOfScope));
   assert.ok(fixtures.positive.some((item) => item.id === 'apply-to-review'));
   const applyToReview = fixtures.positive.find((item) => item.id === 'apply-to-review');
+  assert.deepEqual(applyToReview.attachmentBranches.automatic.expectedOperations, ['approve_resume', 'record_observations']);
+  assert.deepEqual(applyToReview.attachmentBranches.manual.expectedOperations, ['approve_resume']);
+  assert.ok(!applyToReview.expectedResultShape.includes('document.openUrl'));
+  assert.match(applyToReview.mustNot.join(' '), /private preview capability in model-visible content/);
   assert.deepEqual(applyToReview.turns.map((turn) => turn.role), ['user', 'assistant', 'user', 'assistant', 'user', 'assistant']);
   assert.deepEqual(
     applyToReview.turns.map((turn) => turn.expected || []),
@@ -4168,13 +4276,11 @@ test('submission fixtures cover six internal cases and the exact five-case porta
         'trackly_start_or_resume_apply',
         'trackly_get_apply_work',
         'trackly_get_job',
-        'trackly_get_apply_work',
         'trackly_report_apply_progress',
         'trackly_prepare_resume_artifact',
-        'trackly_report_apply_progress',
       ],
       [],
-      [],
+      ['trackly_report_apply_progress'],
       [],
       ['trackly_certify_review_ready', 'trackly_get_apply_work'],
     ],
@@ -4186,7 +4292,6 @@ test('submission fixtures cover six internal cases and the exact five-case porta
       'trackly_start_or_resume_apply',
       'trackly_get_apply_work',
       'trackly_get_job',
-      'trackly_get_apply_work',
       'trackly_report_apply_progress',
       'trackly_prepare_resume_artifact',
       'trackly_report_apply_progress',
@@ -4194,25 +4299,21 @@ test('submission fixtures cover six internal cases and the exact five-case porta
       'trackly_get_apply_work',
     ],
   );
-  assert.match(applyToReview.turns[1].content, /Before filling, bind each verified browser surface with operation bind_surface/);
-  assert.match(applyToReview.turns[1].content, /after the first pass report value-free progress with a separate fresh idempotency key/);
-  assert.match(applyToReview.turns[2].content, /attached the intended resume.*filename/s);
-  assert.match(applyToReview.turns[2].content, /Synthetic-Reviewer-0001-Resume\.pdf/);
-  assert.match(applyToReview.turns[4].content, /exact complete application.*truthful/s);
+  assert.match(applyToReview.turns[1].content, /Bind the verified visible browser/);
+  assert.match(applyToReview.turns[1].content, /Ask for explicit approval; do not attach yet/);
+  assert.match(applyToReview.turns[2].content, /approve the exact résumé just previewed/);
+  assert.match(applyToReview.turns[3].content, /Never infer attachment from approval/);
+  assert.match(applyToReview.turns[4].content, /completed application shown is accurate/);
   assert.ok(applyToReview.turns.slice(0, 5).every((turn) => !(turn.expected || []).includes('trackly_certify_review_ready')));
-  assert.match(applyToReview.turns[5].content, /immediately refetch.*only after the refetch verifies the durable review-ready handoff/s);
+  assert.match(applyToReview.turns[5].content, /Refetch durable state.*before Submit/s);
   assert.deepEqual(
     applyToReview.expectedResultShape,
     [
-      'profile.missingRequired[].key',
-      'profile.missingRequired[].label',
-      'profile.availableFields[].key',
-      'profile.availableFields[].label',
       'executionId',
       'batchId',
       'memberIds',
-      'nextAction',
-      'requiresLocalAgentOrManualUpload',
+      'document.filename',
+      'document.sha256',
       'visibleFilenameConfirmation',
       'durableReviewReady',
       'manualSubmitRequired',
@@ -4317,4 +4418,71 @@ test('trusted pre-plugin middleware must resolve only to its reviewed import', (
       /must resolve only to its import/,
     );
   }
+});
+
+test('resume preview keeps capability out of model output and preserves component metadata', () => {
+ const source = `const resumeOutputSchema = z.object({
+  view: z.literal('resume'),
+  success: z.boolean(),
+  requiresLocalAgentOrManualUpload: z.literal(true),
+  automaticEmployerAttachment: z.literal(false),
+  noSubmit: z.literal(true),
+  nextAction: z.string(),
+  privacy: z.string(),
+  document: z.object({ resumeId: z.number().int().positive(), filename: z.string(), mimeType: z.string(), sha256: z.string().regex(SHA256), sizeBytes: z.number().int().positive(), expiresAt: z.number().int().positive() }).strict().optional(),
+}).strict();
+export function createTracklyPluginMcpServer() {
+  registerPluginTool('trackly_prepare_resume_artifact', {
+    title: 'Preview your saved resume',
+    description: 'Preview the original default resume using operation preview. Opening the document does not approve employer upload or represent an attachment. Without an operation, returns manual upload instructions.',
+    inputSchema: z.object({ operation: z.literal('preview').optional() }).strict(),
+    outputSchema: resumeOutputSchema,
+    _meta: tracklyPluginToolUiMeta(
+      'resume',
+      'Preparing résumé preview…',
+      'Résumé options ready',
+    ),
+    annotations: readOnlyAnnotations,
+  }, async ({ operation }) => {
+    try {
+      if (operation === 'preview') {
+        if (!prepareResume) throw new Error('Resume preview is unavailable on this host');
+        const { openUrl, ...document } = await prepareResume();
+        return { ...resultContent({ view: 'resume' as const, success: true, requiresLocalAgentOrManualUpload: true as const,
+          automaticEmployerAttachment: false as const, noSubmit: true as const, document,
+          nextAction: 'Open and review the original resume. Obtain explicit approval of this exact document before any employer upload. Opening the preview is not approval.',
+          privacy: 'Private document access is delivered only to the preview component. No employer upload has occurred.' }, true),
+          _meta: { 'trackly/resumeOpenUrl': openUrl } };
+      }
+      return resultContent({
+      view: 'resume' as const,
+      success: true,
+      requiresLocalAgentOrManualUpload: true,
+      automaticEmployerAttachment: false as const,
+      noSubmit: true as const,
+      nextAction: 'Choose or upload the resume manually, attach it to the visible Resume or CV field, then verify the visible filename before continuing.' as const,
+      privacy: 'No resume bytes, file identifiers, filenames, download URLs, tokens, or local paths were returned or stored.' as const,
+      }, true);
+    } catch (error) { return errorContent(error, 'Failed to prepare resume handoff'); }
+  });
+
+}`;
+ assert.doesNotThrow(() => verifyHostedResumeToolContract(source, 'private preview fixture'));
+ for (const [original, changed] of [["document,\n", "document: { ...document, openUrl },\n"], ["_meta: { 'trackly/resumeOpenUrl': openUrl }", "structuredContent: { openUrl }"], ["const { openUrl, ...document } = await prepareResume();", "const document = await prepareResume(); const openUrl = document.openUrl;"]]) {
+ assert.ok(source.includes(original));
+ assert.throws(() => verifyHostedResumeToolContract(source.replace(original, changed), 'leaked capability'), /component-only capability semantics/);
+ }
+});
+
+test('resume parser carveout rejects widening, removal and fallback changes', () => {
+ const source = `export function createApp() { app.use((req, res, next) => { const normalizedPath = (req.path.replace(/\\/+$/, '') || '/').toLowerCase(); if (req.method === 'POST' && normalizedPath === '/api/plugin/trackly/mcp/resume') return next(); return express.json({ limit: '10mb' })(req, res, next); }); app.use((req, res, next) => { const normalizedPath = (req.path.replace(/\\/+$/, '') || '/').toLowerCase(); if (req.method === 'POST' && normalizedPath === '/api/plugin/trackly/mcp/resume') return next(); return express.urlencoded({ extended: false })(req, res, next); }); }`;
+ assert.doesNotThrow(() => assertResumeGlobalParserCarveout(source, 'parser fixture'));
+ const secondParserAt = source.lastIndexOf('app.use(');
+ assert.throws(() => assertResumeGlobalParserCarveout(source.slice(0, secondParserAt) + '}', 'removed URL parser'), /reviewed JSON and URL-encoded parsers/);
+ const prefix = source.slice(0, secondParserAt), secondParser = source.slice(secondParserAt);
+ for (const changed of [secondParser.replace('.toLowerCase()', ''), secondParser.replace("'POST'", "'GET'"), secondParser.replace("normalizedPath === '/api/plugin/trackly/mcp/resume'", "normalizedPath.startsWith('/api/plugin')")]) {
+   assert.throws(() => assertResumeGlobalParserCarveout(prefix + changed, 'weakened URL parser'));
+ }
+
+ for (const mutated of [source.replace("'POST'", "'GET'"), source.replace("normalizedPath === '/api/plugin/trackly/mcp/resume'", "normalizedPath.startsWith('/api/plugin')"), source.replace("if (req.method === 'POST' && normalizedPath === '/api/plugin/trackly/mcp/resume') return next();", ''), source.replace("'10mb'", "'100mb'"), source.replace("return express.urlencoded({ extended: false })", "return express.urlencoded({ extended: true })"), source.replace("return express.urlencoded({ extended: false })(req, res, next);", "return next();")]) assert.throws(() => assertResumeGlobalParserCarveout(mutated, 'mutated parser'));
 });

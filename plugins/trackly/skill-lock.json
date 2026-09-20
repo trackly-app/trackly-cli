@@ -8,7 +8,7 @@
   },
   "adapted": {
     "path": "plugins/trackly/skills/trackly-apply",
-    "treeSha256": "4d52cba854c1d4871666d670d869ed0eea6404805948b672258df908f4936675"
+    "treeSha256": "aecf7cf0ee53bac98d1fe4703ad58897ee6655b5bf7cccccd2e622ff53c5cf07"
   },
   "adaptation": {
     "reason": "The public plugin facade intentionally exposes a smaller stable tool vocabulary than the full local trackly Apply MCP contract.",
@@ -46,8 +46,8 @@
     "conditionalSensitiveScopes": "required_only_for_requested_sensitive_fields",
     "appliedStatusScope": "tracking_write_plus_apply_write_for_run_reconciliation",
     "jobBriefRecentPosts": "validated_posted_at_only",
-    "resumeHandling": "manual_unbound_not_attested",
-    "certifyReviewReady": "atomic_checkpoint_truth_outcome_manual_resume_unbound",
+    "resumeHandling": "private_original_preview_exact_approval_verified_attachment_or_manual_unbound",
+    "certifyReviewReady": "atomic_checkpoint_truth_outcome_verified_original_or_manual_unbound",
     "reconcileManualSubmission": "atomic_current_epoch_evidence_outcome",
     "submissionBoundary": "manual_only_no_submit_tool"
   },
@@ -143,9 +143,9 @@
       "trackly_clear_apply_access_deferment": "31cde6cfa9f1a4c48dda7cfcb69092682a9d6333da8669ec5ff3ef4a784a8c95",
       "trackly_start_or_resume_apply": "6c372e9bcbf7248f7c45a14ae0dc2efed9994309518c359b786746c65f165a8c",
       "trackly_get_apply_work": "5fbcf31759ee849b4e38389142a5fc7f37b3ebfee550b90942ab25e348f5f98a",
-      "trackly_report_apply_progress": "695d84f6364f50b7ec21a4ebfefce75cc78a3a3073c02ff0f41884358420aeb6",
-      "trackly_prepare_resume_artifact": "f05e1d7bb5b6348af45c07d76a10649c7bc623532a37f829b1798269dc903e9d",
-      "trackly_certify_review_ready": "1535a71a12cd7fed0bc7435b3a0c7427809a39247bedee029775bd4295dd2b69",
+      "trackly_report_apply_progress": "2807573fa47f3ce528bfd8e20c17b0dfd0623bdc8489ec4fd792a0291810deeb",
+      "trackly_prepare_resume_artifact": "21014529099c60bebffe99979789506e573c4e434dbf12c4c31fedf87469dc29",
+      "trackly_certify_review_ready": "24e9672c1c0498ef38eec7385957278e3875a9a4310dd34daac79dad5132d453",
       "trackly_reconcile_manual_submission": "c300b386c95c3119b80de120fcbecfb663c2afcbf9978715f83ba63b545db7ef",
       "trackly_stop_apply": "2d28c84e84846edaeec93a0b59439690e37f4e960695c78a68ff41fd56b35c84"
     },
@@ -166,14 +166,14 @@
       "trackly_clear_apply_access_deferment": "de6b29b8469b758f5252edc565cc33d6e5a07c43a97cc2f7e8ebf3f0e3342e0b",
       "trackly_start_or_resume_apply": "75704d2c12e6e5cbd754e7ddec6dc38cf69ab54f00cf7e50b3e7a2f1eb7a06f7",
       "trackly_get_apply_work": "f04236fa329f2a3acb2fd71486dc26fe2d8d762f90be17d903c0539aecf6535d",
-      "trackly_report_apply_progress": "b9f265e6ed97feb2dd4023561c03cdf686a055fa7f0540c9cc8fc1c82d41d07c",
-      "trackly_prepare_resume_artifact": "bcc1f89678a3cd53aed2864556a8afb056a94535a85051d39379e5b71e98d3ed",
-      "trackly_certify_review_ready": "7e875ca5fb20e3e746c79aa70a8c717b9d91f2183447497f258df31849fa82df",
+      "trackly_report_apply_progress": "61418579d192bcc44a273b4480fadd09ebec292f4a6ea1145ef0ac6da316c4c2",
+      "trackly_prepare_resume_artifact": "a83b1f55b59755d302c82d26dc0e3883b4aa6728463fb18a9609e4fdb333101b",
+      "trackly_certify_review_ready": "1d2aad91eccd40d9f8cb9ead56275ba61d2981bc928d342171ac63adf5c911bb",
       "trackly_reconcile_manual_submission": "32be19dadef3c8e3a1d9f320d3c1a9a0cde3845f930dac85641409f25a722b0a",
       "trackly_stop_apply": "8363bfe5eb7fb8ed4093b1f01bdaa9ebcb599ac35004fd13bab0ae6a2ab4f1ce"
     },
-    "pluginServerSha256": "a34367d9d399368b1cda28dc637a4fe532c573c7ecfc5865896ae38164b7d50f",
-    "pluginScopesSha256": "1bc08af5a67a2e3b5d56dbc566dbfc1cbb00e2bceaaa969be4f8e2eee4234250",
+    "pluginServerSha256": "83b7fb66e9354c461b166c71504958d9fd8ec0bd8554a1a91efb7eeb6c2858e4",
+    "pluginScopesSha256": "3a93ac65789c7eba69b0b500c0fcd22d0ec1d68fa0a0ef7a5ed0e997b841b3f6",
     "jobBriefServiceSha256": "10f30d6564472125d24cd52dfd9c4ae54dfb9c6c4958d14f44db4ec9e276d0f2",
     "backendUiRedirectSha256": "3d1018e472992626d39299be89ee8e996930fb76ce0f69155f2f63bb6f34d55e",
     "maintenanceModeSha256": "0409b32355a014ecc4d64056bf251fcde5f377400fe4f7485e70795420b25afe",
@@ -182,7 +182,7 @@
     "reviewIdentitySha256": "d03432434c10bbfd0e53f51b2d475f0adf3ada88ac85c2c0534791be0bf03c10",
     "azureRateLimitOptionsSha256": "67321eae458cc1d7c44d1fe7511aa05c86a98d0ea0af9b774cc3ee4a014bf820",
     "authRateLimitSha256": "6929621038a85cc53da3fe239851de693148cb9fb917504ac04bb4cac44e5e17",
-    "applicationProfileServiceSha256": "0e9f143c133dbd103c2865bf4417ade5258d155ed4e41a8189e23c756005d1f4",
+    "applicationProfileServiceSha256": "7fa01a6a53f71dd9719a16c927ad821401d285cfdd4cb1c6d5c1225ec3da689e",
     "schemaSha256": {
       "SAFE_IDEMPOTENCY_KEY": "046859665306e5aeaf57032c76268934e1b98c95d4c17a88434062c9b6a4547a",
       "SAFE_CODE": "a35176c6c3f6ee563d4b6f6f68e4c546d8b03b03915d37bf55dd5a7011927574",
@@ -194,9 +194,9 @@
       "profileFieldReferenceSchema": "f9784ffa6175af0782a4e5479c8ffd59ed1f0767e7104295755bd1e4e00c35cf",
       "readinessOutputSchema": "cbaa953a22953a22109a9b39efbe37d5eb2fd9093668c9629f856041e14ed0d0",
       "applyOutputSchema": "f97c1ac864ee82818b29851c8a3a45dacbf1c6eb34b4947c478b9ea212ce57ed",
-      "progressOutputSchema": "f872dd56e9d1ef6f7bb07723b90f086487ec8eb1242718fb0ae4a15f2344aa85",
+      "progressOutputSchema": "f2e5d9609a1975418cbf31c00c0520646ab292c263c8c9e52bf1ce1b577042c5",
       "reviewOutputSchema": "a6e1fbdb32df0f8f72ddbc1c7f93f78ffce9b31580222f6a1efa74fc62fcead8",
-      "resumeOutputSchema": "14fc07ae13c6b4f38d54f658edb55fdb00d16f6fdc77fa966235fdf4d9665af6"
+      "resumeOutputSchema": "0431427fc9b818c540b52085dbecfbeba716d1fb373096fd3054e5093b86a4bb"
     },
     "transitiveSchemaSha256": {
       "APPLY_EXECUTION_MAX_TARGET": "f5ca38f748a1d6eaf726b8a42fb575c3c71f1864a8143301782de13da2d9202b",

@@ -144,7 +144,7 @@ the host's own browser tool, and only the user clicks Submit.
 | `trackly_get_apply_readiness` | true | false | Makes five parallel GETs for profile, schema, queue, protocol and execution state. |
 | `trackly_lint_application_text` | true | false | Computes in memory only. Text is neither stored nor echoed. |
 | `trackly_list_apply_access_deferments` | true | false | Lists the account's active deferments. |
-| `trackly_prepare_resume_artifact` | true | false | Returns static manual-upload instructions and makes no request. |
+| `trackly_prepare_resume_artifact` | true | false | Reads the original saved résumé and issues a private expiring preview; never attaches or submits. |
 | `trackly_update_status` | false | false | Sets a tracker stage (saved, dismissed or applied). The same tool reverses it. |
 | `trackly_save_application_answers` | false | true | Overwrites saved profile answers. The education list is a confirmed replace-all. |
 | `trackly_grant_sensitive_storage_consent` | false | false | Records consent only. Adds no answers and can be revoked. |
@@ -153,7 +153,7 @@ the host's own browser tool, and only the user clicks Submit.
 | `trackly_clear_apply_access_deferment` | false | false | Soft-clears one deferment (`cleared_at`), which can be re-deferred. |
 | `trackly_start_or_resume_apply` | false | false | Creates or resumes a no-submit Apply execution and claims its batch lease. |
 | `trackly_get_apply_work` | false | false | Not read-only, because each call claims or renews the private batch lease. |
-| `trackly_report_apply_progress` | false | false | Records value-free observations and dispositions, or advances the execution to its next wave. Advancing only queues new no-submit work and never deletes or overwrites user data. |
+| `trackly_report_apply_progress` | false | false | Records exact-document approval, value-free observations and dispositions, or advances the execution to its next wave. Advancing only queues new no-submit work and never deletes or overwrites user data. |
 | `trackly_certify_review_ready` | false | false | Records a review-ready checkpoint. Never submits. |
 | `trackly_reconcile_manual_submission` | false | false | Records a submission the user made themselves. Never submits forms. |
 | `trackly_stop_apply` | false | true | Moves the execution to a terminal stopped state. Continuing requires a new execution. |
@@ -176,13 +176,13 @@ non-destructive, which matches the Destructive column above, and idempotent (ret
 - Run `npm run test:hosted-contract` without `TRACKLY_BACKEND_DIR` and require the checked-in hosted-tool contract fixture to pass in the standalone CLI checkout.
 - Separately run `TRACKLY_BACKEND_DIR=/absolute/path/to/granola-followup-app npm run test:hosted-contract` against the exact backend release candidate and require the executable plugin catalog to match the locked 21-tool allowlist.
 - Run `TRACKLY_BACKEND_DIR=/absolute/path/to/granola-followup-app npm run test:review-auth-contract` against the exact deployed reviewer-auth runtime and require its dedicated identity, credential, migration, token-lifecycle, and plugin-resource bindings to pass. This is independent of the fixture-pinned Trackly Apply provenance gate above; do not require both checks to use the same historical backend checkout.
-- Execute all six internal positive and all three negative `listing/submission-tests.json` fixtures with the synthetic reviewer account. The OpenAI portal accepts exactly five positive cases: submit only the five IDs listed in `reviewEnvironment.portalPositiveCaseIds`, plus all three negative cases. Preserve the result shapes, tool sequence, manual-resume filename confirmation, and forbidden-action evidence for the submission packet.
+- Execute all six internal positive and all three negative `listing/submission-tests.json` fixtures with the synthetic reviewer account. The OpenAI portal accepts exactly five positive cases: submit only the five IDs listed in `reviewEnvironment.portalPositiveCaseIds`, plus all three negative cases. Preserve the result shapes, tool sequence, exact-resume approval and attachment evidence (or explicit manual fallback), and forbidden-action evidence for the submission packet.
 - Use the reviewer-facing briefs in `listing/submission-tests.json` when copying
   cases into the portal. They are deliberately separate from internal tool
   traces and must remain self-contained: prompt, fixture data, expected
   workflow/result, and (for negatives) why the request is out of scope.
 - From a clean external browser with no Trackly or identity-provider session, use the exact credentials copied into the OpenAI submission and prove consent, direct password sign-in, authorization-code exchange, token validation, MCP initialization, `tools/list`, and one read-only fixture. Record the timestamp and redacted result; never record the password or tokens. A Google/Apple sign-in or a source-only/unit-test result does not satisfy this gate.
-- Prove readiness exposes only canonical missing-profile keys and public labels; start/resume returns the claimed batch-bound wave without crossing OAuth grants; review certification lands its checkpoint, truth certification, and review-ready outcome atomically while leaving manual resumes unbound; and manual reconciliation lands typed evidence and submitted outcome atomically.
+- Prove readiness exposes only canonical missing-profile keys and public labels; start/resume returns the claimed batch-bound wave without crossing OAuth grants; review certification lands its checkpoint, truth certification, and review-ready outcome atomically while binding verified approved originals and leaving unverified manual resumes unbound; and manual reconciliation lands typed evidence and submitted outcome atomically.
 - Prove the authenticated facade owns batch leases and no public tool schema or result exposes a lease token to the model.
 - Prove the facade renews its private lease on every work and mutation path and returns only the bounded progress projection, never raw run results or identifiers.
 - Logo approval complete: after a side-by-side comparison with the approved PNG, on 2026-08-10 Pacific Time Kevin approved the exact packaged `assets/trackly-appicon.svg` bytes with SHA-256 `1bd52951de41a49bb87813207884797619390a82c0992ad5a1ea2d447daee21c` for the OpenAI listing. The approval covers the logo only and does not authorize OpenAI Submit or Publish. Any packaged-asset byte change invalidates this approval and requires a new side-by-side comparison and explicit approval.
@@ -228,3 +228,14 @@ non-destructive, which matches the Destructive column above, and idempotent (ret
 - Kevin must approve the exact listing, packaged logo asset, privacy and terms URLs, test cases, scanned tool metadata, production MCP URL, regional availability, release notes, and policy attestations immediately before selecting **Submit for Review**.
 - **Submit for Review** is a separate action from publication. Draft creation, domain verification, tool scanning, and draft validation do not authorize submission.
 - After OpenAI approval, ask Kevin again immediately before selecting **Publish**.
+
+### Original résumé release proof
+
+- Preview the saved original filename, size and SHA-256; do not regenerate bytes from extracted text. Verify expiry, grant revocation, auth epoch changes and replacement invalidate access.
+- Preview is not upload approval. Record explicit consent for the exact file and current execution.
+- Test actual retrieval and upload on each supported host; MCP Apps support alone does not prove attachment support. Use an honest manual handoff where unavailable.
+- Verify original bytes before upload and the visible employer filename afterward. Later removal, failure, changed bytes or stale approval must block review readiness.
+- Preserve a visible editable employer form. Picture-in-picture and remote streaming are deferred.
+- Select current job IDs from tool results; never claim placeholder jobs or an undeployed form exist. The fifth portal positive case resumes interrupted work. Manual-submission reconciliation remains an internal case requiring actual evidence.
+
+Private resume access is component-only tool-result metadata, never model-visible content. Prove a documented secure host-mediated materialization path before claiming automatic attachment. Otherwise the user downloads the original through the preview component and attaches it manually; keep that upload unbound.
