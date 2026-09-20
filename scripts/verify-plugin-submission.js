@@ -36,7 +36,7 @@ const EXPECTED_PORTAL_POSITIVE_IDS = Object.freeze([
   'search-monitored-remote',
   'job-brief',
   'apply-to-review',
-  'reconcile-manual-submission',
+  'resume-apply',
 ]);
 const REQUIRED_URL_KEYS = Object.freeze([
   'websiteURL',
