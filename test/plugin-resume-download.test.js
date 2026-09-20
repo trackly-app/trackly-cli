@@ -7,7 +7,7 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const helper = '../plugins/trackly/skills/trackly-apply/scripts/verify-downloaded-resume.js';
-const { verifyDownloadedResume, MAX_BYTES } = require(helper);
+const { verifyDownloadedResume, MAX_BYTES, assertSupportedPlatform } = require(helper);
 const bytes = Buffer.from('%PDF-1.7\nOriginal bytes\0\xff', 'utf8');
 const approved = { filename: 'Resume - Test Applicant.pdf', sha256: createHash('sha256').update(bytes).digest('hex'), sizeBytes: bytes.length };
 async function fixture(t) {
@@ -42,7 +42,7 @@ test('rejects wrong digest, lengths, non-files and symlinks without changing sou
 });
 test('rejects unsafe filenames and invalid approved metadata', async t => {
   const { file } = await fixture(t);
-  for (const filename of ['', '..', '.', '../escape.pdf', '/escape.pdf', 'a\\b.pdf', 'a:b.pdf', 'a\0.pdf', 'a\n.pdf', 'NUL.pdf', 'COM1.pdf', 'LPT9', 'trailing.', 'trailing ', 'x'.repeat(241)]) {
+  for (const filename of ['', '..', '.', '../escape.pdf', '/escape.pdf', 'a\\b.pdf', 'a:b.pdf', 'a<b.pdf', 'a>b.pdf', 'a"b.pdf', 'a|b.pdf', 'a?b.pdf', 'a*b.pdf', 'a\0.pdf', 'a\n.pdf', 'NUL.pdf', 'COM1.pdf', 'LPT9', 'trailing.', 'trailing ', 'x'.repeat(241)]) {
     await assert.rejects(verifyDownloadedResume(file, { ...approved, filename }));
   }
   for (const sizeBytes of [0, -1, 1.5, '24', NaN, Infinity, MAX_BYTES + 1]) {
@@ -51,6 +51,40 @@ test('rejects unsafe filenames and invalid approved metadata', async t => {
   for (const sha256 of ['', 'abc', 'A'.repeat(64), null]) await assert.rejects(verifyDownloadedResume(file, { ...approved, sha256 }));
   for (const metadata of [null, undefined, {}, 'metadata']) await assert.rejects(verifyDownloadedResume(file, metadata));
   for (const input of ['relative.pdf', 'https://example.com/file.pdf', '', null, '/tmp/file\0.pdf']) await assert.rejects(verifyDownloadedResume(input, approved));
+});
+test('fails closed on unsupported platforms or unavailable safe file-open flags', () => {
+  const supportedFlags = { O_NOFOLLOW: 0x20000, O_NONBLOCK: 0x800 };
+  for (const platform of ['linux', 'darwin']) assert.doesNotThrow(() => assertSupportedPlatform(platform, supportedFlags));
+  for (const platform of ['win32', 'freebsd', 'unknown']) assert.throws(() => assertSupportedPlatform(platform, supportedFlags));
+  for (const missing of ['O_NOFOLLOW', 'O_NONBLOCK']) {
+    for (const value of [undefined, 0, -1, 1.5, '1']) assert.throws(() => assertSupportedPlatform('linux', { ...supportedFlags, [missing]: value }));
+  }
+});
+test('entrypoint refuses unsupported platform before reading or copying the source', async t => {
+  const { file } = await fixture(t);
+  const program = `Object.defineProperty(process, 'platform', { value: 'win32' }); require(${JSON.stringify(require.resolve(helper))}).verifyDownloadedResume(${JSON.stringify(file)}, ${JSON.stringify(approved)}).then(() => process.exitCode = 99, error => { process.stderr.write(error.message); process.exitCode = 1; });`;
+  const result = spawnSync(process.execPath, ['-e', program], { encoding: 'utf8' });
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, '');
+  assert.equal(result.stderr, 'Resume verification failed');
+  assert.deepEqual(await fs.readFile(file), bytes);
+});
+test('rejects filesystems that do not enforce private directory permissions', async t => {
+  const { file } = await fixture(t);
+  const originalChmod = fs.chmod;
+  let createdDirectory;
+  t.after(() => { fs.chmod = originalChmod; });
+  fs.chmod = async function (target, mode) {
+    if (mode === 0o700) {
+      createdDirectory = target;
+      return originalChmod(target, 0o755);
+    }
+    return originalChmod(target, mode);
+  };
+  await assert.rejects(verifyDownloadedResume(file, approved));
+  assert.ok(createdDirectory);
+  await assert.rejects(fs.stat(createdDirectory), { code: 'ENOENT' });
+  assert.deepEqual(await fs.readFile(file), bytes);
 });
 test('rejects oversized downloaded files even with small claimed size', async t => {
   const { file } = await fixture(t);

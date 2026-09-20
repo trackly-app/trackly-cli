@@ -10,7 +10,11 @@ Arm the documented download observer, then activate Download resume. Use the art
 
 Immediately before attachment verify the original filename, SHA-256 and size. On hosts with Node.js and local file access, use scripts/verify-downloaded-resume.js with --path, --filename, --sha256 and --size, using safe argument passing. Use its verified private copy, which preserves the original filename. Keep local paths out of Trackly progress reports. Other hosts require an equivalent documented verifier.
 
+This verifier supports macOS and Linux only, requires no-follow file-open support and enforced private filesystem permissions, and accepts files up to 10 MiB (10,485,760 bytes). Unsupported platforms, unsafe filenames and larger files fail closed; do not rename the approved file, bypass checks or split it to proceed. Use an equivalent documented host verifier where available or report the specific limitation.
+
 Before creating the private copy, establish its cleanup owner: the active host workflow must retain the returned local path and register cleanup for success, failure, cancellation and session end. The verifier cleans up its own failed copy creation, but does not expire a successfully returned copy. If the host cannot guarantee cleanup after the workflow or provide a documented bounded TTL for the private artifact, do not materialize it. Do not assume the system temporary directory expires files promptly, and do not start a cleanup daemon.
+
+The helper is not crash-proof cleanup: process termination, host failure or power loss can prevent its failure handler and workflow cleanup from running. A normal finally handler cannot guarantee cleanup after those interruptions. Do not claim that a successfully created private copy is automatically expired or removed after a crash.
 
 Revalidate the employer origin, tenant and job. Arm the file chooser, select the verified copy once, verify its committed filename, and recheck fields affected by resume parsing. Preserve user edits. Only then record the resume_attachment observation from lifecycle-contract.md with the current binding and approved identity.
 
