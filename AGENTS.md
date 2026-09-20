@@ -71,7 +71,7 @@ not depend on a sibling private checkout that does not exist on its runner.
 - `_isRetry` flag prevents infinite refresh loops
 
 ### MCP Server
-- Search/network tools plus the versioned Trackly Apply tool set. Hosted/local Apply schemas must remain in contract parity; `trackly_prepare_resume` is local-only behavior. The hosted facade offers private original-résumé preview and exact-file approval; actual attachment depends on host capabilities, with an explicit manual fallback.
+- Search/network tools plus the versioned Trackly Apply tool set. Hosted/local Apply schemas must remain in contract parity; `trackly_prepare_resume` is local-only behavior. The hosted facade offers private original-resume preview and exact-file approval; actual attachment depends on host capabilities, with an explicit manual fallback.
 - **Intentionally hosted-only:** `trackly_chat` is a backend agent for classic-UI surfaces, while CLI/MCP clients already are agents. `get_more_tools` is shared by hosted and local MCP as a value-free, structured capability-gap signal. This exact asymmetry is reviewed by the hosted-contract verifier; no other hosted-only tool is allowed.
 - MCP User-Agent: `trackly-mcp/<version>` (from package.json)
 - CLI User-Agent: `trackly-cli/<version>` (separate channel attribution)

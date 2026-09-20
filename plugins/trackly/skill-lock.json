@@ -8,7 +8,7 @@
   },
   "adapted": {
     "path": "plugins/trackly/skills/trackly-apply",
-    "treeSha256": "aecf7cf0ee53bac98d1fe4703ad58897ee6655b5bf7cccccd2e622ff53c5cf07"
+    "treeSha256": "9fddbcbc68e80c111ef08c2bae5a391649e6d657bbe924fd83892a837502dc3b"
   },
   "adaptation": {
     "reason": "The public plugin facade intentionally exposes a smaller stable tool vocabulary than the full local trackly Apply MCP contract.",

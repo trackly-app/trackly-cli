@@ -4155,8 +4155,10 @@ test('adapted trackly Apply skill is traceable to its source and safety invarian
   assert.match(skill, /`nextAction: access_review`/);
   assert.match(skill, /first pass for every mutable member in the current bound wave/);
   assert.match(skill, /Wait until the advertised retry time or estimated return time before one work refetch/);
-  assert.match(browserSafety, /verify only the filename visibly committed/);
-  assert.match(browserSafety, /never claim an artifact identity, preview, or hash exists/);
+  assert.match(browserSafety, /approved download transfer/);
+  assert.match(browserSafety, /verify the downloaded original immediately before upload/);
+  assert.match(browserSafety, /A preview or filename alone never proves attachment/);
+  assert.match(browserSafety, /Do not claim automatic support, switch Trackly accounts, extract private component capabilities/);
   assert.match(lifecycle, /at most 100 `\{ key, label \}` records each/);
   assert.match(lifecycle, /`profile\.availableFields`/);
   assert.match(lifecycle, /snapshot `profileKeys`/);

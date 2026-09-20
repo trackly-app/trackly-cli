@@ -144,7 +144,7 @@ the host's own browser tool, and only the user clicks Submit.
 | `trackly_get_apply_readiness` | true | false | Makes five parallel GETs for profile, schema, queue, protocol and execution state. |
 | `trackly_lint_application_text` | true | false | Computes in memory only. Text is neither stored nor echoed. |
 | `trackly_list_apply_access_deferments` | true | false | Lists the account's active deferments. |
-| `trackly_prepare_resume_artifact` | true | false | Reads the original saved résumé and issues a private expiring preview; never attaches or submits. |
+| `trackly_prepare_resume_artifact` | true | false | Reads the original saved resume and issues a private expiring preview; never attaches or submits. |
 | `trackly_update_status` | false | false | Sets a tracker stage (saved, dismissed or applied). The same tool reverses it. |
 | `trackly_save_application_answers` | false | true | Overwrites saved profile answers. The education list is a confirmed replace-all. |
 | `trackly_grant_sensitive_storage_consent` | false | false | Records consent only. Adds no answers and can be revoked. |
@@ -229,7 +229,7 @@ non-destructive, which matches the Destructive column above, and idempotent (ret
 - **Submit for Review** is a separate action from publication. Draft creation, domain verification, tool scanning, and draft validation do not authorize submission.
 - After OpenAI approval, ask Kevin again immediately before selecting **Publish**.
 
-### Original résumé release proof
+### Original resume release proof
 
 - Preview the saved original filename, size and SHA-256; do not regenerate bytes from extracted text. Verify expiry, grant revocation, auth epoch changes and replacement invalidate access.
 - Preview is not upload approval. Record explicit consent for the exact file and current execution.
