@@ -45,7 +45,9 @@ Before ending every browser turn, reconcile the complete current inventory of li
 
 ## Resume integrity
 
-Prepare a resume only after finding a real attachment control. When trackly returns `requiresLocalAgentOrManualUpload`, ask the user to attach it, verify only the filename visibly committed on the employer page, and never claim an artifact identity, preview, or hash exists. When trackly supplies a verifiable artifact identity and safe preview, bind approval to that exact artifact, let the user inspect it, verify it immediately before upload, and confirm the displayed filename after attachment. In both paths, recheck parser-sensitive fields and prove during the final sweep that the attachment is still present. Never expose an internal cache identifier to the employer.
+Prepare a resume only after finding a real attachment control. When Trackly returns an original document identity and a private preview, use the [approved download transfer](approved-download-transfer.md) before considering a manual fallback. The compatibility flag `requiresLocalAgentOrManualUpload` is not proof that the active browser cannot download or upload. Obtain exact-file approval first, verify the downloaded original immediately before upload, and confirm the displayed filename after attachment. A preview or filename alone never proves attachment. Recheck parser-sensitive fields and prove during the final sweep that the attachment is still present. Never expose an internal cache identifier to the employer.
+
+If the host cannot return a downloaded file artifact or verify its bytes, report that specific missing capability. Do not claim automatic support, switch Trackly accounts, extract private component capabilities, or silently substitute a different file.
 
 ## Challenges and final boundary
 
