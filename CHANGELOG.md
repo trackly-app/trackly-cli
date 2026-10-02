@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.7] - 2026-10-02
+
+### Added
+
+- Mirror hosted semantic search, recommendations, career profile reads and writes,
+  and company favorites through five local MCP tools. Profile and favorite writes
+  use the existing explicit user-intent trust boundary; chat keeps its nonce flow.
+
+### Security
+
+- Update fast-uri to 3.1.8 and ip-address to 10.7.3, retaining direct and override
+  pins plus matching dependency lock and published shrinkwrap. Packed-consumer
+  audit must pass without exceptions.
+
 ## [0.18.6] - 2026-09-19
 
 ### Changed
