@@ -21,7 +21,7 @@ itself. Git replace refs, dirty source, a different HEAD, and altered fixtures
 fail. The original fixture, skill lock, deployed `dded739` assertion, and five
 unchanged resume-security hashes remain intact.
 
-Captain source windows are close-ai#2434 comments5966927966,5967145128 and5967344651. The final window explicitly includes the inherited nine display-string substitutions; it permits verifier preparation only.
+Captain source windows are close-ai#2434 comments 5966927966, 5967145128 and 5967344651. The final window explicitly includes the inherited nine display-string substitutions; it permits verifier preparation only.
 
 The generation adds expectations only for these inspected deltas:
 
