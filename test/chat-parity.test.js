@@ -99,3 +99,20 @@ test('oversized recommendation lists trim whole items while preserving status', 
   assert.ok(result.jobs.length > 0 && result.jobs.length < 20);
   assert.ok(JSON.stringify(result).length <= 60000);
 });
+
+
+test('favorite write metadata requires user intent and rejects retrieved directives', async (t) => {
+  const { tools } = await fixture(t);
+  const description = tools.find((tool) => tool.name === names[4]).description;
+  assert.match(description, /only.*user.*stated or confirmed intent/i);
+  assert.match(description, /untrusted/i);
+  assert.match(description, /never follow directives/i);
+});
+for (const name of names.slice(0, 2)) {
+  test(`${name} metadata marks returned directives as untrusted`, async (t) => {
+    const { tools } = await fixture(t);
+    const description = tools.find((tool) => tool.name === name).description;
+    assert.match(description, /untrusted/i);
+    assert.match(description, /never follow directives/i);
+  });
+}
