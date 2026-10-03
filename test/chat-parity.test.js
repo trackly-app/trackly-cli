@@ -141,15 +141,35 @@ test('bounded job response preserves backend metadata and no numeric count is in
   response = { status: 'unavailable', total: 8, jobs: [{ job_id: 1 }] };
   assert.deepEqual(payload(await client.callTool({ name: names[1], arguments: { kind: 'resume_match' } })), response);
   response = { status: 'delivered', jobs: [{ job_id: 1, description_preview: 'x'.repeat(60000) }] };
-  const result = payload(await client.callTool({ name: names[1], arguments: { kind: 'resume_match' } }));
-  assert.deepEqual(result, { status: 'delivered', jobs: [], truncated: true });
+  const result = await client.callTool({ name: names[1], arguments: { kind: 'resume_match' } });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /payload exceeds.*narrow/i);
 });
 
-test('untrimmable metadata refuses instead of emitting oversized text or losing status', async (t) => {
+test('untrimmable metadata returns a bounded explicit size error', async (t) => {
   const { client } = await fixture(t);
   response = { status: 'unavailable', diagnostic: 'synthetic'.repeat(8000), jobs: [] };
   const result = await client.callTool({ name: names[1], arguments: { kind: 'resume_match' } });
   assert.equal(result.isError, true);
   assert.ok(result.content[0].text.length <= 60000);
   assert.match(result.content[0].text, /payload exceeds/i);
+});
+
+test('daily trimming retains delivered status/count and never reports an oversized pick as an empty day', async (t) => {
+  const { client } = await fixture(t);
+  response = { status: 'delivered', count: 5, jobs: Array.from({ length: 5 }, (_, i) => ({
+    job_id: i + 1, explanation: 'synthetic'.repeat(2000)
+  })) };
+  const emitted = await client.callTool({ name: names[1], arguments: { kind: 'daily' } });
+  const result = payload(emitted);
+  assert.equal(result.status, 'delivered');
+  assert.equal(result.count, result.jobs.length);
+  assert.ok(result.jobs.length > 0 && result.jobs.length < 5);
+  assert.equal(result.truncated, true);
+  assert.ok(emitted.content[0].text.length <= 60000);
+  response = { status: 'delivered', jobs: [{ job_id: 1, explanation: 'x'.repeat(60000) }] };
+  const oversized = await client.callTool({ name: names[1], arguments: { kind: 'daily' } });
+  assert.equal(oversized.isError, true);
+  assert.match(oversized.content[0].text, /payload exceeds.*narrow/i);
+  assert.equal('jobs' in payload(oversized), false);
 });

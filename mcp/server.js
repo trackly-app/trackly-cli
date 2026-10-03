@@ -259,7 +259,7 @@ function capMcpJobsPayload(result, maxChars = MCP_PARITY_MAX_PAYLOAD_CHARS) {
   // Measure exactly the formatted text wrapTool emits, including truncation
   // metadata. Preserve backend totals; a numeric count describes returned jobs.
   while (JSON.stringify(candidate, null, 2).length > maxChars) {
-    if (jobs.length === 0) throw new Error("Job response payload exceeds the MCP limit");
+    if (jobs.length <= 1) throw new Error("Job response payload exceeds the MCP limit; narrow the query instead of retrying");
     jobs = jobs.slice(0, jobs.length - 1);
     candidate = { ...result, jobs, truncated: true,
       ...(typeof result.count === "number" ? { count: jobs.length } : {}) };
