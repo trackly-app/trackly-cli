@@ -36,7 +36,8 @@ function assertHostedResumeSecuritySourceSnapshots(
 }
 
 function createResumeParserVerifier({ activeNamedDefinitionAst, staticMemberName, parseFullSource, canonicalSchemaAst }) {
-function assertResumeGlobalParserCarveout(source, sourcePath) {
+function assertResumeGlobalParserCarveout(source, sourcePath, generation = 'historical') {
+  assert.ok(['historical', 'native-download'].includes(generation), 'Unknown resume parser generation');
   const factory = activeNamedDefinitionAst(source, 'createApp', sourcePath);
   const candidates = factory.body.body.filter((statement) => {
     const call = statement.type === 'ExpressionStatement' ? statement.expression : null;
@@ -66,7 +67,9 @@ function assertResumeGlobalParserCarveout(source, sourcePath) {
   assert.deepEqual(canonicalSchemaAst(normalization), canonicalSchemaAst(expectedNormalization),
     sourcePath + ' both parsers must normalize trailing slash and case before route matching');
   const expectedCarveout = parseFullSource(
-    "function expected() { if (req.method === 'POST' && normalizedPath === '/api/plugin/trackly/mcp/resume') return next(); }",
+    (generation === 'native-download'
+      ? "function expected() { if (req.method === 'POST' && (normalizedPath === '/api/plugin/trackly/mcp/resume' || normalizedPath === '/api/plugin/trackly/mcp/resume/download')) return next(); }"
+      : "function expected() { if (req.method === 'POST' && normalizedPath === '/api/plugin/trackly/mcp/resume') return next(); }"),
     'expected resume parser carve-out',
   ).program.body[0].body.body[0];
   assert.equal(
