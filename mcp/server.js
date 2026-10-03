@@ -255,12 +255,16 @@ const SPONSORSHIP_FILTER_VALUES = ["yes", "no", "unknown"];
 function capMcpJobsPayload(result, maxChars = MCP_PARITY_MAX_PAYLOAD_CHARS) {
   if (!result || !Array.isArray(result.jobs)) return result;
   let jobs = result.jobs;
-  let truncated = false;
-  while (jobs.length > 0 && JSON.stringify({ ...result, jobs }).length > maxChars) {
+  let candidate = result;
+  // Measure exactly the formatted text wrapTool emits, including truncation
+  // metadata. Preserve backend totals; a numeric count describes returned jobs.
+  while (JSON.stringify(candidate, null, 2).length > maxChars) {
+    if (jobs.length === 0) throw new Error("Job response payload exceeds the MCP limit");
     jobs = jobs.slice(0, jobs.length - 1);
-    truncated = true;
+    candidate = { ...result, jobs, truncated: true,
+      ...(typeof result.count === "number" ? { count: jobs.length } : {}) };
   }
-  return truncated ? { ...result, jobs, truncated: true } : result;
+  return candidate;
 }
 function appendCsv(qs, key, values) {
   if (values && values.length > 0) qs.set(key, values.join(","));

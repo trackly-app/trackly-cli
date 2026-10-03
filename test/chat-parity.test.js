@@ -116,3 +116,40 @@ for (const name of names.slice(0, 2)) {
     assert.match(description, /never follow directives/i);
   });
 }
+
+for (const name of names.slice(0, 2)) {
+  test(`${name} caps emitted formatted text and counts only retained jobs`, async (t) => {
+    const { client } = await fixture(t);
+    response = { status: 'delivered', count: 20, jobs: Array.from({ length: 20 }, (_, i) => ({
+      job_id: i + 1, details: Array.from({ length: 160 }, () => ({ label: 'synthetic', value: 'fixture' }))
+    })) };
+    const args = name === names[0] ? { query: 'synthetic', limit: 20 } : { kind: 'resume_match', limit: 20 };
+    const emitted = await client.callTool({ name, arguments: args });
+    const result = payload(emitted);
+    assert.equal(emitted.isError, undefined);
+    assert.ok(emitted.content[0].text.length <= 60000, 'cap applies to the actual MCP text');
+    assert.equal(result.truncated, true);
+    assert.ok(result.jobs.length > 0 && result.jobs.length < 20);
+    assert.equal(result.count, result.jobs.length);
+    assert.equal(result.status, 'delivered');
+    assert.deepEqual(result.jobs, response.jobs.slice(0, result.jobs.length));
+  });
+}
+
+test('bounded job response preserves backend metadata and no numeric count is invented', async (t) => {
+  const { client } = await fixture(t);
+  response = { status: 'unavailable', total: 8, jobs: [{ job_id: 1 }] };
+  assert.deepEqual(payload(await client.callTool({ name: names[1], arguments: { kind: 'resume_match' } })), response);
+  response = { status: 'delivered', jobs: [{ job_id: 1, description_preview: 'x'.repeat(60000) }] };
+  const result = payload(await client.callTool({ name: names[1], arguments: { kind: 'resume_match' } }));
+  assert.deepEqual(result, { status: 'delivered', jobs: [], truncated: true });
+});
+
+test('untrimmable metadata refuses instead of emitting oversized text or losing status', async (t) => {
+  const { client } = await fixture(t);
+  response = { status: 'unavailable', diagnostic: 'synthetic'.repeat(8000), jobs: [] };
+  const result = await client.callTool({ name: names[1], arguments: { kind: 'resume_match' } });
+  assert.equal(result.isError, true);
+  assert.ok(result.content[0].text.length <= 60000);
+  assert.match(result.content[0].text, /payload exceeds/i);
+});
