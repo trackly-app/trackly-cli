@@ -171,20 +171,20 @@ const JQ_FILTER = '.workflow_runs[] | [(.workflow_id|tostring), .head_branch, .c
 
 describe('ci-runner-autopilot refused-run recovery', () => {
   it('has the reconcile step this test executes', () => {
-    assert.ok((reconcile.run).includes('rerun_refused_pr_runs'), 'expected substring');
+    assert.ok((reconcile.run).includes('rerun_refused_pr_runs'), `expected ${JSON.stringify('rerun_refused_pr_runs')} in:\n${reconcile.run}`);
   });
 
   it('never combines --slurp with --jq in a gh call', () => {
     const code = reconcile.run.split('\n').filter((line) => !line.trim().startsWith('#')).join('\n');
     for (const line of code.split('\n')) {
-      if (line.includes('--slurp')) assert.ok(!(line).includes('--jq'), 'expected no substring');
+      if (line.includes('--slurp')) assert.ok(!(line).includes('--jq'), `expected no ${JSON.stringify('--jq')} in:\n${line}`);
     }
     assert.doesNotMatch(code, /--slurp[^\n]*\\\n[^\n]*--jq/);
   });
 
   it('pins the five TSV fields the shell grouping consumes and the six one-hour windows', () => {
     assert.equal(reconcile.run.match(/--jq '(\.workflow_runs\[\][^']*)'/)?.[1], JQ_FILTER);
-    assert.ok((reconcile.run).includes('for w in 6 5 4 3 2 1; do'), 'expected substring');
+    assert.ok((reconcile.run).includes('for w in 6 5 4 3 2 1; do'), `expected ${JSON.stringify('for w in 6 5 4 3 2 1; do')} in:\n${reconcile.run}`);
   });
 
   it('produces those rows from a real runs page (needs jq)', { skip: !hasJq }, () => {
@@ -205,15 +205,15 @@ describe('ci-runner-autopilot refused-run recovery', () => {
   itExec('fails over and reruns only refused runs that are the newest in their group', () => {
     const result = runReconcile({ PROBE: 'failure' });
     assert.equal(result.status, 0, result.stderr + result.stdout);
-    assert.ok((result.stdout).includes('failing over to RunsOn'), 'expected substring');
+    assert.ok((result.stdout).includes('failing over to RunsOn'), `expected ${JSON.stringify('failing over to RunsOn')} in:\n${result.stdout}`);
     assert.equal(result.calls.some((call) => call.includes('-X POST repos/trackly-app/close-ai/actions/variables')), true);
     // 502 is only on page 2: dropping --paginate would miss it.
     assert.deepEqual(result.reruns, ['502', '504']);
     assert.deepEqual(result.rerunOrder, ['504', '502']);
-    assert.ok((result.stdout).includes('run 503: failures are real'), 'expected substring');
+    assert.ok((result.stdout).includes('run 503: failures are real'), `expected ${JSON.stringify('run 503: failures are real')} in:\n${result.stdout}`);
     assert.equal(result.calls.some((call) => /runs\/(501|506|507|508|509|511|512)\/jobs/.test(call)), false);
-    assert.ok(!(result.stdout).includes('::warning::'), 'expected no substring');
-    assert.ok(!(result.stdout).includes('INCOMPLETE'), 'expected no substring');
+    assert.ok(!(result.stdout).includes('::warning::'), `expected no ${JSON.stringify('::warning::')} in:\n${result.stdout}`);
+    assert.ok(!(result.stdout).includes('INCOMPLETE'), `expected no ${JSON.stringify('INCOMPLETE')} in:\n${result.stdout}`);
   });
 
   itExec('keeps sweeping refused runs while the outage continues', () => {
@@ -236,7 +236,7 @@ describe('ci-runner-autopilot refused-run recovery', () => {
     const failed = runReconcile({ PROBE: 'success', FAKE_CUR: FALLBACK, FAKE_JOBS_FAIL: '502', SLACK_WEBHOOK_CRITICAL: SLACK });
     assert.notEqual(failed.status, 0);
     assert.equal(failed.deleted, false);
-    assert.ok((failed.stdout).includes('CI_RUNNER_LINUX stays on RunsOn and the next tick sweeps again'), 'expected substring');
+    assert.ok((failed.stdout).includes('CI_RUNNER_LINUX stays on RunsOn and the next tick sweeps again'), `expected ${JSON.stringify('CI_RUNNER_LINUX stays on RunsOn and the next tick sweeps again')} in:\n${failed.stdout}`);
     // Next tick: still healthy and the fallback is still set, so it sweeps again.
     const next = runReconcile({ PROBE: 'success', FAKE_CUR: FALLBACK, SLACK_WEBHOOK_CRITICAL: SLACK });
     assert.equal(next.status, 0, next.stderr + next.stdout);
@@ -251,9 +251,9 @@ describe('ci-runner-autopilot refused-run recovery', () => {
     // newer, so oldest-first puts 504 and 502 ahead of them.
     assert.equal((result.rerunOrder).length, 10);
     assert.deepEqual(result.rerunOrder.slice(0, 2), ['504', '502']);
-    assert.ok((result.stdout).includes('rerun cap reached (10); 4 refused run(s) left for the next tick'), 'expected substring');
+    assert.ok((result.stdout).includes('rerun cap reached (10); 4 refused run(s) left for the next tick'), `expected ${JSON.stringify('rerun cap reached (10); 4 refused run(s) left for the next tick')} in:\n${result.stdout}`);
     // A capped backlog that will not age out before the next tick drains quietly.
-    assert.ok(!(result.curl).includes('INCOMPLETE'), 'expected no substring');
+    assert.ok(!(result.curl).includes('INCOMPLETE'), `expected no ${JSON.stringify('INCOMPLETE')} in:\n${result.curl}`);
   });
 
   itExec('alerts mid-outage when capped refused runs are about to age out of the lookback', () => {
@@ -263,8 +263,8 @@ describe('ci-runner-autopilot refused-run recovery', () => {
     assert.equal(result.status, 0, result.stderr + result.stdout);
     // The 12 old extras go first; 10 rerun, 2 old ones are capped and expiring.
     assert.equal((result.rerunOrder).length, 10);
-    assert.ok((result.stdout).includes('2 capped refused run(s) may age out of the lookback'), 'expected substring');
-    assert.ok((result.curl).includes('refused-run recovery INCOMPLETE: 2 candidate(s)'), 'expected substring');
+    assert.ok((result.stdout).includes('2 capped refused run(s) may age out of the lookback'), `expected ${JSON.stringify('2 capped refused run(s) may age out of the lookback')} in:\n${result.stdout}`);
+    assert.ok((result.curl).includes('refused-run recovery INCOMPLETE: 2 candidate(s)'), `expected ${JSON.stringify('refused-run recovery INCOMPLETE: 2 candidate(s)')} in:\n${result.curl}`);
   });
 
   itExec('never counts a real failure past the cap as unrecovered', () => {
@@ -273,36 +273,36 @@ describe('ci-runner-autopilot refused-run recovery', () => {
     });
     assert.equal(result.status, 0, result.stderr + result.stdout);
     assert.equal((result.reruns).length, 10);
-    assert.ok((result.stdout).includes('run 8001: failures are real'), 'expected substring');
-    assert.ok(!(result.curl).includes('INCOMPLETE'), 'expected no substring');
+    assert.ok((result.stdout).includes('run 8001: failures are real'), `expected ${JSON.stringify('run 8001: failures are real')} in:\n${result.stdout}`);
+    assert.ok(!(result.curl).includes('INCOMPLETE'), `expected no ${JSON.stringify('INCOMPLETE')} in:\n${result.curl}`);
   });
 
   itExec('treats a tick with no pull_request runs as a clean no-op', () => {
     const result = runReconcile({ PROBE: 'failure', FAKE_CUR: FALLBACK, FAKE_EMPTY_LIST: '1' });
     assert.equal(result.status, 0, result.stderr + result.stdout);
     assert.deepEqual(result.reruns, []);
-    assert.ok(!(result.stdout).includes('::warning::'), 'expected no substring');
+    assert.ok(!(result.stdout).includes('::warning::'), `expected no ${JSON.stringify('::warning::')} in:\n${result.stdout}`);
   });
 
   itExec('reports an hourly listing that reached the API result cap', () => {
     const result = runReconcile({ PROBE: 'failure', FAKE_CUR: FALLBACK, FAKE_FILLER: '1000', SLACK_WEBHOOK_CRITICAL: SLACK });
     assert.equal(result.status, 0, result.stderr + result.stdout);
-    assert.ok((result.stdout).includes("reached the API's 1000-run cap; older runs in that hour may not have been scanned"), 'expected substring');
+    assert.ok((result.stdout).includes("reached the API's 1000-run cap; older runs in that hour may not have been scanned"), `expected ${JSON.stringify("reached the API's 1000-run cap; older runs in that hour may not have been scanned")} in:\n${result.stdout}`);
     assert.deepEqual(result.reruns, ['502', '504']);
-    assert.ok((result.curl).includes('refused-run recovery INCOMPLETE: 0 candidate(s) not recovered; an hourly run listing reached the 1000-run cap'), 'expected substring');
+    assert.ok((result.curl).includes('refused-run recovery INCOMPLETE: 0 candidate(s) not recovered; an hourly run listing reached the 1000-run cap'), `expected ${JSON.stringify('refused-run recovery INCOMPLETE: 0 candidate(s) not recovered; an hourly run listing reached the 1000-run cap')} in:\n${result.curl}`);
   });
 
   itExec('keeps the fallback when a final-sweep hourly listing reached the cap', () => {
     const result = runReconcile({ PROBE: 'success', FAKE_CUR: FALLBACK, FAKE_FILLER: '1000', SLACK_WEBHOOK_CRITICAL: SLACK });
     assert.notEqual(result.status, 0);
     assert.equal(result.deleted, false);
-    assert.ok((result.stdout).includes('::error::final flip-back sweep left refused runs unrecovered or unscanned'), 'expected substring');
+    assert.ok((result.stdout).includes('::error::final flip-back sweep left refused runs unrecovered or unscanned'), `expected ${JSON.stringify('::error::final flip-back sweep left refused runs unrecovered or unscanned')} in:\n${result.stdout}`);
   });
 
   itExec('flips back normally one run below the hourly cap', () => {
     const result = runReconcile({ PROBE: 'success', FAKE_CUR: FALLBACK, FAKE_FILLER: '999', SLACK_WEBHOOK_CRITICAL: SLACK });
     assert.equal(result.status, 0, result.stderr + result.stdout);
-    assert.ok(!(result.stdout).includes('1000-run cap'), 'expected no substring');
+    assert.ok(!(result.stdout).includes('1000-run cap'), `expected no ${JSON.stringify('1000-run cap')} in:\n${result.stdout}`);
     assert.equal(result.deleted, true);
   });
 
@@ -312,7 +312,7 @@ describe('ci-runner-autopilot refused-run recovery', () => {
       FAKE_EXTRA_REFUSED: '2', FAKE_EXTRA_OLD: '1', SLACK_WEBHOOK_CRITICAL: SLACK,
     });
     assert.equal(result.status, 0, result.stderr + result.stdout);
-    assert.ok(!(result.stdout).includes('1000-run cap'), 'expected no substring');
+    assert.ok(!(result.stdout).includes('1000-run cap'), `expected no ${JSON.stringify('1000-run cap')} in:\n${result.stdout}`);
     // The 3h20m-old refused runs are rerun even though about 2000 runs are newer or older.
     assert.deepEqual(result.reruns, ['502', '504', '9001', '9002']);
     assert.equal(result.deleted, true);
@@ -321,58 +321,58 @@ describe('ci-runner-autopilot refused-run recovery', () => {
   itExec('alerts mid-outage, without failing the step, when a rerun request is refused', () => {
     const result = runReconcile({ PROBE: 'failure', FAKE_CUR: FALLBACK, FAKE_RERUN_FAIL: '504', SLACK_WEBHOOK_CRITICAL: SLACK });
     assert.equal(result.status, 0, result.stderr + result.stdout);
-    assert.ok((result.stdout).includes('run 504: rerun request failed'), 'expected substring');
-    assert.ok(!(result.stdout).includes('::error::'), 'expected no substring');
-    assert.ok((result.curl).includes('refused-run recovery INCOMPLETE: 1 candidate'), 'expected substring');
+    assert.ok((result.stdout).includes('run 504: rerun request failed'), `expected ${JSON.stringify('run 504: rerun request failed')} in:\n${result.stdout}`);
+    assert.ok(!(result.stdout).includes('::error::'), `expected no ${JSON.stringify('::error::')} in:\n${result.stdout}`);
+    assert.ok((result.curl).includes('refused-run recovery INCOMPLETE: 1 candidate'), `expected ${JSON.stringify('refused-run recovery INCOMPLETE: 1 candidate')} in:\n${result.curl}`);
   });
 
   itExec('gives the one-shot flip-back sweep a larger cap', () => {
     const result = runReconcile({ PROBE: 'success', FAKE_CUR: FALLBACK, FAKE_EXTRA_REFUSED: '12', SLACK_WEBHOOK_CRITICAL: SLACK });
     assert.equal(result.status, 0, result.stderr + result.stdout);
     assert.equal((result.reruns).length, 14);
-    assert.ok(!(result.curl).includes('INCOMPLETE'), 'expected no substring');
+    assert.ok(!(result.curl).includes('INCOMPLETE'), `expected no ${JSON.stringify('INCOMPLETE')} in:\n${result.curl}`);
   });
 
   itExec('alerts and fails the final sweep when even its larger cap leaves refused runs', () => {
     const result = runReconcile({ PROBE: 'success', FAKE_CUR: FALLBACK, FAKE_EXTRA_REFUSED: '50', SLACK_WEBHOOK_CRITICAL: SLACK });
     assert.notEqual(result.status, 0);
     assert.equal((result.reruns).length, 50);
-    assert.ok((result.stdout).includes('rerun cap reached (50); 2 refused run(s) left for the next tick'), 'expected substring');
-    assert.ok((result.curl).includes('refused-run recovery INCOMPLETE: 2 candidate(s)'), 'expected substring');
+    assert.ok((result.stdout).includes('rerun cap reached (50); 2 refused run(s) left for the next tick'), `expected ${JSON.stringify('rerun cap reached (50); 2 refused run(s) left for the next tick')} in:\n${result.stdout}`);
+    assert.ok((result.curl).includes('refused-run recovery INCOMPLETE: 2 candidate(s)'), `expected ${JSON.stringify('refused-run recovery INCOMPLETE: 2 candidate(s)')} in:\n${result.curl}`);
     assert.equal(result.deleted, false);
   });
 
   itExec('fails the flip-back sweep red when a rerun request is refused', () => {
     const result = runReconcile({ PROBE: 'success', FAKE_CUR: FALLBACK, FAKE_RERUN_FAIL: '504', SLACK_WEBHOOK_CRITICAL: SLACK });
     assert.notEqual(result.status, 0);
-    assert.ok((result.stdout).includes('run 504: rerun request failed'), 'expected substring');
-    assert.ok((result.stdout).includes('::error::final flip-back sweep left refused runs unrecovered'), 'expected substring');
-    assert.ok((result.curl).includes('refused-run recovery INCOMPLETE: 1 candidate'), 'expected substring');
+    assert.ok((result.stdout).includes('run 504: rerun request failed'), `expected ${JSON.stringify('run 504: rerun request failed')} in:\n${result.stdout}`);
+    assert.ok((result.stdout).includes('::error::final flip-back sweep left refused runs unrecovered'), `expected ${JSON.stringify('::error::final flip-back sweep left refused runs unrecovered')} in:\n${result.stdout}`);
+    assert.ok((result.curl).includes('refused-run recovery INCOMPLETE: 1 candidate'), `expected ${JSON.stringify('refused-run recovery INCOMPLETE: 1 candidate')} in:\n${result.curl}`);
     assert.equal(result.deleted, false);
   });
 
   itExec('skips one candidate whose jobs cannot be read, keeps sweeping, and alerts', () => {
     const result = runReconcile({ PROBE: 'failure', FAKE_JOBS_FAIL: '502', SLACK_WEBHOOK_CRITICAL: SLACK });
     assert.equal(result.status, 0, result.stderr + result.stdout);
-    assert.ok((result.stdout).includes('::warning::run 502: could not read its jobs'), 'expected substring');
+    assert.ok((result.stdout).includes('::warning::run 502: could not read its jobs'), `expected ${JSON.stringify('::warning::run 502: could not read its jobs')} in:\n${result.stdout}`);
     assert.deepEqual(result.reruns, ['504']);
-    assert.ok((result.curl).includes('refused-run recovery INCOMPLETE: 1 candidate'), 'expected substring');
+    assert.ok((result.curl).includes('refused-run recovery INCOMPLETE: 1 candidate'), `expected ${JSON.stringify('refused-run recovery INCOMPLETE: 1 candidate')} in:\n${result.curl}`);
   });
 
   itExec('fails the one-shot flip-back sweep red when it leaves a refused run behind', () => {
     const result = runReconcile({ PROBE: 'success', FAKE_CUR: FALLBACK, FAKE_JOBS_FAIL: '502', SLACK_WEBHOOK_CRITICAL: SLACK });
     assert.notEqual(result.status, 0);
-    assert.ok((result.stdout).includes('::error::final flip-back sweep left refused runs unrecovered'), 'expected substring');
+    assert.ok((result.stdout).includes('::error::final flip-back sweep left refused runs unrecovered'), `expected ${JSON.stringify('::error::final flip-back sweep left refused runs unrecovered')} in:\n${result.stdout}`);
     assert.deepEqual(result.reruns, ['504']);
-    assert.ok((result.curl).includes('refused-run recovery INCOMPLETE'), 'expected substring');
+    assert.ok((result.curl).includes('refused-run recovery INCOMPLETE'), `expected ${JSON.stringify('refused-run recovery INCOMPLETE')} in:\n${result.curl}`);
     assert.equal(result.deleted, false);
   });
 
   itExec('fails the step loudly and alerts when the run listing cannot be read', () => {
     const result = runReconcile({ PROBE: 'failure', FAKE_LIST_FAILS: '1', SLACK_WEBHOOK_CRITICAL: SLACK });
     assert.notEqual(result.status, 0);
-    assert.ok((result.stdout).includes('::error::could not list pull_request runs for refused-run recovery'), 'expected substring');
+    assert.ok((result.stdout).includes('::error::could not list pull_request runs for refused-run recovery'), `expected ${JSON.stringify('::error::could not list pull_request runs for refused-run recovery')} in:\n${result.stdout}`);
     assert.deepEqual(result.reruns, []);
-    assert.ok((result.curl).includes('refused-run recovery FAILED'), 'expected substring');
+    assert.ok((result.curl).includes('refused-run recovery FAILED'), `expected ${JSON.stringify('refused-run recovery FAILED')} in:\n${result.curl}`);
   });
 });
