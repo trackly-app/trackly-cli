@@ -4479,3 +4479,74 @@ test('resume parser carveout rejects widening, removal and fallback changes', ()
 
  for (const mutated of [source.replace("'POST'", "'GET'"), source.replace("normalizedPath === '/api/plugin/trackly/mcp/resume'", "normalizedPath.startsWith('/api/plugin')"), source.replace("if (req.method === 'POST' && normalizedPath === '/api/plugin/trackly/mcp/resume') return next();", ''), source.replace("'10mb'", "'100mb'"), source.replace("return express.urlencoded({ extended: false })", "return express.urlencoded({ extended: true })"), source.replace("return express.urlencoded({ extended: false })(req, res, next);", "return next();")]) assert.throws(() => assertResumeGlobalParserCarveout(mutated, 'mutated parser'));
 });
+
+
+// Explicit opt-in supplies a read-only local source repository, never an
+// expected digest. Every acceptance/control invokes the complete executable.
+test('supported offline hosted generation passes the whole verifier and refuses delivery or mutations', {
+  skip: !process.env.TRACKLY_HOSTED_GENERATION_TEST_BACKEND,
+}, (t) => {
+  const backend = process.env.TRACKLY_HOSTED_GENERATION_TEST_BACKEND;
+  const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'trackly-generation-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const copy = path.join(root, 'backend');
+  childProcess.execFileSync('git', ['clone', '--shared', '--no-checkout', backend, copy], { stdio: 'pipe' });
+  const git = (...args) => childProcess.execFileSync('git', ['-C', copy, ...args], { encoding: 'utf8', stdio: 'pipe' }).trim();
+  const head = '98d9e83a127892a7f1d13d40e4084a39fae0dc83';
+  git('checkout', '--detach', head);
+  const run = (args = [], cliRoot = ROOT) => childProcess.spawnSync(process.execPath,
+    [path.join(cliRoot, 'scripts/verify-hosted-contract.js'), ...args], {
+      cwd: cliRoot, env: { ...process.env, TRACKLY_BACKEND_DIR: copy }, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024,
+    });
+  const positive = run(['--offline-candidate']);
+  assert.equal(positive.status, 0, positive.stdout + positive.stderr);
+  assert.match(positive.stdout, /OFFLINE\/UNDEPLOYED/);
+  t.diagnostic('complete current positive: exit ' + positive.status);
+  const delivery = run();
+  assert.notEqual(delivery.status, 0);
+  assert.match(delivery.stderr, /offline candidate cannot prove deployed delivery/i);
+  t.diagnostic('candidate as deployed: exit ' + delivery.status);
+  const cases = [
+    ['wrong owner', 'src/mcp/plugin-resume-router.ts', 'delete req.user;', '/* keep ambient user */', /resumeDocumentHandlers.*locked executable definition/],
+    ['wrong authorization owner', 'src/mcp/plugin-resume-router.ts', 'authorizePluginResume(document.identity)', 'authorizePluginResume({ ...document.identity, userId: 1 })', /resumeDocumentHandlers.*locked executable definition/],
+    ['unprotected mount', 'src/routes/jobscout-chat-parity.ts', "router.get('/jobscout/semantic-search', requireAuth, requireTracklyAccess,", "router.get('/jobscout/semantic-search', requireTracklyAccess,", /per-route authentication|reviewed source bytes/],
+    ['shadowed mount', 'src/index.ts', "app.use('/api', jobscoutChatParityRoutes);", "app.use('/api', (_req, res) => res.end()); app.use('/api', jobscoutChatParityRoutes);", /mount|reviewed source bytes/],
+    ['broad parser bypass', 'src/index.ts', "(normalizedPath === '/api/plugin/trackly/mcp/resume' || normalizedPath === '/api/plugin/trackly/mcp/resume/download')", "normalizedPath.startsWith('/api/plugin')", /exact POST resume|reviewed source bytes/],
+    ['unknown source', 'src/mcp/plugin-resume-router.ts', 'export default router;', 'export default router;\n// unreviewed\n', /reviewed source bytes/],
+    ['altered additional lock', 'src/services/job-brief.ts', "company: {", "company: { /* unreviewed */", /reviewed source bytes/],
+  ];
+  for (const [name, relative, before, after, expected] of cases) {
+    const file = path.join(copy, relative);
+    const original = fs.readFileSync(file, 'utf8');
+    assert.ok(original.includes(before), name + ' mutation must hit actual source');
+    fs.writeFileSync(file, original.replace(before, after));
+    const result = run(['--offline-candidate']);
+    assert.notEqual(result.status, 0, name + ' must fail the complete verifier');
+    assert.match(result.stderr, expected, name + ': ' + result.stderr);
+    t.diagnostic(name + ': exit ' + result.status + '; ' + result.stderr.split('\n').find(line => line.startsWith('AssertionError')));
+    git('restore', '--', relative);
+  }
+  git('checkout', '--detach', 'b6b776219556cec0597c69d1062c2351c59ed721');
+  const unknownHead = run(['--offline-candidate']);
+  assert.notEqual(unknownHead.status, 0);
+  assert.match(unknownHead.stderr, /unsupported hosted source identity/i);
+  t.diagnostic('incorrect HEAD: exit ' + unknownHead.status);
+  git('checkout', '--detach', head);
+  // A replace ref must never manufacture the registered ancestry.
+  git('replace', head, 'b6b776219556cec0597c69d1062c2351c59ed721');
+  const replaced = run(['--offline-candidate']);
+  assert.notEqual(replaced.status, 0);
+  assert.match(replaced.stderr, /replace refs|ancestry/i);
+  t.diagnostic('incorrect ancestry: exit ' + replaced.status);
+  git('replace', '-d', head);
+  const cliCopy = path.join(root, 'cli');
+  fs.mkdirSync(cliCopy);
+  for (const entry of ['scripts', 'plugins', 'contracts', 'mcp']) fs.cpSync(path.join(ROOT, entry), path.join(cliCopy, entry), { recursive: true });
+  fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(cliCopy, 'node_modules'), 'dir');
+  const fixture = path.join(cliCopy, 'plugins/trackly/hosted-contract-fixture.json');
+  fs.appendFileSync(fixture, '\n');
+  const mutatedFixture = run(['--offline-candidate'], cliCopy);
+  assert.notEqual(mutatedFixture.status, 0);
+  assert.match(mutatedFixture.stderr, /bytes drifted from the independently reviewed hosted snapshot/);
+  t.diagnostic('historical fixture mutation: exit ' + mutatedFixture.status);
+});

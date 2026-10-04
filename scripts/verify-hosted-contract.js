@@ -315,6 +315,7 @@ function directHostedToolRegistrationsInNamedFactory(
   expectedToolCatalog,
   {
     helperAstSha256 = '62cb38dc14622e0f6e96bca650876a142cc8a2b38adfb8bf9e257a13abdbc11d',
+    parityDeclarationAstSha256 = null,
   } = {},
 ) {
   const ast = parseFullSource(source, sourcePath);
@@ -390,6 +391,11 @@ function directHostedToolRegistrationsInNamedFactory(
       continue;
     }
     if (statement.type === 'VariableDeclaration') {
+      if (parityDeclarationAstSha256 && statement.declarations.length === 1
+          && Object.hasOwn(parityDeclarationAstSha256, statement.declarations[0].id?.name)) {
+        assert.equal(sha256ExactBytes(JSON.stringify(canonicalSchemaAst(statement))), parityDeclarationAstSha256[statement.declarations[0].id.name], 'Hosted parity declaration AST drifted');
+        continue;
+      }
       assert.equal(statement.kind, 'const', `${expectedFunction} in ${sourcePath} schema bindings must be immutable const`);
       assert.ok(
         statement.declarations.every((declaration) => (
@@ -2200,7 +2206,7 @@ function assertLivePluginRouterMount(
   options = {},
 ) {
   assertImportBinding(source, 'default', routerBinding, routerModule, sourcePath);
-  assertRateLimitBindingSemantics(source, sourcePath);
+  assertRateLimitBindingSemantics(source, sourcePath, options.nativeDownloadGeneration === true);
   assertImportedFunctionCallInventory(
     source,
     'azureRehearsalRateLimitOptions',
@@ -2412,7 +2418,7 @@ function assertLivePluginRouterMount(
   );
 }
 
-function assertRateLimitBindingSemantics(source, sourcePath) {
+function assertRateLimitBindingSemantics(source, sourcePath, nativeDownloadGeneration = false) {
   const ast = parseFullSource(source, sourcePath);
   const factory = activeNamedDefinitionAst(source, 'createApp', sourcePath);
   const rateLimitImport = assertImportBinding(source, 'default', 'rateLimit', 'express-rate-limit', sourcePath);
@@ -2495,7 +2501,8 @@ function assertRateLimitBindingSemantics(source, sourcePath) {
         argument?.type === 'Identifier' && argument.name === name
           ? [{
             path: index >= 1
-              && index === call.arguments.length - 1
+              && (index === call.arguments.length - 1 || (nativeDownloadGeneration && name === 'authLimiter' && index === 1
+                && call.arguments.length === 4 && call.arguments[2]?.name === 'oauthStartLimiter' && call.arguments[3]?.name === 'authFlowLimiter'))
               && call.arguments[0]?.type === 'StringLiteral'
               ? call.arguments[0].value
               : null,
@@ -6879,10 +6886,151 @@ function verifyCheckedInHostedContractFixture(
   );
 }
 
+function assertNativeResumeDelivery(source, sourcePath) {
+  for (const [imported, local, module] of [
+    ['requireAuth', 'requireAuth', '../routes/auth.js'],
+    ['generateInternalToken', 'generateInternalToken', './mcp-tokens.js'],
+    ['authorizePluginResume', 'authorizePluginResume', './plugin-resume-store.js'],
+    ['verifiedHostedMcpOAuthContext', 'verifiedHostedMcpOAuthContext', './hosted-auth-context.js'],
+  ]) assertImportedBindingNeverRedeclared(source, imported, local, module, sourcePath);
+  assertActiveVariableInitializerAst(source, 'resumeDocumentHandlers', `[async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (typeof req.body?.capability !== 'string' || Object.keys(req.body).length !== 1) throw new Error();
+    const documents = pluginResumeDocuments();
+    const identity = documents.verifyCapability(req.body.capability);
+    (req as Request & { resumeIdentity?: { userId: number; grantId: string } }).resumeIdentity = identity;
+    res.locals.resumeDocuments = documents;
+    res.locals.resumeCapability = req.body.capability;
+    next();
+  } catch { res.status(401).json({ error: 'Resume unavailable. Request a new preview.' }); }
+}, resumeDownloadLimiter, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const document = await res.locals.resumeDocuments.download(res.locals.resumeCapability);
+    const user = await authorizePluginResume(document.identity);
+    // Narrow capability authentication is converted internally only for the common account gate.
+    // This app token is never sent to the browser or accepted from the request body.
+    req.headers.authorization = 'Bearer ' + generateInternalToken(user, verifiedHostedMcpOAuthContext({
+      clientId: document.identity.clientId, grantId: document.identity.grantId, scopes: PLUGIN_RESUME_SCOPES,
+    }));
+    // Native form downloads carry cookies. Gate the capability owner, not an ambient session.
+    delete req.user;
+    res.locals.resumeDocument = document;
+    next();
+  } catch { res.status(401).json({ error: 'Resume unavailable. Request a new preview.' }); }
+}, requireAuth]`, sourcePath);
+  assertActiveFunctionDefinitionAst(source, 'sendResume', `function sendResume(attachment: boolean) {
+  return (_req: Request, res: Response) => {
+    const document = res.locals.resumeDocument;
+    res.setHeader('Content-Type', document.mimeType);
+    res.setHeader('Content-Disposition', !attachment && document.mimeType === 'application/pdf'
+      ? inlineContentDisposition(document.filename) : attachmentContentDisposition(document.filename));
+    res.setHeader('X-Trackly-Filename', encodeURIComponent(document.filename));
+    res.setHeader('Content-Length', String(document.bytes.length));
+    res.send(document.bytes);
+  };
+}`, sourcePath);
+  const expectedRoutes = `router.post('/', privateResponse, passport.initialize(), requireResumeJson, json({ limit: '8kb' }), handleResumeBodyError, ...resumeDocumentHandlers, sendResume(false));
+router.post('/download', privateResponse, passport.initialize(), (req: Request, res: Response, next: NextFunction) => {
+  if (!req.is('application/x-www-form-urlencoded')) {
+    res.status(415).json({ error: 'Resume unavailable. Request a new preview.' });
+    return;
+  }
+  next();
+}, urlencoded({ extended: false, limit: '8kb', parameterLimit: 2 }), handleResumeBodyError, ...resumeDocumentHandlers, sendResume(true));`;
+  for (const expected of parseFullSource(expectedRoutes, 'native resume routes').program.body) {
+    assertActiveTopLevelStatementAst(source, expectedRoutes.slice(expected.start, expected.end), sourcePath);
+  }
+}
+
+function assertCurrentChatMount(source, routes, sourcePath) {
+  assertImportedBindingNeverRedeclared(source, 'default', 'jobscoutChatParityRoutes', './routes/jobscout-chat-parity', sourcePath);
+  assertImportedBindingNeverRedeclared(source, 'resolveApiKey', 'resolveApiKey', './middleware/resolve-api-key.js', sourcePath);
+  const factory = activeNamedDefinitionAst(source, 'createApp', sourcePath);
+  const mount = canonicalPluginMount(factory, 'jobscoutChatParityRoutes', '/api', sourcePath);
+  const broad = canonicalPluginMount(factory, 'jobscoutRoutes', '/api', sourcePath);
+  assert.equal(factory.body.body.indexOf(mount), factory.body.body.indexOf(broad) + 1, 'Chat parity mount must immediately follow reviewed JobScout auth router');
+  const resolver = parseFullSource("app.use('/api/jobscout', resolveApiKey);", 'chat auth resolver').program.body[0];
+  const resolverIndex = factory.body.body.findIndex(statement => JSON.stringify(canonicalSchemaAst(statement)) === JSON.stringify(canonicalSchemaAst(resolver)));
+  assert.ok(resolverIndex >= 0 && resolverIndex < factory.body.body.indexOf(broad), 'Chat mount must follow API-key authentication');
+  // The exact registry locks all intervening mounts. Explicitly reject an
+  // inserted terminal covering /api before that authenticated route chain.
+  const appUseInventory = factory.body.body.filter(statement => statement.expression?.callee?.object?.name === 'app' && staticMemberName(statement.expression.callee) === 'use');
+  assert.equal(sha256ExactBytes(JSON.stringify(appUseInventory.map(statement => canonicalSchemaAst(statement.expression)))), OFFLINE_HOSTED_GENERATION.chatMountInventorySha256, 'Chat mount ordered middleware inventory drifted');
+  for (const [imported, module] of [['requireAuth', './auth'], ['requireTracklyAccess', '../services/trackly-access']]) {
+    assertImportedBindingNeverRedeclared(routes, imported, imported, module, 'chat parity routes');
+  }
+  assertActiveFunctionDefinitionAst(routes, 'userIdOf', `function userIdOf(req: Request): number { return (req as Request & { user: { id: number } }).user.id; }`, 'chat parity owner');
+  const routeCalls = parseFullSource(routes, 'chat parity routes').program.body.flatMap(statement => {
+    const call = statement.expression;
+    return call?.callee?.object?.name === 'router' ? [call] : [];
+  });
+  assert.deepEqual(routeCalls.map(call => [staticMemberName(call.callee), call.arguments[0]?.value]), [
+    ['get', '/jobscout/semantic-search'], ['get', '/jobscout/recommendations/resume-match'],
+    ['get', '/jobscout/recommendations/daily'], ['get', '/jobscout/career-profile'], ['patch', '/jobscout/career-profile'],
+  ], 'Chat parity must use only the five reviewed per-route mounts');
+  for (const call of routeCalls) {
+    assert.equal(call.arguments.length, 4, 'Chat per-route authentication must precede its handler');
+    assert.deepEqual(call.arguments.slice(1, 3).map(argument => argument.name), ['requireAuth', 'requireTracklyAccess'], 'Chat per-route authentication must precede its handler');
+    const handler = call.arguments[3];
+    assert.equal(handler.type, 'ArrowFunctionExpression');
+    assert.deepEqual(canonicalSchemaAst(handler.body.body[0]), canonicalSchemaAst(parseFullSource('const userId = userIdOf(req);', 'chat owner').program.body[0]), 'Chat routes must derive owner from authenticated request');
+  }
+}
+
+// The registry is preparation evidence only. Its exact head is the selector;
+// no caller can provide expected hashes or promote it to deployed provenance.
+const offlineGenerationBytes = fs.readFileSync(path.join(__dirname, 'hosted-offline-generation.json'));
+assertExactHostedSourceSha256(offlineGenerationBytes, '721e384dfb12ae9684be6f7d1bd7d142a390aa9b8bd9e60e884b13c35fb91a8f', 'Supported offline generation registry');
+const OFFLINE_HOSTED_GENERATION = JSON.parse(offlineGenerationBytes);
+function selectHostedGeneration(backendRoot, proofMode) {
+  assert.ok(['deployed', 'offline-candidate'].includes(proofMode), 'Unknown hosted proof mode');
+  const head = gitOutput(backendRoot, ['--no-replace-objects', 'rev-parse', 'HEAD']).trim();
+  if (head === OFFLINE_HOSTED_GENERATION.head) {
+    assert.equal(proofMode, 'offline-candidate', 'Offline candidate cannot prove deployed delivery');
+    assert.equal(OFFLINE_HOSTED_GENERATION.status, 'OFFLINE/UNDEPLOYED');
+    return OFFLINE_HOSTED_GENERATION;
+  }
+  assert.equal(proofMode, 'deployed', 'Unsupported hosted source identity for offline candidate');
+  return null; // Historical deployed HEAD equality remains enforced below.
+}
+function verifyOfflineHostedProvenance(backendRoot, generation) {
+  const git = (args, encoding = 'utf8') => gitOutput(backendRoot, ['--no-replace-objects', ...args], encoding);
+  assert.equal(git(['for-each-ref', '--format=%(refname)', 'refs/replace']).trim(), '', 'Hosted ancestry must have no replace refs');
+  for (const [commit, record] of Object.entries(generation.commits)) {
+    assert.deepEqual(git(['show', '-s', '--format=%P', commit]).trim().split(/\s+/), record.parents, 'Hosted candidate ancestry drifted');
+    assert.equal(git(['rev-parse', commit + '^{tree}']).trim(), record.tree, 'Hosted candidate tree drifted');
+  }
+  git(['merge-base', '--is-ancestor', generation.historicalDeployedHead, generation.head]);
+  for (const [file, record] of Object.entries(generation.sources)) {
+    git(['merge-base', '--is-ancestor', record.originCommit, generation.head]);
+    assert.equal(git(['rev-parse', record.originCommit + ':' + file]).trim(), record.blob, file + ' source origin drifted');
+    assert.equal(git(['rev-parse', generation.head + ':' + file]).trim(), record.blob, file + ' committed blob drifted');
+    assertExactHostedSourceSha256(fs.readFileSync(path.join(backendRoot, file)), record.sha256, file);
+    assertExactHostedSourceSha256(git(['show', generation.head + ':' + file], null), record.sha256, file + ' committed bytes');
+    if (record.historical) {
+      git(['merge-base', '--is-ancestor', record.historical.originCommit, generation.historicalDeployedHead]);
+      assert.equal(git(['rev-parse', record.historical.originCommit + ':' + file]).trim(), record.historical.blob, file + ' historical origin drifted');
+      assert.equal(git(['rev-parse', generation.historicalDeployedHead + ':' + file]).trim(), record.historical.blob);
+      assertExactHostedSourceSha256(git(['show', generation.historicalDeployedHead + ':' + file], null), record.historical.sha256, file + ' historical bytes');
+    }
+  }
+  assert.equal(git(['status', '--porcelain', '--untracked-files=all']).trim(), '', 'Offline candidate must be completely clean');
+}
+function offlineExecutableLock(historicalLock, generation) {
+  const current = { ...historicalLock, descriptorSha256: { ...historicalLock.descriptorSha256, ...generation.descriptorSha256 } };
+  for (const [key, file] of Object.entries({
+    pluginServerSha256: 'src/mcp/plugin-server.ts', jobBriefServiceSha256: 'src/services/job-brief.ts',
+    authRateLimitSha256: 'src/middleware/auth-rate-limit.ts', azureRateLimitOptionsSha256: 'src/utils/azure-rehearsal-ip.ts', databaseBindingSha256: 'src/config/database.ts',
+    applicationProfileServiceSha256: 'src/services/application-profile/service.ts',
+  })) current[key] = generation.sources[file].sha256;
+  return current;
+}
+
 function verifyHostedContract({
   cliRoot = path.join(__dirname, '..'),
   backendDir = process.env.TRACKLY_BACKEND_DIR,
   fixtureOptions,
+  proofMode = 'deployed',
   coordinatedFixture,
 } = {}) {
 if (coordinatedFixture) {
@@ -6890,6 +7038,7 @@ if (coordinatedFixture) {
   return;
 }
 if (!backendDir) {
+  assert.equal(proofMode, 'deployed', 'Offline candidate requires an exact backend checkout');
   verifyCheckedInHostedContractFixture(cliRoot, fixtureOptions);
   return;
 }
@@ -6949,6 +7098,7 @@ const hostedApplySource = fs.readFileSync(hostedApplySourcePath, 'utf8');
 const hostedPluginContract = JSON.parse(fs.readFileSync(hostedPluginContractPath, 'utf8'));
 const pluginLock = JSON.parse(fs.readFileSync(pluginLockPath, 'utf8'));
 
+
 if (
   hostedPluginContract === null
   || typeof hostedPluginContract !== 'object'
@@ -6960,6 +7110,16 @@ if (
   throw new Error(
     `Hosted plugin contract at ${hostedPluginContractPath} must contain a top-level "tools" JSON object before tool parity can be verified.`,
   );
+}
+const generation = selectHostedGeneration(backendRoot, proofMode);
+if (generation) verifyCheckedInHostedContractFixture(cliRoot);
+if (generation) {
+  pluginLock.publicExecutableContract = offlineExecutableLock(pluginLock.publicExecutableContract, generation);
+  const insertion = pluginLock.hostedMcpToolAllowlist.indexOf('trackly_request_company') + 1;
+  assert.ok(insertion > 0);
+  pluginLock.hostedMcpToolAllowlist = [...pluginLock.hostedMcpToolAllowlist.slice(0, insertion),
+    'trackly_semantic_search_jobs', 'trackly_recommend_jobs', 'trackly_get_career_profile',
+    'trackly_update_career_profile', 'trackly_favorite_company', ...pluginLock.hostedMcpToolAllowlist.slice(insertion)];
 }
 const hostedBatchServiceSource = fs.readFileSync(hostedBatchServicePath, 'utf8');
 const hostedCheckpointContractSource = fs.readFileSync(hostedCheckpointContractPath, 'utf8');
@@ -6991,16 +7151,18 @@ const hostedResumeSecuritySources = Object.fromEntries(
   ]),
 );
 
+assertResumeGlobalParserCarveout(hostedApplicationSource, hostedApplicationPath, generation ? 'native-download' : 'historical');
+if (generation) {
+  assertNativeResumeDelivery(hostedResumeSecuritySources['src/mcp/plugin-resume-router.ts'], path.join(backendRoot, 'src/mcp/plugin-resume-router.ts'));
+  assertCurrentChatMount(hostedApplicationSource, fs.readFileSync(path.join(backendRoot, 'src/routes/jobscout-chat-parity.ts'), 'utf8'), hostedApplicationPath);
+}
 assertHostedResumeSecuritySourceSnapshots(
   hostedResumeSecuritySources,
-  Object.fromEntries(Object.keys(hostedResumeSecuritySources).map((relativePath) => [
-    relativePath,
-    path.join(backendRoot, relativePath),
-  ])),
+  Object.fromEntries(Object.keys(hostedResumeSecuritySources).map(file => [file, path.join(backendRoot, file)])),
+  generation ? Object.fromEntries(Object.keys(HOSTED_RESUME_SECURITY_SOURCE_SHA256).map(file => [file, generation.sources[file].sha256])) : HOSTED_RESUME_SECURITY_SOURCE_SHA256,
 );
-assertResumeGlobalParserCarveout(hostedApplicationSource, hostedApplicationPath);
-
-verifyHostedSnapshotGitProvenance(cliRoot, backendRoot);
+if (generation) verifyOfflineHostedProvenance(backendRoot, generation);
+else verifyHostedSnapshotGitProvenance(cliRoot, backendRoot);
 assertUnshadowedImportBinding(hostedApplySource, 'z', 'z', 'zod', hostedApplySourcePath);
 assertUnshadowedImportBinding(
   hostedApplySource,
@@ -7023,12 +7185,13 @@ assertLivePluginRouterMount(
   './mcp/plugin-router',
   '/api/plugin/trackly/mcp',
   hostedApplicationPath,
+  generation ? { nativeDownloadGeneration: true, reviewedGlobalMiddlewareCallDigests: generation.reviewedGlobalMiddlewareCallDigests } : {},
 );
 assertImportedFunctionCallInventory(
   hostedAuthRateLimitSource,
   'azureRehearsalRateLimitOptions',
   '../utils/azure-rehearsal-ip.js',
-  ['authLimiter'],
+  generation ? ['authLimiter', 'oauthStartLimiter', 'authFlowLimiter'] : ['authLimiter'],
   hostedAuthRateLimitPath,
 );
 assertExactHostedSourceSha256(
@@ -7718,7 +7881,7 @@ assertImportBinding(
   'node:https',
   hostedPluginSourcePath,
 );
-assertPluginUiContractSemantics(hostedPluginUiSource, hostedPluginUiPath);
+assertPluginUiContractSemantics(hostedPluginUiSource, hostedPluginUiPath, generation ? { htmlAstSha256: generation.pluginUiHtmlAstSha256 } : undefined);
 for (const importedName of [
   'TRACKLY_PLUGIN_UI',
   'TRACKLY_PLUGIN_UI_MIME_TYPE',
@@ -8019,7 +8182,7 @@ assert.equal(
   // sponsorship by country, active clearance, foreign-government family ties
   // and application notes as restricted. PR #1975 adds only restricted
   // eeo.military_service; every preexisting key keeps its classification.
-  '3464ba5b11d15958be49ce309e08957a7fa8c710d8755f1832f00793bb4438bd',
+  generation ? generation.applicationFieldSensitivityMapSha256 : '3464ba5b11d15958be49ce309e08957a7fa8c710d8755f1832f00793bb4438bd',
   'Application profile field keys and sensitivity classifications drifted from the reviewed conditional-scope catalog',
 );
 assert.deepEqual(
@@ -8634,6 +8797,7 @@ const executableHostedRegistrations = directHostedToolRegistrationsInNamedFactor
   'registerHostedMcpTool',
   hostedApplySourcePath,
   pluginLock.hostedMcpToolAllowlist,
+  generation ? { parityDeclarationAstSha256: generation.parityDeclarationAstSha256 } : {},
 );
 assertHostedStartApplyRunBatchBindingGuard(
   executableHostedRegistrations.find(({ name }) => name === 'trackly_start_apply_run'),
@@ -9818,7 +9982,7 @@ assertWrappedHandlerAst(
 );
 
 console.log(
-  `Trackly Apply MCP contracts match at ${local.contractVersion}; the ${hostedPluginTools.length}-tool public plugin facade matches at ${hostedPluginContract.contractVersion}.`,
+  `${generation ? 'OFFLINE/UNDEPLOYED supported generation ' + generation.id + ': ' : ''}Trackly Apply MCP contracts match at ${local.contractVersion}; the ${hostedPluginTools.length}-tool public plugin facade matches at ${hostedPluginContract.contractVersion}.`,
 );
 }
 
@@ -9917,5 +10081,6 @@ module.exports = {
 };
 
 if (require.main === module) {
-  verifyHostedContract();
+  assert.ok(process.argv.length === 2 || (process.argv.length === 3 && process.argv[2] === '--offline-candidate'), 'Usage: verify-hosted-contract.js [--offline-candidate]');
+  verifyHostedContract({ proofMode: process.argv[2] === '--offline-candidate' ? 'offline-candidate' : 'deployed' });
 }
