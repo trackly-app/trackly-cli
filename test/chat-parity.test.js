@@ -173,3 +173,46 @@ test('daily trimming retains delivered status/count and never reports an oversiz
   assert.match(oversized.content[0].text, /payload exceeds.*narrow/i);
   assert.equal('jobs' in payload(oversized), false);
 });
+
+for (const [name, args] of [
+  [names[0], { query: 'synthetic', limit: 20 }],
+  [names[1], { kind: 'resume_match', limit: 20 }],
+  [names[1], { kind: 'daily' }],
+]) {
+  const label = args.kind || 'semantic';
+  test(`${label} accepts exactly 60000 emitted characters and rejects 60001`, async (t) => {
+    const { client } = await fixture(t);
+    for (const size of [59999, 60000, 60001]) {
+      response = { status: 'delivered', count: 1, total: 87, diagnostic: { source: 'synthetic' },
+        jobs: [{ job_id: 1, explanation: '' }] };
+      response.jobs[0].explanation = 'x'.repeat(size - JSON.stringify(response, null, 2).length);
+      assert.equal(JSON.stringify(response, null, 2).length, size, 'calibrate the backend fixture');
+      const emitted = await client.callTool({ name, arguments: args });
+      if (size <= 60000) {
+        assert.equal(emitted.isError, undefined);
+        assert.equal(emitted.content[0].text.length, size);
+        assert.deepEqual(payload(emitted), response, 'preserve backend status, totals, and metadata');
+      } else {
+        assert.equal(emitted.isError, true);
+        assert.match(emitted.content[0].text, /payload exceeds/i);
+        assert.ok(emitted.content[0].text.length <= 60000);
+        assert.equal('jobs' in payload(emitted), false);
+      }
+    }
+  });
+  test(`${label} measures truncation metadata before accepting a retained prefix`, async (t) => {
+    const { client } = await fixture(t);
+    const retained = { status: 'delivered', count: 1, total: 87, diagnostic: { source: 'synthetic' },
+      jobs: [{ job_id: 1, explanation: '' }] };
+    retained.jobs[0].explanation = 'x'.repeat(59990 - JSON.stringify(retained, null, 2).length);
+    assert.equal(JSON.stringify(retained, null, 2).length, 59990);
+    assert.ok(JSON.stringify({ ...retained, truncated: true }, null, 2).length > 60000);
+    response = { ...retained, count: 2, jobs: [...retained.jobs, { job_id: 2 }] };
+    assert.ok(JSON.stringify(response, null, 2).length > 60000);
+    const emitted = await client.callTool({ name, arguments: args });
+    assert.equal(emitted.isError, true, 'one remaining job cannot fit with required truncation metadata');
+    assert.match(emitted.content[0].text, /payload exceeds/i);
+    assert.ok(emitted.content[0].text.length <= 60000);
+    assert.equal('jobs' in payload(emitted), false, 'never fabricate an empty delivered day');
+  });
+}
