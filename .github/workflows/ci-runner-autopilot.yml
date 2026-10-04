@@ -138,11 +138,13 @@ jobs:
             # Cap applies to RERUNS, after the refusal filter — capping the
             # scan first would let non-refused newer failures crowd out actual
             # block victims. The grouped candidate list is naturally small
-            # (latest run per workflow+branch), so scanning all of it is cheap.
+            # (latest run per workflow+head repository+branch), so scanning all
+            # of it is cheap.
             # gh >= 2.100 rejects --slurp with --jq, and a failure inside
             # `for x in $(...)` is silent under set -e: the 2026-10-03 outage
             # failed over but reran nothing. List per page with --jq, pick the
-            # newest run per workflow+branch in the shell, and fail loudly (log
+            # newest run per workflow+head repository+branch in the shell, and
+            # fail loudly (log
             # plus alert) when the listing itself fails. Every caller invokes
             # this function bare under `set -euo pipefail`, so `return 1` fails
             # the step.
@@ -159,7 +161,7 @@ jobs:
               from="$(date -u -d "@$((now - w * 3600))" +%Y-%m-%dT%H:%M:%SZ)"
               to="$(date -u -d "@$((now - (w - 1) * 3600))" +%Y-%m-%dT%H:%M:%SZ)"
               if ! page="$(gh api --paginate "repos/${{ github.repository }}/actions/runs?event=pull_request&per_page=100&created=$from..$to" \
-                --jq '.workflow_runs[] | [(.workflow_id|tostring), .head_branch, .created_at, (.id|tostring), (.conclusion // "pending")] | @tsv')"; then
+                --jq '.workflow_runs[] | [((.workflow_id|tostring) + ":" + (.head_repository.full_name // "")), .head_branch, .created_at, (.id|tostring), (.conclusion // "pending")] | @tsv')"; then
                 echo "::error::could not list pull_request runs for refused-run recovery"
                 notify "refused-run recovery FAILED: could not list pull_request runs (probe run ${{ github.run_id }}); refused PR checks were NOT rerun"
                 return 1
@@ -171,7 +173,9 @@ jobs:
               fi
               candidates+="$page"$'\n'
             done
-            # Fields: workflow_id, head_branch, created_at, run id, conclusion.
+            # Fields: workflow_id:head repository, head_branch, created_at, run
+            # id, conclusion. This repo is public, so two fork PRs can share a
+            # branch name (e.g. main); the head repository keeps them apart.
             # Newest first within each workflow+branch (run id breaks ties in
             # the same second); keep that newest run only when it failed (a
             # newer queued or running run wins). Then process oldest-first so

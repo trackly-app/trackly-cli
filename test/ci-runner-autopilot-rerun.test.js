@@ -167,7 +167,7 @@ function runReconcile(env) {
 
 const FALLBACK = 'runs-on=trackly-fallback/runner=2cpu-linux-x64';
 const SLACK = 'https://hooks.example.test/x';
-const JQ_FILTER = '.workflow_runs[] | [(.workflow_id|tostring), .head_branch, .created_at, (.id|tostring), (.conclusion // "pending")] | @tsv';
+const JQ_FILTER = '.workflow_runs[] | [((.workflow_id|tostring) + ":" + (.head_repository.full_name // "")), .head_branch, .created_at, (.id|tostring), (.conclusion // "pending")] | @tsv';
 
 describe('ci-runner-autopilot refused-run recovery', () => {
   it('has the reconcile step this test executes', () => {
@@ -188,17 +188,25 @@ describe('ci-runner-autopilot refused-run recovery', () => {
   });
 
   it('produces those rows from a real runs page (needs jq)', { skip: !hasJq }, () => {
+    const repo = { full_name: 'trackly-app/trackly-cli' };
     const page = JSON.stringify({ workflow_runs: [
-      { workflow_id: 10, head_branch: 'feature-a', created_at: '2026-10-04T06:34:00Z', id: 502, conclusion: 'failure' },
-      { workflow_id: 10, head_branch: 'feature-a', created_at: '2026-10-04T06:35:00Z', id: 505, conclusion: null },
-      { workflow_id: 20, head_branch: 'feature-b', created_at: '2026-10-04T06:31:00Z', id: 504, conclusion: 'startup_failure' },
+      { workflow_id: 10, head_branch: 'feature-a', head_repository: repo, created_at: '2026-10-04T06:34:00Z', id: 502, conclusion: 'failure' },
+      { workflow_id: 10, head_branch: 'feature-a', head_repository: repo, created_at: '2026-10-04T06:35:00Z', id: 505, conclusion: null },
+      { workflow_id: 20, head_branch: 'feature-b', head_repository: repo, created_at: '2026-10-04T06:31:00Z', id: 504, conclusion: 'startup_failure' },
+      // Two fork PRs from same-named branches must land in different groups.
+      { workflow_id: 30, head_branch: 'main', head_repository: { full_name: 'fork-a/trackly-cli' }, created_at: '2026-10-04T06:36:00Z', id: 601, conclusion: 'failure' },
+      { workflow_id: 30, head_branch: 'main', head_repository: { full_name: 'fork-b/trackly-cli' }, created_at: '2026-10-04T06:37:00Z', id: 602, conclusion: 'failure' },
+      { workflow_id: 40, head_branch: 'gone', head_repository: null, created_at: '2026-10-04T06:38:00Z', id: 603, conclusion: 'failure' },
     ] });
     const out = spawnSync('jq', ['-r', JQ_FILTER], { input: page, encoding: 'utf8' });
     assert.equal(out.status, 0, out.stderr);
     assert.deepEqual(out.stdout.trim().split('\n'), [
-      '10\tfeature-a\t2026-10-04T06:34:00Z\t502\tfailure',
-      '10\tfeature-a\t2026-10-04T06:35:00Z\t505\tpending',
-      '20\tfeature-b\t2026-10-04T06:31:00Z\t504\tstartup_failure',
+      '10:trackly-app/trackly-cli\tfeature-a\t2026-10-04T06:34:00Z\t502\tfailure',
+      '10:trackly-app/trackly-cli\tfeature-a\t2026-10-04T06:35:00Z\t505\tpending',
+      '20:trackly-app/trackly-cli\tfeature-b\t2026-10-04T06:31:00Z\t504\tstartup_failure',
+      '30:fork-a/trackly-cli\tmain\t2026-10-04T06:36:00Z\t601\tfailure',
+      '30:fork-b/trackly-cli\tmain\t2026-10-04T06:37:00Z\t602\tfailure',
+      '40:\tgone\t2026-10-04T06:38:00Z\t603\tfailure',
     ]);
   });
 
