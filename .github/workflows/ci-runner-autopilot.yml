@@ -7,7 +7,9 @@
 #
 #   hosted refused  + var unset -> SET var (failover) + rerun recent failed
 #                                    runs so in-flight PRs recover + alert
-#   hosted healthy  + var set   -> DELETE var (CI returns to hosted) + alert
+#   hosted healthy  + var set   -> final rerun sweep, then DELETE var (CI
+#                                    returns to hosted) + alert; a sweep that
+#                                    leaves runs behind keeps the var set
 #   otherwise                   -> no-op
 #
 # The decide job never runs on hosted, so the autopilot keeps working during
@@ -54,7 +56,10 @@ jobs:
     # Pinned to RunsOn (never the variable): the autopilot must be able to act
     # precisely when hosted is refused. RunsOn stack: AWS 042215120949.
     runs-on: runs-on=trackly-autopilot/runner=2cpu-linux-x64
-    timeout-minutes: 5
+    # 10m: the flip-back sweep may rerun up to 50 runs (and classify the rest
+    # read-only) before the variable DELETE; a timeout there fails the step
+    # with the fallback still set, so the next tick sweeps again.
+    timeout-minutes: 10
     env:
       # github.token serves every Actions API call (run listing + reruns need
       # Actions read/write, which it has). Variable create/delete needs more
@@ -99,7 +104,7 @@ jobs:
           echo "probe=$PROBE current_variable=$CUR"
           notify() {
             if [ -n "${SLACK_WEBHOOK_CRITICAL:-}" ]; then
-              curl -sf -X POST -H 'Content-Type: application/json' \
+              curl -sf --max-time 10 -X POST -H 'Content-Type: application/json' \
                 --data "{\"text\":\"[ci-runner-autopilot] ${{ github.repository }}: $1\"}" \
                 "$SLACK_WEBHOOK_CRITICAL" >/dev/null || true
             fi
@@ -108,34 +113,139 @@ jobs:
             # Recover in-flight PRs whose hosted jobs were refused a runner.
             # Runs on EVERY tick while the fallback is active (not just the
             # transition), so stragglers that failed around the flip are still
-            # picked up. Only the newest failed run per workflow+branch is
-            # retried: both test-gate and claude-review use PR-scoped
-            # concurrency with cancel-in-progress, so rerunning an older
-            # attempt could cancel the newer one's recovery. Excludes
+            # picked up. A failed run is retried only when it is the newest run
+            # of any status for its workflow+branch: PR workflows that use
+            # cancel-in-progress concurrency (e.g. claude-review) could
+            # otherwise have a newer run cancelled by the rerun. Excludes
             # push/schedule workflows (a partially failed production deploy
             # must never be auto-retried) and real test failures.
-            cutoff="$(date -u -d '3 hours ago' +%Y-%m-%dT%H:%M:%SZ)"
+            # Pass "final" for the one-shot flip-back sweep: no later tick will
+            # sweep again, so it gets a larger cap and fails red when anything
+            # was left unrecovered.
+            local final="${1:-}"
+            local cap=10
+            [ "$final" = final ] && cap=50
+            local incomplete=0 scan_gap="" now edge reruns candidates picked refused w from to page rows
+            # 6h lookback: with 10 reruns per hourly tick, a large outage tail
+            # must not age out of the window before it is reached.
+            now="$(date -u +%s)"
+            # A capped refused run created before this edge could age out of
+            # the lookback before the next tick reaches it. The cron is hourly,
+            # but scheduled ticks arrived up to 2.5h apart (2026-09-17 to
+            # 2026-10-04, most during the 2026-10-03 outage), so keep 3h slack.
+            edge="$(date -u -d "@$((now - 3 * 3600))" +%Y-%m-%dT%H:%M:%SZ)"
             reruns=0
             # Cap applies to RERUNS, after the refusal filter — capping the
             # scan first would let non-refused newer failures crowd out actual
             # block victims. The grouped candidate list is naturally small
-            # (latest run per workflow+branch), so scanning all of it is cheap.
-            for rid in $(gh api --paginate --slurp "repos/${{ github.repository }}/actions/runs?event=pull_request&per_page=100&created=>$cutoff" \
-              --jq "[.[].workflow_runs[] | select(.conclusion==\"failure\" or .conclusion==\"startup_failure\")] | group_by([.workflow_id, .head_branch]) | map(max_by(.created_at)) | .[].id"); do
-                [ "$reruns" -ge 10 ] && { echo "rerun cap reached (10); remaining candidates picked up next tick"; break; }
-                refused="$(gh api "repos/${{ github.repository }}/actions/runs/$rid/jobs?per_page=30" \
-                  --jq '[.jobs[] | select(.conclusion=="failure") | select((.runner_name // "") == "")] | length')"
+            # (latest run per workflow+head repository+branch), so scanning all
+            # of it is cheap.
+            # gh >= 2.100 rejects --slurp with --jq, and a failure inside
+            # `for x in $(...)` is silent under set -e: the 2026-10-03 outage
+            # failed over but reran nothing. List per page with --jq, pick the
+            # newest run per workflow+head repository+branch in the shell, and
+            # fail loudly (log
+            # plus alert) when the listing itself fails. Every caller invokes
+            # this function bare under `set -euo pipefail`, so `return 1` fails
+            # the step.
+            # The list-runs API returns at most 1000 runs per filtered query,
+            # newest first, with no error, and a busy 6h window already holds
+            # about 830 PR runs. So list the lookback in six one-hour windows
+            # (inclusive bounds; a run on a boundary is listed twice and the
+            # grouping below keeps one). Only a one-hour listing that reaches
+            # 1000 rows can have lost runs: that is a scan gap, alerted in its
+            # own words, and it fails the final sweep closed (the fallback
+            # stays until a sweep sees the whole lookback).
+            candidates=""
+            for w in 6 5 4 3 2 1; do
+              from="$(date -u -d "@$((now - w * 3600))" +%Y-%m-%dT%H:%M:%SZ)"
+              to="$(date -u -d "@$((now - (w - 1) * 3600))" +%Y-%m-%dT%H:%M:%SZ)"
+              if ! page="$(gh api --paginate "repos/${{ github.repository }}/actions/runs?event=pull_request&per_page=100&created=$from..$to" \
+                --jq '.workflow_runs[] | [((.workflow_id|tostring) + ":" + (.head_repository.full_name // "")), .head_branch, .created_at, (.id|tostring), (.conclusion // "pending")] | @tsv')"; then
+                echo "::error::could not list pull_request runs for refused-run recovery"
+                notify "refused-run recovery FAILED: could not list pull_request runs (probe run ${{ github.run_id }}); refused PR checks were NOT rerun"
+                return 1
+              fi
+              rows="$(printf '%s\n' "$page" | grep -c . || true)"
+              if [ "$rows" -ge 1000 ]; then
+                echo "::warning::run listing for $from..$to reached the API's 1000-run cap; older runs in that hour may not have been scanned"
+                scan_gap="an hourly run listing reached the 1000-run cap, so older runs in it may not have been scanned"
+              fi
+              candidates+="$page"$'\n'
+            done
+            # Fields: workflow_id:head repository, head_branch, created_at, run
+            # id, conclusion. This repo is public, so two fork PRs can share a
+            # branch name (e.g. main); the head repository keeps them apart.
+            # Fork PR jobs always run on GitHub-hosted runners (the routing in
+            # ci.yml, docs-drift.yml and claude-code-review.yml), so mid-outage a
+            # fork rerun would be refused again; forks rerun only on the final
+            # sweep, once hosted runners are back.
+            # Newest first within each workflow+branch (run id breaks ties in
+            # the same second); keep that newest run only when it failed (a
+            # newer queued or running run wins). Then process oldest-first so
+            # the victims closest to the lookback cutoff are rerun first.
+            if ! picked="$(printf '%s\n' "$candidates" | sort -t "$(printf '\t')" -k1,1 -k2,2 -k3,3r -k4,4nr \
+              | awk -F '\t' -v own=":${{ github.repository }}" -v final="$final" 'NF == 5 && !seen[$1 FS $2]++ && ($5 == "failure" || $5 == "startup_failure") && (final == "final" || substr($1, length($1) - length(own) + 1) == own) { print $3 "\t" $4 }' \
+              | sort -t "$(printf '\t')" -k1,1 -k2,2n)"; then
+              echo "::error::could not select refused-run candidates"
+              notify "refused-run recovery FAILED: could not select candidates (probe run ${{ github.run_id }}); refused PR checks were NOT rerun"
+              return 1
+            fi
+            local capped=0 expiring=0 created rid
+            while IFS="$(printf '\t')" read -r created rid; do
+                [ -n "$rid" ] || continue
+                # Every page of jobs counts: jq counts refused jobs per page and
+                # awk sums the pages, so a refused job past the first 100 is not
+                # mistaken for a real failure (pipefail keeps a failed read loud).
+                if ! refused="$(gh api --paginate "repos/${{ github.repository }}/actions/runs/$rid/jobs?per_page=100" \
+                  --jq '[.jobs[] | select(.conclusion=="failure") | select((.runner_name // "") == "")] | length' < /dev/null \
+                  | awk '{ n += $1 } END { print n + 0 }')"; then
+                  echo "::warning::run $rid: could not read its jobs; skipping it this tick"
+                  incomplete=$((incomplete + 1))
+                  continue
+                fi
+                if [ "${refused:-0}" -gt 0 ] && [ "$reruns" -ge "$cap" ]; then
+                  # Past the cap: keep classifying read-only so only genuinely
+                  # refused runs count as unrecovered (real failures never do).
+                  capped=$((capped + 1))
+                  if [[ "$created" < "$edge" ]]; then expiring=$((expiring + 1)); fi
+                  continue
+                fi
                 if [ "${refused:-0}" -gt 0 ]; then
                   echo "run $rid: $refused runner-refused job(s) -> rerunning failed jobs"
-                  if gh api -X POST "repos/${{ github.repository }}/actions/runs/$rid/rerun-failed-jobs"; then
+                  if gh api -X POST "repos/${{ github.repository }}/actions/runs/$rid/rerun-failed-jobs" < /dev/null; then
                     reruns=$((reruns + 1))
                   else
                     echo "run $rid: rerun request failed; will retry next tick"
+                    incomplete=$((incomplete + 1))
                   fi
                 else
                   echo "run $rid: failures are real (runner was assigned) -> skipping"
                 fi
-              done
+              done <<< "$picked"
+            if [ "$capped" -gt 0 ]; then
+              echo "rerun cap reached ($cap); $capped refused run(s) left for the next tick"
+              # A capped backlog drains on later ticks, so mid-outage it alerts
+              # only for runs about to age out of the lookback; the one-shot
+              # final sweep alerts on all of them. Lookup and rerun failures
+              # always alert.
+              if [ "$final" = final ]; then
+                incomplete=$((incomplete + capped))
+              elif [ "$expiring" -gt 0 ]; then
+                echo "::warning::$expiring capped refused run(s) may age out of the lookback before the next tick"
+                incomplete=$((incomplete + expiring))
+              fi
+            fi
+            if [ "$incomplete" -gt 0 ] || [ -n "$scan_gap" ]; then
+              local summary="$incomplete candidate(s) not recovered"
+              if [ -n "$scan_gap" ]; then summary="$summary; $scan_gap"; fi
+              echo "::warning::refused-run recovery incomplete: $summary this tick"
+              notify "refused-run recovery INCOMPLETE: $summary (probe run ${{ github.run_id }})"
+              if [ "$final" = final ]; then
+                echo "::error::final flip-back sweep left refused runs unrecovered or unscanned; CI_RUNNER_LINUX stays on RunsOn and the next tick sweeps again"
+                return 1
+              fi
+            fi
           }
           if [ "$PROBE" != "success" ] && [ "$CUR" = "__unset__" ]; then
             echo "Hosted runners refused and no fallback active -> failing over to RunsOn"
@@ -146,12 +256,15 @@ jobs:
             notify "hosted runners UNAVAILABLE -> CI failed over to RunsOn ephemeral automatically (probe run ${{ github.run_id }})"
             rerun_refused_pr_runs
           elif [ "$PROBE" = "success" ] && [ "$CUR" != "__unset__" ]; then
-            echo "Hosted runners healthy and fallback active -> flipping back to hosted"
+            echo "Hosted runners healthy and fallback active -> final sweep, then flipping back to hosted"
+            # Final sweep BEFORE the DELETE: the set variable is the only state
+            # that makes a later tick sweep again. Called bare, so under set -e a
+            # sweep that leaves refused runs behind fails the step here and keeps
+            # the fallback; the next tick (healthy, fallback set) sweeps again.
+            # Outage-tail victims rerun on RunsOn, which is still healthy.
+            rerun_refused_pr_runs final
             GH_TOKEN="$VARS_TOKEN" gh api -X DELETE "repos/${{ github.repository }}/actions/variables/CI_RUNNER_LINUX"
             notify "hosted runners healthy again -> CI flipped back to GitHub-hosted automatically (probe run ${{ github.run_id }})"
-            # Final sweep: victims from the outage tail rerun on now-healthy
-            # hosted runners so no PR is left red after recovery.
-            rerun_refused_pr_runs
           else
             echo "No variable action: state already matches hosted health."
             if [ "$PROBE" != "success" ] && [ "$CUR" != "__unset__" ]; then
