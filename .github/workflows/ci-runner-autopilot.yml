@@ -176,12 +176,16 @@ jobs:
             # Fields: workflow_id:head repository, head_branch, created_at, run
             # id, conclusion. This repo is public, so two fork PRs can share a
             # branch name (e.g. main); the head repository keeps them apart.
+            # Fork PR jobs always run on GitHub-hosted runners (the routing in
+            # ci.yml, docs-drift.yml and claude-code-review.yml), so mid-outage a
+            # fork rerun would be refused again; forks rerun only on the final
+            # sweep, once hosted runners are back.
             # Newest first within each workflow+branch (run id breaks ties in
             # the same second); keep that newest run only when it failed (a
             # newer queued or running run wins). Then process oldest-first so
             # the victims closest to the lookback cutoff are rerun first.
             if ! picked="$(printf '%s\n' "$candidates" | sort -t "$(printf '\t')" -k1,1 -k2,2 -k3,3r -k4,4nr \
-              | awk -F '\t' 'NF == 5 && !seen[$1 FS $2]++ && ($5 == "failure" || $5 == "startup_failure") { print $3 "\t" $4 }' \
+              | awk -F '\t' -v own=":${{ github.repository }}" -v final="$final" 'NF == 5 && !seen[$1 FS $2]++ && ($5 == "failure" || $5 == "startup_failure") && (final == "final" || substr($1, length($1) - length(own) + 1) == own) { print $3 "\t" $4 }' \
               | sort -t "$(printf '\t')" -k1,1 -k2,2n)"; then
               echo "::error::could not select refused-run candidates"
               notify "refused-run recovery FAILED: could not select candidates (probe run ${{ github.run_id }}); refused PR checks were NOT rerun"

@@ -54,6 +54,7 @@ const itExec = (name, fn) => it(name, { skip: process.platform !== 'linux' }, fn
 // FAKE_FILLER=N adds N successful runs 2h30m ago (workflow 99, branches f1..fN,
 // never qualifying) to reach the API's 1000-row cap in that one-hour window;
 // FAKE_FILLER_B=N adds N more 4h30m ago, in a different window.
+// FAKE_FORKS=1 adds refused runs 701 and 702 from two forks on the same branch.
 // Rows are emitted only inside the queried created=FROM..TO window.
 const FAKE_GH = `#!/bin/bash
 echo "$*" >> "$GH_CALL_LOG"
@@ -67,11 +68,13 @@ lo=0; hi=$now
 if [[ "$args" =~ created=([0-9TZ:-]+)\\.\\.([0-9TZ:-]+) ]]; then
   lo=$(date -u -d "\${BASH_REMATCH[1]}" +%s); hi=$(date -u -d "\${BASH_REMATCH[2]}" +%s)
 fi
-# row WORKFLOW BRANCH MINUTES_AGO RUN_ID CONCLUSION, only inside the window.
+# row WORKFLOW[:HEAD_REPO] BRANCH MINUTES_AGO RUN_ID CONCLUSION, only inside the
+# window. A bare workflow id means a same-repository PR, matching the jq key.
 row() {
-  local t=$((now - $3 * 60))
+  local t=$((now - $3 * 60)) k=$1
   (( t >= lo && t <= hi )) || return 0
-  printf '%s\\t%s\\t%s\\t%s\\t%s\\n' "$1" "$2" "$(date -u -d "@$t" +%Y-%m-%dT%H:%M:%SZ)" "$4" "$5"
+  [[ "$k" == *:* ]] || k="$k:trackly-app/trackly-cli"
+  printf '%s\\t%s\\t%s\\t%s\\t%s\\n' "$k" "$2" "$(date -u -d "@$t" +%Y-%m-%dT%H:%M:%SZ)" "$4" "$5"
 }
 case "$args" in
   *"actions/variables/CI_RUNNER_LINUX"*)
@@ -100,6 +103,10 @@ case "$args" in
       row "0$n" extra "$extra_age" "$((9000 + n))" failure
     done
     [[ "$FAKE_EXTRA_REAL" == 1 ]] && row 80 late 20 8001 failure
+    if [[ "$FAKE_FORKS" == 1 ]]; then
+      row 70:fork-a/trackly-cli main 30 701 failure
+      row 70:fork-b/trackly-cli main 25 702 failure
+    fi
     for ((n = 1; n <= \${FAKE_FILLER:-0}; n++)); do
       row 99 "f$n" 150 "$((20000 + n))" success
     done
@@ -113,6 +120,7 @@ case "$args" in
   *"actions/runs/504/jobs"*) if [[ "$args" == *" --paginate "* ]]; then echo 0; echo 1; else echo 0; fi ;;
   *"actions/runs/9"[0-9][0-9][0-9]"/jobs"*) echo 1 ;;
   *"actions/runs/8001/jobs"*) echo 0 ;;
+  *"actions/runs/70"[12]"/jobs"*) echo 1 ;;
   *"rerun-failed-jobs"*)
     [[ -n "$FAKE_RERUN_FAIL" && "$args" == *"runs/$FAKE_RERUN_FAIL/"* ]] && { echo "gh: HTTP 403" >&2; exit 1; }
     echo '{}' ;;
@@ -140,7 +148,7 @@ function runReconcile(env) {
   fs.writeFileSync(curlLog, '');
   // Re-prepend inside the script: some shells re-order PATH at startup.
   const script = `export PATH="${dir}:$PATH"\n` + reconcile.run
-    .replaceAll('${{ github.repository }}', 'trackly-app/close-ai')
+    .replaceAll('${{ github.repository }}', 'trackly-app/trackly-cli')
     .replaceAll('${{ needs.hosted-probe.result }}', env.PROBE ?? 'failure')
     .replaceAll('${{ github.run_id }}', '4242');
   // GitHub Actions runs `run:` blocks with `bash --noprofile --norc -eo pipefail`.
@@ -161,7 +169,7 @@ function runReconcile(env) {
   const calls = fs.readFileSync(log, 'utf8').trim().split('\n');
   const rerunOrder = calls.filter((call) => call.includes('rerun-failed-jobs'))
     .map((call) => call.match(/runs\/(\d+)\//)?.[1] ?? '');
-  const deleted = calls.some((call) => call.includes('-X DELETE repos/trackly-app/close-ai/actions/variables/CI_RUNNER_LINUX'));
+  const deleted = calls.some((call) => call.includes('-X DELETE repos/trackly-app/trackly-cli/actions/variables/CI_RUNNER_LINUX'));
   return { ...result, calls, deleted, rerunOrder, reruns: [...rerunOrder].sort(), curl: fs.readFileSync(curlLog, 'utf8') };
 }
 
@@ -214,7 +222,7 @@ describe('ci-runner-autopilot refused-run recovery', () => {
     const result = runReconcile({ PROBE: 'failure' });
     assert.equal(result.status, 0, result.stderr + result.stdout);
     assert.ok((result.stdout).includes('failing over to RunsOn'), `expected ${JSON.stringify('failing over to RunsOn')} in:\n${result.stdout}`);
-    assert.equal(result.calls.some((call) => call.includes('-X POST repos/trackly-app/close-ai/actions/variables')), true);
+    assert.equal(result.calls.some((call) => call.includes('-X POST repos/trackly-app/trackly-cli/actions/variables')), true);
     // 502 is only on page 2: dropping --paginate would miss it.
     assert.deepEqual(result.reruns, ['502', '504']);
     assert.deepEqual(result.rerunOrder, ['504', '502']);
@@ -222,6 +230,17 @@ describe('ci-runner-autopilot refused-run recovery', () => {
     assert.equal(result.calls.some((call) => /runs\/(501|506|507|508|509|511|512)\/jobs/.test(call)), false);
     assert.ok(!(result.stdout).includes('::warning::'), `expected no ${JSON.stringify('::warning::')} in:\n${result.stdout}`);
     assert.ok(!(result.stdout).includes('INCOMPLETE'), `expected no ${JSON.stringify('INCOMPLETE')} in:\n${result.stdout}`);
+  });
+
+  itExec('keeps same-branch fork runs apart and reruns them only on the final sweep', () => {
+    // Fork jobs always use hosted runners, so mid-outage a rerun would be refused again.
+    const mid = runReconcile({ PROBE: 'failure', FAKE_CUR: FALLBACK, FAKE_FORKS: '1' });
+    assert.equal(mid.status, 0, mid.stderr + mid.stdout);
+    assert.deepEqual(mid.reruns, ['502', '504']);
+    const final = runReconcile({ PROBE: 'success', FAKE_CUR: FALLBACK, FAKE_FORKS: '1' });
+    assert.equal(final.status, 0, final.stderr + final.stdout);
+    assert.deepEqual(final.reruns, ['502', '504', '701', '702']);
+    assert.equal(final.deleted, true);
   });
 
   itExec('keeps sweeping refused runs while the outage continues', () => {
