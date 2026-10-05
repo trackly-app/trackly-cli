@@ -1203,7 +1203,7 @@ test('documented local MCP tool count matches every registered tool', () => {
     /server\.(?:tool|registerTool)\(\s*['"]([^'"]+)['"]/g
   )].map((match) => match[1]);
 
-  assert.equal(registeredTools.length, 58);
+  assert.equal(registeredTools.length, 59);
   assert.equal(new Set(registeredTools).size, registeredTools.length);
 });
 

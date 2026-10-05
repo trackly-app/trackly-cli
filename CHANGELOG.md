@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `trackly recommendations` (alias `trackly picks`) and the read-only MCP tool
+  `trackly_get_recommendations` show today's recommended jobs from
+  `GET /api/jobscout/digest`. Picks appear only for a `delivered` batch dated
+  today in America/Los_Angeles. Scores are never output. Empty or missing
+  reasons, gaps, and stretch markers are omitted. Every no-pick status gets
+  neutral copy and `failed` never reads as an empty day; `--json` keeps the raw
+  `status`. Accounts outside the pilot (no `recommendations` block, or HTTP 403)
+  get a "not enabled" answer with exit 0; 503 and network failures are
+  retryable errors. The local MCP server now registers 59 tools; the new tool
+  has no hosted counterpart yet, so the hosted count stays 55.
+
 ## [0.18.6] - 2026-09-19
 
 ### Changed

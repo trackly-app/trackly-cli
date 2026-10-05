@@ -98,6 +98,7 @@ API-key creation attempts.
 - **trackly_update_status** — Mark a job as applied, saved, or dismissed
 - **trackly_ask** — Natural language job search (20/day limit)
 - **trackly_get_job_brief** — Get network brief for a job (company signal, top contact, actions)
+- **trackly_get_recommendations** — Read-only. Today's recommended jobs (no parameters). Returns `{enabled, status, date, isToday, message, picks}`. Each pick has `jobId` (chain into `trackly_get_job` or `trackly_get_job_brief`), `title`, `company`, `location`, `jobUrl`, and, only when known, `reason`, `gaps`, and `isStretch`. Picks appear only for a `delivered` batch dated today in America/Los_Angeles; every other `status` (`zero_match`, `insufficient_context`, `failed`, `absent`, `unavailable`) returns no picks and a neutral `message`. `failed` means the run did not happen, not that nothing matched. `enabled: false` means recommendations are not available for this account (not an error). A transient backend outage is a retryable error. Scores are never returned.
 - **trackly_contacts_at_company** — Search contacts at a specific company
 - **trackly_get_company_workspace** — Get full company workspace (jobs, contacts, hiring managers, campaigns)
 - **trackly_request_company** — Request that a company be added to Trackly's tracked companies. Rate-limited to 5 pending requests per user. Parameters: `companyName` (required), `companyUrl` (optional), `notes` (optional).
