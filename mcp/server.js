@@ -7,6 +7,7 @@ const { z } = require('zod');
 const { apiRequest, createTracklyAccessError, hasAuth, maintenanceOutput } = require('../lib/client');
 const { version: PACKAGE_VERSION } = require('../package.json');
 const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
+const { fetchRecommendations } = require('../lib/recommendations');
 const { registerApplyTools } = require('./apply-tools');
 const { configureMcpAnalytics, shutdownMcpAnalytics } = require('./analytics');
 
@@ -496,6 +497,16 @@ function createServer() {
     wrapTool(async ({ jobId }) => {
       return apiRequest('GET', `/api/jobscout/jobs/${jobId}/network-brief`, null, false, false, MCP_USER_AGENT);
     }, 'Failed to fetch network brief')
+  );
+
+  server.tool(
+    'trackly_get_recommendations',
+    "Get today's recommended jobs (daily picks). Read-only. Each pick has jobId, title, company, location, jobUrl, and when present a reason, gaps, and isStretch; chain into trackly_get_job or trackly_get_job_brief with jobId. When there are no picks, message explains why in neutral terms and status carries the raw outcome (delivered, zero_match, insufficient_context, failed, absent, unavailable). enabled is false when recommendations are not available for this account. A failed status is not an empty day.",
+    {},
+    { title: 'Get recommendations', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    wrapTool(async () => {
+      return fetchRecommendations((method, endpoint) => apiRequest(method, endpoint, null, false, false, MCP_USER_AGENT));
+    }, 'Failed to fetch recommendations')
   );
 
   server.tool(

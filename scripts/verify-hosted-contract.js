@@ -7122,6 +7122,11 @@ const LOCAL_ONLY_TOOLS = [
   'trackly_validate_apply_tab_keep_set',
   'trackly_validate_apply_resume_upload',
 ];
+// Local-only tools outside the shared Apply contract. They have no hosted
+// counterpart, so they are not part of the Apply schema comparison above.
+const LOCAL_ONLY_NON_APPLY_TOOLS = [
+  'trackly_get_recommendations',
+];
 const LOCAL_ONLY_CONSTANTS = [];
 const HOSTED_ONLY_TOOLS = [
   'trackly_chat',
@@ -8654,6 +8659,7 @@ assert.deepEqual(
   [
     ...pluginLock.hostedMcpToolAllowlist.filter((name) => !HOSTED_ONLY_TOOLS.includes(name)),
     ...LOCAL_ONLY_TOOLS,
+    ...LOCAL_ONLY_NON_APPLY_TOOLS,
   ].sort(),
   'Executable local MCP registrations must exactly match the locked hosted catalog minus hosted-only chat plus local-only tools',
 );

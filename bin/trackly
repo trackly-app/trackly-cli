@@ -15,12 +15,13 @@ const {
   removeCredentials,
   saveConfig,
 } = require('../lib/client');
-const { color, isJSON, jobDateDetailLines, outputJobs, outputCompanies, outputStats, outputContacts, outputReferralCampaign, outputNetworkBrief, outputCompanyBrief, outputCompanyWorkspace, outputError } = require('../lib/formatters');
+const { color, isJSON, jobDateDetailLines, outputJobs, outputCompanies, outputStats, outputContacts, outputReferralCampaign, outputNetworkBrief, outputRecommendations, outputCompanyBrief, outputCompanyWorkspace, outputError } = require('../lib/formatters');
 const http = require('http');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { version: VERSION } = require('../package.json');
 const { doctorAgent, resumeValidationStatus, setupAgent } = require('../lib/agent');
+const { fetchRecommendations } = require('../lib/recommendations');
 const { diagnoseLocalPath } = require('../lib/path-diagnostics');
 
 const BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'version', 'v', 'clear-api-key', 'clear-base-url', 'refresh', 'remote']);
@@ -77,6 +78,8 @@ const COMMAND_FLAGS = {
   contacts: ['search', 'limit', 'offset'],
   referral: [],
   brief: [],
+  recommendations: [],
+  picks: [],
   'company-brief': ['refresh'],
   'company-workspace': [],
   'request-company': ['url', 'notes'],
@@ -999,6 +1002,20 @@ async function cmdBrief(args) {
   }
 }
 
+async function cmdRecommendations() {
+  if (!hasAuth()) failNow(AUTH_HELP_TEXT);
+
+  try {
+    const result = await fetchRecommendations(
+      (method, endpoint) => apiRequest(method, endpoint)
+    );
+    if (isJSON()) return printJson(result);
+    outputRecommendations(result);
+  } catch (e) {
+    setApiErrorExit(e, 'Failed to fetch recommendations');
+  }
+}
+
 async function cmdCompanyBrief(args) {
   const id = parseJobId(args._[0]);
   if (id === null) failNow('Company ID must be a positive integer. Usage: trackly company-brief <companyId> [--refresh]');
@@ -1330,6 +1347,7 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'referral start <id>')} Start a referral campaign for a job
   ${color('cyan', 'referral status <id>')} Check referral campaign progress
   ${color('cyan', 'brief <id>')}           Get network brief for a job
+  ${color('cyan', 'recommendations')}      Show today's recommended jobs (alias: picks)
   ${color('cyan', 'company-brief <id>')}   Get company brief (--refresh to generate)
   ${color('cyan', 'company-workspace <id>')} Show company workspace (jobs, contacts, campaigns)
   ${color('cyan', 'request-company <name>')} Request a company be added to Trackly (--url, --notes)
@@ -1507,6 +1525,10 @@ async function main() {
       break;
     case 'brief':
       await cmdBrief(args);
+      break;
+    case 'recommendations':
+    case 'picks':
+      await cmdRecommendations();
       break;
     case 'company-brief':
       await cmdCompanyBrief(args);

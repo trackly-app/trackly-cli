@@ -35,7 +35,7 @@ trackly jobs --function product
 
 ## At a Glance
 
-5,400+ companies | 250K+ jobs | 40+ ATS types | CLI + MCP | 58 local + 55 hosted MCP tools
+5,400+ companies | 250K+ jobs | 40+ ATS types | CLI + MCP | 59 local + 55 hosted MCP tools
 
 ## CLI Commands
 
@@ -64,6 +64,7 @@ trackly dismiss 1234                  # Dismiss a job
 trackly ask "PM jobs in SF"           # Natural language search (20/day)
 trackly contacts "Stripe"             # Search contacts at a company
 trackly brief 1234                    # Get network brief for a job
+trackly recommendations               # Today's recommended jobs (alias: trackly picks; --json for agents)
 trackly referral start 1234           # Start a referral campaign
 trackly referral status 1234          # Check referral campaign status
 trackly company-brief 243             # Get company brief (--refresh to regenerate)
@@ -108,7 +109,7 @@ needed for headless clients that cannot complete an interactive sign-in: send
 `Authorization: Bearer trk_...` with a key from **Settings → API Keys**.
 
 Remote connections get 55 hosted tools. They share the search, company, status, and
-Apply tools with the local server and add `trackly_chat`; the 4 local-only
+Apply tools with the local server and add `trackly_chat`; the 5 local-only
 tools listed below are not available remotely. Hosted setup and tool details
 are at [usetrackly.app/connector](https://usetrackly.app/connector).
 
@@ -175,11 +176,12 @@ Then use natural language in any of these clients:
 
 ## MCP Tools Reference
 
-The local stdio server (`trackly mcp`) registers the 58 tools below. Four are
-local-only because they run their checks on your machine:
-`trackly_diagnose_local_path`, `trackly_lint_application_text`,
-`trackly_validate_apply_resume_upload`, and `trackly_validate_apply_tab_keep_set`.
-The hosted server omits those four and adds `trackly_chat`, for 55 hosted tools.
+The local stdio server (`trackly mcp`) registers the 59 tools below. Five are
+local-only: four because they run their checks on your machine
+(`trackly_diagnose_local_path`, `trackly_lint_application_text`,
+`trackly_validate_apply_resume_upload`, and `trackly_validate_apply_tab_keep_set`),
+and `trackly_get_recommendations`, which has no hosted counterpart yet.
+The hosted server omits those five and adds `trackly_chat`, for 55 hosted tools.
 
 | Tool | Description |
 |------|-------------|
@@ -193,6 +195,7 @@ The hosted server omits those four and adds `trackly_chat`, for 55 hosted tools.
 | trackly_update_status | Mark jobs as applied, saved, or dismissed |
 | trackly_ask | Natural language job search (20/day) |
 | trackly_get_job_brief | Get network brief for a job (company signal, top contact, actions) |
+| trackly_get_recommendations | Today's recommended jobs with an optional reason, gaps, and stretch marker. Read-only; reports a neutral status when there are no picks |
 | trackly_contacts_at_company | Search contacts at a specific company |
 | trackly_get_company_workspace | Full company workspace (jobs, contacts, hiring managers, campaigns) |
 | trackly_request_company | Request a company be added to Trackly (rate-limited to 5 pending) |
@@ -306,7 +309,7 @@ trackly config --base-url http://127.0.0.1:3000  # Point at a different backend
 | Job search + filters | Yes | Yes | Yes |
 | Apply/save/dismiss | Yes | Yes | Yes |
 | AI-powered search | Yes (trackly ask) | Yes | Yes |
-| MCP integration | Yes (58 local tools) | -- | -- |
+| MCP integration | Yes (59 local tools) | -- | -- |
 | Browser required | No | Yes | No |
 | Best for | Terminal + AI agents | Visual browsing | Custom integrations |
 
@@ -320,7 +323,7 @@ Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly l
 
 **What MCP servers exist for job searching?**
 
-trackly-cli includes a built-in MCP server with 58 tools: the complete Trackly
+trackly-cli includes a built-in MCP server with 59 tools: the complete Trackly
 job-search and application set plus `get_more_tools`, which lets agents report
 a missing capability. Run `trackly mcp` or use
 `trackly agent setup --client claude`.
