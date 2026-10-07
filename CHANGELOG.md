@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Bump `@modelcontextprotocol/sdk` 1.30.0 to 1.32.1 (GHSA-6qxp-vccf-f47h, an
+  OAuth-client issue; the local MCP server is stdio-only and uses no SDK OAuth
+  client), `proxy-addr` 2.0.7 to 2.0.8 through Express's existing range
+  (GHSA-jqcg-44mw-7w3h), and the dev-only `sharp` 0.35.4 to 0.35.5
+  (GHSA-wq5f-xc86-pv6w), so `npm audit` is clean again.
+
 ## [0.18.6] - 2026-09-19
 
 ### Changed
