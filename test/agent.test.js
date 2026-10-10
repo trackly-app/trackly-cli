@@ -163,6 +163,24 @@ for (const flag of ['--skills-only', '--skills-only=true']) {
   });
 }
 
+test('explicitly disabling skills-only retains normal MCP registration', () => {
+  withTempAgentHome((root) => {
+    const marker = path.join(root, 'mcp-invoked');
+    const executable = path.join(process.env.PATH, 'codex');
+    fs.writeFileSync(executable, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, JSON.stringify(process.argv.slice(2)));\n`);
+    fs.chmodSync(executable, 0o700);
+    const child = spawnSync(process.execPath, [
+      path.join(__dirname, '..', 'bin', 'trackly'), 'agent', 'setup',
+      '--client', 'codex', '--skills-only=false', '--json',
+    ], { encoding: 'utf8', env: process.env });
+    assert.equal(child.status, 0, child.stderr || child.stdout);
+    assert.equal(JSON.parse(child.stdout).clients[0].mcp.status, 'installed');
+    assert.deepEqual(JSON.parse(fs.readFileSync(marker, 'utf8')), [
+      'mcp', 'add', 'trackly', '--', 'trackly', 'mcp',
+    ]);
+  });
+});
+
 test('invalid skills-only values are rejected before installation or MCP registration', () => {
   for (const flag of ['--skills-only=maybe', '--skills-only=1']) {
     withTempAgentHome((root) => {
@@ -216,6 +234,7 @@ test('agent doctor reports managed skill integrity failures even when metadata v
     fs.appendFileSync(path.join(setup.clients[0].target, 'SKILL.md'), '\nfixture mutation\n');
 
     const report = await agent.doctorAgent();
+    assert.equal(report.skillPolicyRevision, '4.8.0-kevin.1');
     assert.equal(report.skillPackIntegrity.ok, false);
     assert.match(report.skillPackIntegrity.expectedDigest, /^[a-f0-9]{64}$/);
     assert.deepEqual(
