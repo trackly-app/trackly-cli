@@ -61,3 +61,11 @@ afterward for the exact durable review-ready member set.
 
 For supported free text, use only canonical facts and job facts, make gaps
 explicit, follow the writing reference, and retain final user truth review.
+
+## Profile lookup gate before questions
+
+Inventory all visible controls, including optional diversity fields. Request their exact canonical keys through the current authorized bounded work/profile projection for this employer, provider and jurisdiction; a compact projection omission is not an unknown answer. Recover redacted or unavailable lookups before asking for replacement facts. Preserve user edits. Fill and verify all compatible known answers before presenting a packet. Optional unknown demographics can remain blank; required unknown facts and live choices can be asked together. Check gender, transgender status, orientation, ethnicity, age, disability and veteran concepts independently. Never infer a multi-select community answer from disability or veteran status alone.
+
+Run `node scripts/validate-profile-lookup.js receipt.json` on a value-free receipt before presenting the packet. For each control record fingerprint, schemaFetched, contextualProfileFetched, state, required, disposition and committed, plus the current profileRevision. States are answered, unknown, redacted, unavailable or live_consent; dispositions are fill, preserve, ask, defer_optional or blocked. The validator checks this local accounting; it does not call Trackly or prove a fetch happened. Keep actual lookup and committed-control evidence locally.
+
+Consent is resolved independently by exact intent and scope. Reuse a schema-authorized default only when its documented semantics cover the visible choice; generic privacy or email consent cannot establish a retention period. Live agreements still require the user's decision. If the user says an answer is already saved, refresh the relevant projection and reconcile the packet before asking again.

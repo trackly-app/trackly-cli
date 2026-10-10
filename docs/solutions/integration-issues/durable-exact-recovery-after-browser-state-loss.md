@@ -59,7 +59,7 @@ Blind autofill can overwrite a correction the user made after the agent's last o
 
 ### Preservation policy update — 2026-10-10
 
-Policy revision 4.8.0-kevin.1 accepts documented tab.markHandoff() when the
+Universal skill 4.9.0 accepts documented tab.markHandoff() when the
 runtime guarantees that marked tabs survive normal turn cleanup, including a
 Promise<void> return. Await it for every mapped application tab before mutation
 and at turn end, check the exact inventory presence, and reclaim and revalidate

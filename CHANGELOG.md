@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-10
+
+### Changed
+
+- Release universal Trackly Apply 4.9.0, replacing the personal policy suffix. Local and plugin skills accept documented, awaited per-tab handoff marks with exact inventory checks, without fabricating returned persistence receipts.
+- Resolve every visible field against the current contextual profile before asking; commit compatible known answers first, defer optional unknown demographics, and keep unavailable lookups and live consent distinct. Ship a value-free question-packet validator in both skill packs.
+- Update the plugin to 1.1.0 with the same browser and profile policies. Skills-only installation preserves MCP registration and authentication.
+
+
 ## [0.19.0] - 2026-10-10
 
 ### Changed
