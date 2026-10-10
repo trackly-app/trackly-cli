@@ -7,7 +7,7 @@ description: Fill the next user-approved jobs from a Trackly apply/check-later q
 
 Use Trackly as the source of truth for profile answers, documents, queue decisions, and application state. Use this skill only for reusable browser mechanics; never store personal answers or application logs inside the skill.
 
-## Personal compatibility revision
+## Skill version
 
 Skill version: `4.9.0`. Before browser readiness read [references/handoff-compatibility.md](references/handoff-compatibility.md). This policy takes precedence over returned-persistence-receipt or finalizer requirements elsewhere when using the documented markHandoff path. Other review and safety gates remain unchanged.
 
