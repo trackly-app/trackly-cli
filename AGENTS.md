@@ -48,6 +48,25 @@ Publishing is fully automated via GitHub Actions:
 
 **Do not run `npm publish` locally.** Manual publishes from a laptop have no OIDC context and would ship without provenance (this is what created the v0.2.7 unattested-release gap). If a manual publish is ever absolutely required as a break-glass measure, document why on the next CHANGELOG entry and plan a cosmetic version bump immediately after to restore the attestation chain via CI.
 
+### Mandatory release and installation verification (Kevin, 2026-10-10)
+
+Every Trackly CLI upgrade must complete [release verification](docs/release-verification.md).
+The purpose is to keep the current Trackly tools available to CLI, local MCP,
+hosted MCP and plugin users. Publication alone is not global installation parity.
+Verify the actual published package and attestations, complete tool names and
+schemas on each applicable MCP surface, skill/plugin versions and hashes, and
+the M1, M4, Conductor Cloud and current Codex Cloud installations. Verify the
+shared Conductor image separately from retained workspace homes. Refresh local
+MCP processes and check discovery again after upgrading their package.
+
+Record unavailable or stale surfaces as incomplete; never convert another
+agent report, a successful setup prompt or an old receipt into current proof.
+Document the supported update path for existing public users, including plugin
+manager updates and client discovery refresh. Publishing to npm does not
+automatically upgrade existing global installs. Unrelated agent-tool or npm
+dependency updates are separate maintenance unless compatibility or security
+requires them for this release.
+
 ### Coordinated Trackly Apply release gate
 
 The standalone CLI CI validates its checked-in hosted-tool contract fixture with
