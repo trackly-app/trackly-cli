@@ -17,6 +17,7 @@ for (const pack of ['skills/trackly-apply', 'plugins/trackly/skills/trackly-appl
     ['known answer not verified', {committed:false}, ['known_answer_not_committed']],
     ['compact omission without contextual fetch', {contextualProfileFetched:false,state:'unknown',disposition:'defer_optional'}, ['lookup_incomplete']],
     ['required missing fact', {state:'unknown',required:true,disposition:'ask',committed:false}, []],
+    ['optional contextual question', {state:'unknown',disposition:'ask',committed:false}, []],
     ['optional unknown survey', {state:'unknown',disposition:'defer_optional',committed:false}, []],
     ['unavailable lookup asked as missing', {state:'unavailable',disposition:'ask'}, ['unavailable_is_not_unknown']],
     ['redacted lookup blocked', {state:'redacted',disposition:'blocked',committed:false}, []],

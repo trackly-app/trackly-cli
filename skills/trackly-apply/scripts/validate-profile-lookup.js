@@ -16,7 +16,7 @@ function validate(receipt) {
     if (!['answered','unknown','redacted','unavailable','live_consent'].includes(c.state) || !['fill','preserve','ask','defer_optional','blocked'].includes(c.disposition)) errors.push('invalid_resolution');
     if (c.state === 'answered' && (!['fill','preserve'].includes(c.disposition) || !c.committed)) errors.push('known_answer_not_committed');
     if (['redacted','unavailable'].includes(c.state) && c.disposition !== 'blocked') errors.push('unavailable_is_not_unknown');
-    if (c.state === 'unknown' && (c.required ? c.disposition !== 'ask' : c.disposition !== 'defer_optional')) errors.push('unknown_routing_invalid');
+    if (c.state === 'unknown' && (c.required ? c.disposition !== 'ask' : !['ask','defer_optional'].includes(c.disposition))) errors.push('unknown_routing_invalid');
     if (c.state === 'live_consent' && !['ask','defer_optional'].includes(c.disposition)) errors.push('consent_inference');
     if (c.state === 'live_consent' && c.required && c.disposition !== 'ask') errors.push('required_consent_deferred');
   }
