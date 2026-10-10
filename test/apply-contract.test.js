@@ -2778,13 +2778,13 @@ test('Apply MCP evidence preserves custom bounds and prompt gates new executions
   assert.match(promptRegion, /keep the confirmation tab open until a refetch proves member lifecycle submitted and Trackly job state applied_confirmed/);
 });
 
-test('Apply skill 4.9.0 requires protocol 3.7.0 for new work and preserves active legacy recovery', () => {
+test('Apply skill 4.9.1 requires protocol 3.7.0 for new work and preserves active legacy recovery', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
-  assert.match(skill, /Skill 4\.9\.0 requires protocol 3\.7\.0 or newer/);
+  assert.match(skill, /Skill 4\.9\.1 requires protocol 3\.7\.0 or newer/);
   assert.match(skill, /protocol 3\.2 remains valid only for an already-active explicit legacy single run/i);
   assert.match(skill, /an already-active explicit 3\.2 single run may finish through its legacy path/i);
   assert.match(skill, /`compatibleSkillMajor: 4`/);
-  assert.match(skill, /Never continue a pre-evidence 3\.0\.x run under skill 4\.9\.0/);
+  assert.match(skill, /Never continue a pre-evidence 3\.0\.x run under skill 4\.9\.1/);
   assert.match(skill, /Preserve that run instead of starting a replacement/);
   assert.match(skill, /already-active protocol 3\.4 execution is read-only legacy recovery/i);
   assert.match(skill, /never call the 3\.5-only snapshot/i);
@@ -3079,7 +3079,7 @@ test('MCP Apply prompt preserves safety-critical skill orchestration parity', ()
   assert.match(promptRegion, /conditional rules supersede any unconditional complete-inventory wording earlier in this prompt/i);
   assert.match(promptRegion, /session-finalizer path, require complete controller and user inventories/i);
   assert.match(promptRegion, /per-tab durable-handoff path, do not require unavailable inventories/i);
-  assert.match(promptRegion, /Policy 4\.9\.0 also accepts the documented markHandoff path/);
+  assert.match(promptRegion, /Policy 4\.9\.1 also accepts the documented markHandoff path/);
   assert.match(promptRegion, /this path supersedes earlier receipt-only readiness requirements/);
   assert.match(promptRegion, /Bind each exact job\/run\/tab, await its markHandoff\(\), and check the controller inventory and user inventory where exposed; failed calls or missing tabs block mutation/);
   assert.match(promptRegion, /await markHandoff\(\) for every mapped live application tab, then check the controller inventory and user inventory where exposed/);
@@ -3200,12 +3200,12 @@ test('Apply skill runs Humanizer when available and retains a self-contained fal
   assert.match(writing, /use the saved style instructions or plain default instead/);
 });
 
-test('Apply skill 4.9.0 uses compact snapshots, parked-member controls, local lint, and upload proofs', () => {
+test('Apply skill 4.9.1 uses compact snapshots, parked-member controls, local lint, and upload proofs', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
   const writing = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'application-writing.md'), 'utf8');
   const review = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'review-handoff.md'), 'utf8');
   const upload = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'browser-upload.md'), 'utf8');
-  assert.match(skill, /Skill 4\.9\.0/);
+  assert.match(skill, /Skill 4\.9\.1/);
   assert.match(skill, /trackly_get_apply_execution_snapshot/);
   assert.match(skill, /`mutable` and `allowedOperations`/);
   assert.match(skill, /trackly_resume_parked_apply_member/);

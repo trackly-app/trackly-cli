@@ -3,8 +3,9 @@
 const fs = require('node:fs');
 function validate(receipt) {
   const errors = [];
-  if (!receipt || !Number.isSafeInteger(receipt.profileRevision) || receipt.profileRevision < 1 || !Array.isArray(receipt.controls) || !receipt.controls.length) return ['invalid_receipt'];
-  if (Object.keys(receipt).some(k => !['profileRevision', 'controls'].includes(k))) errors.push('unexpected_receipt_fields');
+  if (!receipt || !Number.isSafeInteger(receipt.profileRevision) || receipt.profileRevision < (receipt.workMode === 'fixed_inspection' ? 0 : 1) || !Array.isArray(receipt.controls) || !receipt.controls.length) return ['invalid_receipt'];
+  if (Object.keys(receipt).some(k => !['workMode', 'profileRevision', 'controls'].includes(k))) errors.push('unexpected_receipt_fields');
+  if (!['accessible_execution', 'fixed_inspection'].includes(receipt.workMode)) errors.push('invalid_work_mode');
   const seen = new Set();
   for (const c of receipt.controls) {
     if (!c || typeof c !== 'object' || Array.isArray(c)) { errors.push('invalid_control'); continue; }

@@ -419,8 +419,9 @@ function validateSelection(receipt, expectedContext) {
     const normalized = receipt.approvedJobIds.filter((id) => Number.isSafeInteger(id) && id > 0);
     if (normalized.length !== receipt.approvedJobIds.length) errors.push('approvedJobIds must contain positive safe integers');
     if (new Set(normalized).size !== normalized.length) errors.push('approvedJobIds must be unique');
-    if (receipt.approvedJobIds.length === 0 && receipt.queueExhausted !== true) {
-      errors.push('approvedJobIds may be empty only when queueExhausted is true');
+    if (receipt.approvedJobIds.length === 0
+        && (receipt.workMode !== 'accessible_execution' || receipt.queueExhausted !== true)) {
+      errors.push('approvedJobIds may be empty only for accessible_execution when queueExhausted is true');
     }
   }
   requireTrue(errors, receipt, 'approvalRecorded');
