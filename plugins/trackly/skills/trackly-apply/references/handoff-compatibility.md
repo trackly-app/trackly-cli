@@ -1,4 +1,4 @@
-# Browser handoff compatibility — 4.9.0
+# Browser handoff compatibility — 4.9.1
 
 This preservation-only policy supersedes contradictory returned-receipt and finalizer requirements in this skill. All backend, submission, resume, origin, ownership, form integrity, and actual visibility gates remain unchanged. Never fabricate evidence.
 

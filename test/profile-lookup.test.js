@@ -9,7 +9,7 @@ for (const pack of ['skills/trackly-apply', 'plugins/trackly/skills/trackly-appl
   const script = path.join(__dirname, '..', pack, 'scripts/validate-profile-lookup.js');
   const {validate} = require(script);
   const control = (overrides = {}) => ({fingerprint:'a'.repeat(64),schemaFetched:true,contextualProfileFetched:true,state:'answered',required:false,disposition:'fill',committed:!overrides.state || overrides.state==='answered',...overrides});
-  const receipt = (...controls) => ({profileRevision:60,controls});
+  const receipt = (...controls) => ({workMode:"accessible_execution",profileRevision:60,controls});
   const cases = [
     ['known answer committed', {}, []],
     ['known answer preserved', {disposition:'preserve'}, []],
@@ -50,5 +50,48 @@ for (const pack of ['skills/trackly-apply', 'plugins/trackly/skills/trackly-appl
       fs.writeFileSync(file,'{broken');
       assert.equal(spawnSync(process.execPath,[script,file],{encoding:'utf8'}).status,1);
     } finally {fs.rmSync(dir,{recursive:true,force:true});}
+  });
+}
+
+for (const pack of ['skills/trackly-apply', 'plugins/trackly/skills/trackly-apply']) {
+  const script = path.resolve(__dirname, '..', pack, 'scripts/validate-profile-lookup.js');
+  const {validate} = require(script);
+  const controls = [{fingerprint:'a'.repeat(64),schemaFetched:true,contextualProfileFetched:true,state:'unknown',required:true,disposition:'ask',committed:false}];
+  test(`${pack}: revision zero is valid only for explicit fixed inspection`, () => {
+    assert.deepEqual(validate({workMode:'fixed_inspection',profileRevision:0,controls}), []);
+    for (const workMode of ['accessible_execution', 'unknown', undefined, null]) {
+      assert.ok(validate({workMode,profileRevision:0,controls}).length);
+    }
+    for (const workMode of ['fixed_inspection','accessible_execution']) {
+      assert.deepEqual(validate({workMode,profileRevision:1,controls}), []);
+      for (const profileRevision of [-1, 1.5, '0', Number.MAX_SAFE_INTEGER+1]) assert.ok(validate({workMode,profileRevision,controls}).length);
+    }
+    assert.ok(validate({profileRevision:1,controls}).length);
+  });
+  test(`${pack}: documented validator command runs from an unrelated working directory`, () => {
+    const dir=fs.mkdtempSync(path.join(os.tmpdir(),'profile-gate-cwd-'));
+    try {
+      const file=path.join(dir,'receipt.json');
+      fs.writeFileSync(file, JSON.stringify({workMode:'fixed_inspection',profileRevision:0,controls}));
+      const guide=fs.readFileSync(path.resolve(__dirname,'..',pack,'references/answer-resolution.md'),'utf8');
+      const command=guide.match(/`node ([^`]*validate-profile-lookup\.js[^`]*)`/)[1];
+      const resolved=command.replace('<skill-dir>',path.resolve(__dirname,'..',pack)).replace(/receipt\.json/,file);
+      const result=spawnSync(process.execPath, resolved.match(/"[^"]+"|\S+/g).map(x=>x.replace(/^"|"$/g,'')), {cwd:dir,encoding:'utf8'});
+      assert.equal(result.status,0,result.stderr);
+      assert.deepEqual(JSON.parse(result.stdout),{safeToAsk:true,codes:[]});
+    } finally {fs.rmSync(dir,{recursive:true,force:true});}
+  });
+  if (pack === "skills/trackly-apply") test(`${pack}: empty selections require an exhausted accessible execution`, () => {
+    const {validateCheckpoint}=require(path.resolve(__dirname,'..',pack,'scripts/validate-phase-checkpoint.js'));
+    for (const workMode of ['fixed_inspection','accessible_execution']) for (const queueExhausted of [true,false]) {
+      const receipt={workMode,batchId:501,latestExplicitTarget:1,approvedJobIds:[],approvalRecorded:true,noFormMutationBeforeApproval:true,queueExhausted};
+      const context={workMode,batchId:501,latestExplicitTarget:1,selectableJobIds:[],queueExhausted};
+      if(workMode==='accessible_execution'){receipt.executionId=301;context.executionId=301;}
+      const errors=validateCheckpoint('selection',receipt,context);
+      if(workMode==='accessible_execution' && queueExhausted)assert.deepEqual(errors,[]);
+      else assert.ok(errors.length,`${workMode} exhausted=${queueExhausted}`);
+      receipt.approvedJobIds=[101];context.selectableJobIds=[101];
+      assert.deepEqual(validateCheckpoint('selection',receipt,context),[]);
+    }
   });
 }
