@@ -14,6 +14,7 @@ function validate(receipt) {
     if (c.schemaFetched !== true || c.contextualProfileFetched !== true) errors.push('lookup_incomplete');
     if (typeof c.required !== 'boolean' || typeof c.committed !== 'boolean') errors.push('invalid_control_flags');
     if (!['answered','unknown','redacted','unavailable','live_consent'].includes(c.state) || !['fill','preserve','ask','defer_optional','blocked'].includes(c.disposition)) errors.push('invalid_resolution');
+    if (c.state !== 'answered' && c.committed) errors.push('unresolved_control_committed');
     if (c.state === 'answered' && (!['fill','preserve'].includes(c.disposition) || !c.committed)) errors.push('known_answer_not_committed');
     if (['redacted','unavailable'].includes(c.state) && c.disposition !== 'blocked') errors.push('unavailable_is_not_unknown');
     if (c.state === 'unknown' && (c.required ? c.disposition !== 'ask' : !['ask','defer_optional'].includes(c.disposition))) errors.push('unknown_routing_invalid');

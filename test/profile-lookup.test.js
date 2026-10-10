@@ -8,7 +8,7 @@ const path = require('node:path');
 for (const pack of ['skills/trackly-apply', 'plugins/trackly/skills/trackly-apply']) {
   const script = path.join(__dirname, '..', pack, 'scripts/validate-profile-lookup.js');
   const {validate} = require(script);
-  const control = (overrides = {}) => ({fingerprint:'a'.repeat(64),schemaFetched:true,contextualProfileFetched:true,state:'answered',required:false,disposition:'fill',committed:true,...overrides});
+  const control = (overrides = {}) => ({fingerprint:'a'.repeat(64),schemaFetched:true,contextualProfileFetched:true,state:'answered',required:false,disposition:'fill',committed:!overrides.state || overrides.state==='answered',...overrides});
   const receipt = (...controls) => ({profileRevision:60,controls});
   const cases = [
     ['known answer committed', {}, []],
@@ -17,6 +17,7 @@ for (const pack of ['skills/trackly-apply', 'plugins/trackly/skills/trackly-appl
     ['known answer not verified', {committed:false}, ['known_answer_not_committed']],
     ['compact omission without contextual fetch', {contextualProfileFetched:false,state:'unknown',disposition:'defer_optional'}, ['lookup_incomplete']],
     ['required missing fact', {state:'unknown',required:true,disposition:'ask',committed:false}, []],
+    ['unresolved value claimed committed', {state:'unknown',disposition:'ask',committed:true}, ['unresolved_control_committed']],
     ['optional contextual question', {state:'unknown',disposition:'ask',committed:false}, []],
     ['optional unknown survey', {state:'unknown',disposition:'defer_optional',committed:false}, []],
     ['unavailable lookup asked as missing', {state:'unavailable',disposition:'ask'}, ['unavailable_is_not_unknown']],
