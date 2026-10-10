@@ -1,3 +1,5 @@
+> Read [handoff-compatibility.md](handoff-compatibility.md): its documented markHandoff path supersedes returned-receipt/finalizer requirements below. Actual visibility and other review gates remain in force.
+
 # Batch orchestration
 
 Protocol 3.4 adds a server-owned Apply execution above immutable child batches.
