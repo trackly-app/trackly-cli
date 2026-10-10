@@ -1510,10 +1510,10 @@ test('advance replay returns the backend current revision and progress unchanged
   assert.deepEqual(result, response);
 });
 
-test('skill 4.8.0 recovers executions before legacy batches and distinguishes complete from inspect requests', () => {
-  assert.match(agent, /const SKILL_VERSION = '4\.8\.0'/);
+test('skill 4.9.0 recovers executions before legacy batches and distinguishes complete from inspect requests', () => {
+  assert.match(agent, /const SKILL_VERSION = '4\.9\.0'/);
   assert.match(agent, /const MIN_APPLY_PROTOCOL_VERSION = '3\.7\.0'/);
-  assert.match(skill, /Skill 4\.8\.0 requires protocol 3\.7\.0 or newer/);
+  assert.match(skill, /Skill 4\.9\.0 requires protocol 3\.7\.0 or newer/);
   assert.match(skill, /trackly_get_active_apply_execution[\s\S]*before[\s\S]*trackly_get_active_apply_batch/i);
   assert.match(skill, /complete_next_n_accessible/);
   assert.match(skill, /durablyReviewReady/);

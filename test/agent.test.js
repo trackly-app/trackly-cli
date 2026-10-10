@@ -62,7 +62,7 @@ async function withTempAgentHomeAsync(run) {
 test('agent setup installs one canonical skill and links both clients', () => {
   withTempAgentHome(() => {
     const result = agent.setupAgent('both');
-    assert.equal(result.skillVersion, '4.8.0');
+    assert.equal(result.skillVersion, '4.9.0');
     assert.ok(fs.existsSync(path.join(result.canonical, 'SKILL.md')));
     assert.ok(fs.existsSync(path.join(result.canonical, 'references', 'inbox-receipt-preflight.md')));
     for (const reference of ['operational-checkpoints.md', 'access-probe.md', 'performance-telemetry.md']) {
@@ -147,8 +147,8 @@ for (const flag of ['--skills-only', '--skills-only=true']) {
       ], { encoding: 'utf8', env: process.env });
       assert.equal(child.status, 0, child.stderr || child.stdout);
       const result = JSON.parse(child.stdout);
-      assert.equal(result.skillVersion, '4.8.0');
-      assert.equal(result.skillPolicyRevision, '4.8.0-kevin.1');
+      assert.equal(result.skillVersion, '4.9.0');
+      assert.equal(result.skillPolicyRevision, '4.9.0');
       assert.equal(fs.existsSync(marker), false);
       for (const [file, content] of configs) assert.equal(fs.readFileSync(file, 'utf8'), content);
       for (const client of result.clients) {
@@ -156,7 +156,7 @@ for (const flag of ['--skills-only', '--skills-only=true']) {
         assert.ok(fs.existsSync(path.join(client.target, 'references', 'handoff-compatibility.md')));
       }
       const metadata = JSON.parse(fs.readFileSync(path.join(result.canonical, '.trackly-managed.json'), 'utf8'));
-      assert.equal(metadata.skillPolicyRevision, '4.8.0-kevin.1');
+      assert.equal(metadata.skillPolicyRevision, '4.9.0');
       assert.equal(agent.inspectClient('codex').skillIntegrity, 'verified');
       assert.equal(agent.inspectClient('claude').skillIntegrity, 'verified');
     });
@@ -221,7 +221,7 @@ test('agent doctor inspection fails closed on modified, missing, or extra manage
       }
 
       const inspection = agent.inspectClient('codex');
-      assert.equal(inspection.installedSkillVersion, '4.8.0', mutation);
+      assert.equal(inspection.installedSkillVersion, '4.9.0', mutation);
       assert.equal(inspection.installed, false, mutation);
       assert.equal(inspection.skillIntegrity, 'content_mismatch', mutation);
     });
@@ -234,7 +234,7 @@ test('agent doctor reports managed skill integrity failures even when metadata v
     fs.appendFileSync(path.join(setup.clients[0].target, 'SKILL.md'), '\nfixture mutation\n');
 
     const report = await agent.doctorAgent();
-    assert.equal(report.skillPolicyRevision, '4.8.0-kevin.1');
+    assert.equal(report.skillPolicyRevision, '4.9.0');
     assert.equal(report.skillPackIntegrity.ok, false);
     assert.match(report.skillPackIntegrity.expectedDigest, /^[a-f0-9]{64}$/);
     assert.deepEqual(
@@ -258,7 +258,7 @@ test('clean temporary homes install Codex, Claude, and both client targets', () 
   }
 });
 
-test('Apply execution mode makes managed skill 4.0.0 stale and setup installs 4.8.0', () => {
+test('Apply execution mode makes managed skill 4.0.0 stale and setup installs 4.9.0', () => {
   withTempAgentHome(() => {
     const target = agent.clientSkillDir('codex');
     fs.mkdirSync(target, { recursive: true });
@@ -274,10 +274,10 @@ test('Apply execution mode makes managed skill 4.0.0 stale and setup installs 4.
     assert.equal(before.installedSkillVersion, '4.0.0');
 
     const setup = agent.setupAgent('codex');
-    assert.equal(setup.skillVersion, '4.8.0');
+    assert.equal(setup.skillVersion, '4.9.0');
     const after = agent.inspectClient('codex');
     assert.equal(after.installed, true);
-    assert.equal(after.installedSkillVersion, '4.8.0');
+    assert.equal(after.installedSkillVersion, '4.9.0');
     const installedSkill = fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8');
     assert.match(installedSkill, /Resume after maintenance/);
     assert.match(installedSkill, /sanctioned idempotent lookup/);
@@ -541,7 +541,7 @@ test('agent doctor compatibility enforces the protocol minimum installed skill v
   const installed = [{
     client: 'codex',
     installed: true,
-    installedSkillVersion: '4.8.0',
+    installedSkillVersion: '4.9.0',
   }];
   const current = agent.evaluateApplyCompatibility({
     version: '3.7.0',
@@ -561,7 +561,7 @@ test('agent doctor compatibility enforces the protocol minimum installed skill v
     mcpContractVersion: '3.9.2',
     compatibleCliMinimumVersion: '0.8.2',
     compatibleSkillMajor: 4,
-    compatibleSkillMinimumVersion: '4.9.0',
+    compatibleSkillMinimumVersion: '4.10.0',
   }, installed);
   assert.equal(future.compatible, false);
   assert.equal(future.skillMinimumSatisfied, false);
@@ -581,7 +581,7 @@ test('agent doctor compatibility rejects stale CLI and MCP contract versions', (
   const clients = [{
     client: 'codex',
     installed: true,
-    installedSkillVersion: '4.8.0',
+    installedSkillVersion: '4.9.0',
   }];
   const base = {
     version: '3.7.0',
@@ -622,7 +622,7 @@ test('agent doctor accepts the local MCP contract during an explicit overlap win
   const clients = [{
     client: 'codex',
     installed: true,
-    installedSkillVersion: '4.8.0',
+    installedSkillVersion: '4.9.0',
   }];
   const result = agent.evaluateApplyCompatibility({
     version: '3.7.0',
@@ -653,7 +653,7 @@ test('agent doctor treats an explicit MCP compatibility window as authoritative'
   }, [{
     client: 'codex',
     installed: true,
-    installedSkillVersion: '4.8.0',
+    installedSkillVersion: '4.9.0',
   }]);
 
   assert.equal(result.mcpContractCompatible, false);
@@ -664,7 +664,7 @@ test('agent doctor accepts the legacy MCP contract only while accessible executi
   const clients = [{
     client: 'codex',
     installed: true,
-    installedSkillVersion: '4.8.0',
+    installedSkillVersion: '4.9.0',
   }];
   const base = {
     version: '3.4.0',
@@ -1079,8 +1079,7 @@ test('public skill contains no personal profile data or absolute user paths', ()
   }
   collect(root);
   const text = files.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
-  // A release identifier is package metadata, not an application-profile value.
-  const profileText = text.replaceAll('4.8.0-kevin.1', '<POLICY_REVISION>');
+  const profileText = text;
   assert.doesNotMatch(profileText, /Kevin|Astuhuaman|berkeley\.edu|2710 Bancroft|\/Users\//i);
   assert.match(text, /Stop before Submit/);
   assert.match(text, /preserve.*user.*filename/i);
