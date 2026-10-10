@@ -1,3 +1,5 @@
+> Read [handoff-compatibility.md](handoff-compatibility.md): its documented markHandoff path supersedes returned-receipt/finalizer requirements below. Actual visibility and other review gates remain in force.
+
 # Operational checkpoints
 
 Use this page as the run card. The detailed references define how to perform

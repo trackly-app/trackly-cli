@@ -23,7 +23,7 @@ const { version: VERSION } = require('../package.json');
 const { doctorAgent, resumeValidationStatus, setupAgent } = require('../lib/agent');
 const { diagnoseLocalPath } = require('../lib/path-diagnostics');
 
-const BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'version', 'v', 'clear-api-key', 'clear-base-url', 'refresh', 'remote']);
+const BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'version', 'v', 'clear-api-key', 'clear-base-url', 'refresh', 'remote', 'skills-only']);
 const VALUE_FLAGS = new Set([
   'api-key',
   'base-url',
@@ -82,7 +82,7 @@ const COMMAND_FLAGS = {
   'request-company': ['url', 'notes'],
   'api-key': ['name'],
   config: ['api-key', 'base-url', 'clear-api-key', 'clear-base-url'],
-  agent: ['client', 'window-days', 'target-reviewed-runs', 'errno'],
+  agent: ['client', 'window-days', 'target-reviewed-runs', 'errno', 'skills-only'],
 };
 const AUTH_HELP_TEXT = `Not authenticated.
   Existing member: trackly login                 (Google OAuth)
@@ -1194,13 +1194,17 @@ async function cmdAgent(args) {
   }
   if (subcommand === 'setup') {
     if (args.client === null) return failNow('Missing value for --client. Use codex, claude, or both.');
+    const skillsOnly = args['skills-only'];
+    if (skillsOnly !== undefined && ![true, false, 'true', 'false'].includes(skillsOnly)) {
+      return failNow('Invalid value for --skills-only. Use --skills-only, --skills-only=true, or --skills-only=false.');
+    }
     const client = String(args.client || 'both').toLowerCase();
     try {
-      const result = setupAgent(client);
-      const registrationFailed = result.clients.some((item) => !['current', 'installed'].includes(item.mcp.status));
+      const result = setupAgent(client, { skillsOnly: skillsOnly === true || skillsOnly === 'true' });
+      const registrationFailed = result.clients.some((item) => !['current', 'installed', 'skipped'].includes(item.mcp.status));
       if (registrationFailed) process.exitCode = 1;
       if (isJSON()) return printJson(result);
-      console.log(color('green', `Trackly Apply ${result.skillVersion} installed.`));
+      console.log(color('green', `Trackly Apply ${result.skillVersion} (policy ${result.skillPolicyRevision}) installed.`));
       console.log(`Canonical skill: ${result.canonical}`);
       for (const item of result.clients) {
         console.log(`${item.client}: skill ${item.status} (${item.method}); MCP ${item.mcp.status}`);
@@ -1338,7 +1342,7 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'config')}               Show or update CLI config (--api-key, --base-url)
   ${color('cyan', 'version')}              Show CLI version
   ${color('cyan', 'mcp')}                  Start MCP server
-  ${color('cyan', 'agent setup')}          Install Trackly Apply for Codex/Claude (--client codex|claude|both)
+  ${color('cyan', 'agent setup')}          Install Trackly Apply (--client codex|claude|both; --skills-only preserves MCP)
   ${color('cyan', 'agent doctor')}         Verify auth, MCP, skill, profile, resume, and compatibility
   ${color('cyan', 'agent evidence')}       Show value-free beta evidence (--window-days, --target-reviewed-runs)
   ${color('cyan', 'agent diagnose-path')}  Diagnose one exact local filesystem path (--errno optional)

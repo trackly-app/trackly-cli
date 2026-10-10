@@ -124,6 +124,68 @@ test('agent setup records a deterministic full-pack content digest', () => {
   });
 });
 
+for (const flag of ['--skills-only', '--skills-only=true']) {
+  test(`skills-only setup (${flag}) installs the pinned Apply policy without invoking or changing MCP clients`, () => {
+    withTempAgentHome((root) => {
+      const marker = path.join(root, 'mcp-invoked');
+      const configs = [
+        [path.join(process.env.CODEX_HOME, 'config.toml'), '[mcp_servers.trackly]\ncommand = "node"\nargs = ["existing-server.js"]\n'],
+        [path.join(process.env.CLAUDE_CONFIG_DIR, 'settings.json'), JSON.stringify({ mcpServers: { trackly: { command: 'node', args: ['existing-server.js'] } } })],
+      ];
+      for (const [file, content] of configs) {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, content);
+      }
+      for (const name of ['codex', 'claude']) {
+        const executable = path.join(process.env.PATH, name);
+        fs.writeFileSync(executable, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, 'unexpected MCP call');\n`);
+        fs.chmodSync(executable, 0o700);
+      }
+      const child = spawnSync(process.execPath, [
+        path.join(__dirname, '..', 'bin', 'trackly'), 'agent', 'setup',
+        '--client', 'both', flag, '--json',
+      ], { encoding: 'utf8', env: process.env });
+      assert.equal(child.status, 0, child.stderr || child.stdout);
+      const result = JSON.parse(child.stdout);
+      assert.equal(result.skillVersion, '4.8.0');
+      assert.equal(result.skillPolicyRevision, '4.8.0-kevin.1');
+      assert.equal(fs.existsSync(marker), false);
+      for (const [file, content] of configs) assert.equal(fs.readFileSync(file, 'utf8'), content);
+      for (const client of result.clients) {
+        assert.equal(client.mcp.status, 'skipped');
+        assert.ok(fs.existsSync(path.join(client.target, 'references', 'handoff-compatibility.md')));
+      }
+      const metadata = JSON.parse(fs.readFileSync(path.join(result.canonical, '.trackly-managed.json'), 'utf8'));
+      assert.equal(metadata.skillPolicyRevision, '4.8.0-kevin.1');
+      assert.equal(agent.inspectClient('codex').skillIntegrity, 'verified');
+      assert.equal(agent.inspectClient('claude').skillIntegrity, 'verified');
+    });
+  });
+}
+
+test('invalid skills-only values are rejected before installation or MCP registration', () => {
+  for (const flag of ['--skills-only=maybe', '--skills-only=1']) {
+    withTempAgentHome((root) => {
+      const marker = path.join(root, 'mcp-invoked');
+      for (const name of ['codex', 'claude']) {
+        const executable = path.join(process.env.PATH, name);
+        fs.writeFileSync(executable, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, 'unexpected MCP call');\n`);
+        fs.chmodSync(executable, 0o700);
+      }
+      const child = spawnSync(process.execPath, [
+        path.join(__dirname, '..', 'bin', 'trackly'), 'agent', 'setup',
+        '--client', 'both', flag, '--json',
+      ], { encoding: 'utf8', env: process.env });
+      assert.equal(child.status, 1, flag);
+      assert.match(child.stdout + child.stderr, /Invalid value for --skills-only/);
+      assert.equal(fs.existsSync(marker), false, flag);
+      assert.equal(fs.existsSync(path.join(root, '.trackly', 'skills')), false, flag);
+      assert.equal(fs.existsSync(path.join(root, '.codex', 'skills')), false, flag);
+      assert.equal(fs.existsSync(path.join(root, '.claude', 'skills')), false, flag);
+    });
+  }
+});
+
 test('agent doctor inspection fails closed on modified, missing, or extra managed skill content', () => {
   for (const mutation of ['modified', 'missing', 'extra']) {
     withTempAgentHome(() => {
@@ -998,7 +1060,9 @@ test('public skill contains no personal profile data or absolute user paths', ()
   }
   collect(root);
   const text = files.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
-  assert.doesNotMatch(text, /Kevin|Astuhuaman|berkeley\.edu|2710 Bancroft|\/Users\//i);
+  // A release identifier is package metadata, not an application-profile value.
+  const profileText = text.replaceAll('4.8.0-kevin.1', '<POLICY_REVISION>');
+  assert.doesNotMatch(profileText, /Kevin|Astuhuaman|berkeley\.edu|2710 Bancroft|\/Users\//i);
   assert.match(text, /Stop before Submit/);
   assert.match(text, /preserve.*user.*filename/i);
   assert.match(text, /internal.*cache.*identifier/i);

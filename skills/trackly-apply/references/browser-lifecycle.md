@@ -1,3 +1,5 @@
+> Read [handoff-compatibility.md](handoff-compatibility.md): its documented markHandoff path supersedes returned-receipt/finalizer requirements below. Actual visibility and other review gates remain in force.
+
 # Browser lifecycle and recovery
 
 Keep business identity in Trackly and host-specific browser identity local.

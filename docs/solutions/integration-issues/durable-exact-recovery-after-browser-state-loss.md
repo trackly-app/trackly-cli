@@ -57,6 +57,27 @@ Blind autofill can overwrite a correction the user made after the agent's last o
 
 ## Solution
 
+### Preservation policy update — 2026-10-10
+
+Policy revision 4.8.0-kevin.1 accepts documented tab.markHandoff() when the
+runtime guarantees that marked tabs survive normal turn cleanup, including a
+Promise<void> return. Await it for every mapped application tab before mutation
+and at turn end, check the exact inventory presence, and reclaim and revalidate
+identity and form state on later turns. Completed calls and inventory checks are
+observations, not native persistence receipts; never fabricate validator evidence.
+The receipt-bearing and complete-inventory finalizer paths remain available.
+Preservation alone does not certify visibility, saved form state, or review readiness.
+
+Keep numeric skill version 4.8.0 for the protocol compatibility checker and store
+the policy revision separately in managed metadata. A personal revision suffix
+cannot be used as the numeric protocol version. Install the CLI-owned policy with
+the skills-only setup option to preserve existing MCP registration. New Cloud
+images and existing workspace homes require separate installation verification.
+
+Verification: all 19 skill files matched the release manifest; the CLI suite
+passed 720 tests with 20 skipped; the installer test proved no MCP client command
+or configuration write; the Cloud fixture rejected failed skill installation.
+
 The coordinated durable recovery work shipped through [trackly-cli PR #100](https://github.com/trackly-app/trackly-cli/pull/100), which enforces exact-set discovery and response validation in the CLI/MCP/skill layer, and [close-ai PR #1391](https://github.com/trackly-app/close-ai/pull/1391), whose backend implementation owns atomic all-or-nothing recovery creation.
 
 ### 1. Discover a bounded, value-free recovery menu

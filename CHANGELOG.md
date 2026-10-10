@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.7] - 2026-10-10
+
+### Changed
+
+- Ship the checksummed Trackly Apply policy revision `4.8.0-kevin.1` across
+  local and Cloud skill installations. Documented `markHandoff()` calls are
+  checked against exact tab inventories and revalidated on later turns;
+  completed calls are observations, never fabricated persistence receipts.
+- Add `agent setup --skills-only` so Cloud and existing clients can install
+  the same skill without changing MCP registration or authentication. Keep
+  the numeric upstream skill version for protocol compatibility and report
+  the policy revision separately.
+
 ### Security
 
 - Bump `@modelcontextprotocol/sdk` 1.30.0 to 1.32.1 (GHSA-6qxp-vccf-f47h, an

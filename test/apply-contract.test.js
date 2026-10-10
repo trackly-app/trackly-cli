@@ -2301,15 +2301,18 @@ test('Apply skill freezes and completes every member of an explicitly requested 
 test('Apply skill proves semantic browser readiness before preparing resume bytes', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
   const integrity = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'form-integrity.md'), 'utf8');
+  const handoff = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'handoff-compatibility.md'), 'utf8');
 
   assert.match(skill, /browser readiness gate/);
-  assert.match(
-    skill,
-    /either the documented session finalizer plus complete current controller-owned and user-owned inventory access[\s\S]*or a documented per-tab durable-handoff primitive/i,
-  );
-  assert.match(skill, /complete current controller-owned and user-owned inventory access/i);
-  assert.match(skill, /exact verifiable persistence receipt for every target tab/i);
-  assert.match(skill, /otherwise fail browser readiness/i);
+  assert.match(skill, /Before browser readiness read \[references\/handoff-compatibility.md\]/);
+  assert.match(skill, /Preserve every live application tab[\s\S]*before mutation and at every turn end/);
+  assert.match(handoff, /current runtime explicitly guarantees marked tabs survive the turn/);
+  assert.match(handoff, /await its markHandoff call[\s\S]*controller inventory and user inventory where exposed/);
+  assert.match(handoff, /Failed calls or missing tabs block mutation/);
+  assert.match(handoff, /On later turns, reclaim each exact mapped tab, verify identity and observable form state/);
+  assert.match(handoff, /observations, not returned persistence receipts/);
+  assert.match(handoff, /Do not label mark-only evidence durable_handoff_receipt or alter validators/);
+  assert.match(handoff, /If no supported preservation path exists, stop before mutation/);
   assert.match(skill, /Codex in-app browser controls, Chrome MCP\/extension browser control, or Claude in Chrome/);
   assert.match(skill, /discover or reclaim every target tab/);
   assert.match(skill, /exact employer, role, ATS, requisition URL, job ID, and run ID/);
@@ -3076,6 +3079,14 @@ test('MCP Apply prompt preserves safety-critical skill orchestration parity', ()
   assert.match(promptRegion, /conditional rules supersede any unconditional complete-inventory wording earlier in this prompt/i);
   assert.match(promptRegion, /session-finalizer path, require complete controller and user inventories/i);
   assert.match(promptRegion, /per-tab durable-handoff path, do not require unavailable inventories/i);
+  assert.match(promptRegion, /Policy 4\.8\.0-kevin\.1 also accepts the documented markHandoff path/);
+  assert.match(promptRegion, /this path supersedes earlier receipt-only readiness requirements/);
+  assert.match(promptRegion, /Bind each exact job\/run\/tab, await its markHandoff\(\), and check the controller inventory and user inventory where exposed; failed calls or missing tabs block mutation/);
+  assert.match(promptRegion, /await markHandoff\(\) for every mapped live application tab, then check the controller inventory and user inventory where exposed/);
+  assert.match(promptRegion, /Failed marks or missing tabs block the handoff/);
+  assert.match(promptRegion, /On the next turn, reclaim each exact tab, recheck identity and required fields/);
+  assert.match(promptRegion, /observations, not a native persistence receipt/);
+  assert.match(promptRegion, /Never label mark-only evidence durable_handoff_receipt or change validators/);
   assert.match(promptRegion, /If no mapped live application tabs remain, skip both finalization and per-tab handoff/i);
   assert.match(promptRegion, /exact current tab-bound user-visible handoff receipt is valid alternative proof/i);
   assert.match(promptRegion, /either complete-union absence or an exact current tab-bound user-side closure\/absence receipt/i);
