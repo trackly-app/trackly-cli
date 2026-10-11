@@ -35,6 +35,31 @@ as an array the authorization server rejects.
 
 The legacy trackly MCP endpoint is intentionally not used by this package.
 
+After installing, use your host's plugin connection controls to sign in to the
+Trackly account that holds your saved jobs. If you have several Google accounts,
+choose that account explicitly. A matching name or preselected account does not
+establish that it contains your Trackly profile. The hosted plugin does not
+require the native Trackly app or a separate CLI login.
+
+Connection is complete when the host reports success, discovers Trackly's tools,
+and a read-only call works. Clicking Allow is only part of the flow: the host must
+receive the callback and save authorization. If embedded sign-in stops at
+Connecting, use the host's supported external-browser sign-in path. If the host
+reports an OAuth-lock, keychain, or credential-storage error, resolve that
+specific host permission and retry the connection; do not copy tokens or edit
+credential files. Repeated failure needs the redacted error and failing stage,
+not another connector or a different Trackly account.
+
+If connection works but saved jobs or profile details are unexpectedly missing,
+verify the connected account before entering the same information again.
+After an account switch succeeds, refresh the host's MCP connection so subsequent
+calls use the new authorization; a running client may still hold the old grant.
+Apply availability is also account- and backend-dependent; installing more skills
+does not enable a disabled capability. Trackly's service handles account data
+and authorization, while Codex or ChatGPT handles its browser flow, credential
+storage, and tool discovery. Report the failing stage so the appropriate side
+can be fixed.
+
 The plugin never bypasses employer access controls, CAPTCHA, OTP, credentials, or
 account-creation requirements. It stops at a review-ready form and the user
 activates Submit manually.
