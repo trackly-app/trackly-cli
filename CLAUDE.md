@@ -10,14 +10,18 @@ CLI + MCP server for the Trackly job tracker. Lets users search 250K+ jobs acros
 - **Auth:** Google OAuth via local callback server, tokens stored in `~/.trackly/config.json`
 - **API:** All requests go to `https://closeai.mba` (the backend, same as CLOSE AI)
 
-## Backend Production Source Of Truth
+## Backend Boundary
 
-After the 2026-06-30 Azure cutover, `https://closeai.mba` is served by Azure and
-the live DB is Azure blue Postgres behind the backend/VNet. This CLI repo is a
-consumer only; do not use AWS RDS, Render, old DB aliases, `ssh closeai-web`, or
-direct SQL for live production claims, migrations, user exports, or company-add
-decisions. Backend data checks belong in protected close-ai admin/report
-endpoints, not this CLI repo.
+This repo only consumes `https://closeai.mba`. Never modify the backend or run
+SQL against production from this repo. Backend operations are documented in
+private repositories.
+
+## Public Documentation Boundary
+
+Document the public API and CLI/MCP contracts here. Backend infrastructure,
+private source paths and internal tracking links belong in private repositories.
+Workspace review notes stay local under ignored `.context/`; local review tools
+can still read them without committing them to the public repository.
 
 ## Directory Structure
 
@@ -65,9 +69,9 @@ Apply set documented in `docs/trackly-tools.md` plus the analytics-owned
 `get_more_tools` missing-capability tool. Keep this count synchronized with
 `mcp/server.js`, `README.md`, and the docs-drift tests.
 
-Job function values — **14 canonical values** that match backend `ALL_JOB_FUNCTIONS` at `granola-followup-app/src/routes/jobscout-filter-utils.ts:17-21`, the backend `job_function` DB column, and the local mirror `JOB_FUNCTIONS` in `mcp/server.js`: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`. `partnerships` is documented in CHANGELOG `0.2.1`; any doc still listing 13 values is stale. The MCP test at `test/mcp-schema.test.js` locks this local/backend mapping.
+Job function values — **14 canonical values** that match the backend job-function contract and the local mirror `JOB_FUNCTIONS` in `mcp/server.js`: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`. `partnerships` is documented in CHANGELOG `0.2.1`; any doc still listing 13 values is stale. The MCP test at `test/mcp-schema.test.js` locks this local/backend mapping.
 
-NOTE: `/ask` lives in the backend (`trackly-app/close-ai`) and historically emitted `product_management`/`data_science` style values that the `/jobs` handler could drop. Backend PR #112 (`https://github.com/trackly-app/close-ai/pull/112`) is the proposed fix to emit modern public names (`product`, `data`, etc.). Do not document that drift as fixed/live until that PR is merged and deployed.
+NOTE: `/ask` lives in the backend and historically emitted `product_management`/`data_science` style values that the `/jobs` handler could drop. Do not document that drift as fixed/live until a backend release verifies the modern public names (`product`, `data`, etc.).
 
 ## Publishing
 
@@ -141,7 +145,7 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 
 The complete 58-tool inventory is in `docs/trackly-tools.md`. Helpers such as `trackly_verify_prepared_resume` and `trackly_validate_apply_resume_upload` intentionally have no CLI HTTP endpoint and therefore do not appear in the endpoint list above.
 
-Hosted `/api/mcp` tool count: the hosted registry lives in close-ai `src/mcp/server.ts` (registered through `registerHostedMcpTool`). It omits exactly four local-only tools (`trackly_diagnose_local_path`, `trackly_lint_application_text`, `trackly_validate_apply_resume_upload`, `trackly_validate_apply_tab_keep_set`) and adds `trackly_chat`, for 55. `trackly_prepare_resume` and `trackly_verify_prepared_resume` are registered on both servers. When a tool is added to or removed from either server, recount the hosted names and update every "N hosted tools" claim in `README.md`; the docs-coverage test only checks that those README claims agree.
+Hosted `/api/mcp` tool count: the backend owns the hosted registry. It omits exactly four local-only tools (`trackly_diagnose_local_path`, `trackly_lint_application_text`, `trackly_validate_apply_resume_upload`, `trackly_validate_apply_tab_keep_set`) and adds `trackly_chat`, for 55. `trackly_prepare_resume` and `trackly_verify_prepared_resume` are registered on both servers. When a tool is added to or removed from either server, recount the hosted names and update every "N hosted tools" claim in `README.md`; the docs-coverage test only checks that those README claims agree.
 
 ## Gotchas
 
@@ -161,7 +165,7 @@ Hosted `/api/mcp` tool count: the hosted registry lives in close-ai `src/mcp/ser
    local MCP transport remains stdio-only; do not add or initialize an HTTP
    server. The CLI HTTP client uses raw `node:https`/`node:http`.
 8. **Token refresh is automatic.** On 401, `apiRequest()` tries one refresh via `/api/auth/refresh` before failing. The `_isRetry` flag prevents infinite loops.
-9. **`/ask` backend drift is tracked outside this repo.** The CLI and MCP use DB-backed job function values directly. Backend PR #112 (`trackly-app/close-ai`) tracks the `/ask` prompt/URL migration to those same public values; verify production before claiming `/ask` round-trips are fixed.
+9. **`/ask` backend drift is tracked outside this repo.** The CLI and MCP use DB-backed job function values directly. The backend tracks the `/ask` prompt/URL migration to those same public values; verify production before claiming `/ask` round-trips are fixed.
 
 ### Unmerged Apply contract candidates
 
