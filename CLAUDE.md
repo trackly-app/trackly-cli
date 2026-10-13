@@ -158,7 +158,7 @@ Hosted `/api/mcp` tool count: the hosted registry lives in close-ai `src/mcp/ser
    local MCP transport remains stdio-only; do not add or initialize an HTTP
    server. The CLI HTTP client uses raw `node:https`/`node:http`.
 8. **Token refresh is automatic.** On 401, `apiRequest()` tries one refresh via `/api/auth/refresh` before failing. The `_isRetry` flag prevents infinite loops.
-9. **`/ask` backend drift is tracked outside this repo.** The CLI and MCP use DB-backed job function values directly. Backend PR #112 (`trackly-app/close-ai`) tracks the `/ask` prompt/URL migration to those same public values; verify production before claiming `/ask` round-trips are fixed.
+9. **`/ask` backend drift is tracked outside this repo.** The CLI and MCP use DB-backed job function values directly. The backend tracks the `/ask` prompt/URL migration to those same public values; verify production before claiming `/ask` round-trips are fixed.
 
 ### Unmerged Apply contract candidates
 
