@@ -147,7 +147,7 @@ Until that gate exists, the current sanitizer is suitable for a spike but not fo
 
 ## Existing Trackly contract and roadmap
 
-The canonical `close-ai/docs/analytics/CONTRACT.md` currently says:
+The canonical private backend analytics contract currently says:
 
 - ordinary product event properties are content-free;
 - authenticated identity is backend-owned (`distinct_id = String(users.id)`);
@@ -161,7 +161,7 @@ The rich MCP analytics contract amendment is explicitly approved. It still must 
 
 Relevant active work as of August 8, 2026:
 
-- `close-ai` issue #1378 is the cross-platform analytics program.
+- The private backend analytics tracker is the cross-platform analytics program.
 - `trackly-cli` issue #101 currently scopes MCP analytics to bounded client-name forwarding and explicitly prohibits commands, arguments, prompts, and user content. It must be amended or superseded.
 - `trackly-cli` issue #48 covers graceful MCP shutdown and makes the bounded telemetry flush especially relevant.
 - Draft PR #100 is active Apply recovery work and overlaps package/version surfaces. This spike avoids version/release changes, but a future production PR must rebase and review overlap.

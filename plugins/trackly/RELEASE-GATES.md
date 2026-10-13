@@ -124,7 +124,7 @@ internet or open-ended external entities, and false for a bounded private
 account "even if that service is externally hosted"; `destructiveHint` is true
 for a write that can delete, overwrite, revoke access, or cause another
 irreversible side effect. The backend source is
-`close-ai/src/mcp/plugin-server.ts`. `plugin-server.test.ts` locks every row
+the private backend plugin registry. `plugin-server.test.ts` locks every row
 below, so a change to any hint fails CI. Paste these one-line justifications
 into the portal.
 

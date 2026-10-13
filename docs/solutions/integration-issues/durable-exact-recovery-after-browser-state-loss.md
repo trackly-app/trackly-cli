@@ -78,7 +78,7 @@ Verification: all 19 skill files matched the release manifest; the CLI suite
 passed 721 tests with 20 skipped; the installer test proved no MCP client command
 or configuration write; the Cloud fixture rejected failed skill installation.
 
-The coordinated durable recovery work shipped through [trackly-cli PR #100](https://github.com/trackly-app/trackly-cli/pull/100), which enforces exact-set discovery and response validation in the CLI/MCP/skill layer, and [close-ai PR #1391](https://github.com/trackly-app/close-ai/pull/1391), whose backend implementation owns atomic all-or-nothing recovery creation.
+The coordinated durable recovery work shipped through [trackly-cli PR #100](https://github.com/trackly-app/trackly-cli/pull/100), which enforces exact-set discovery and response validation in the CLI/MCP/skill layer, and a coordinated private backend change, which owns atomic all-or-nothing recovery creation.
 
 ### 1. Discover a bounded, value-free recovery menu
 
@@ -143,5 +143,5 @@ Inspection epochs close stale-evidence reuse. Field provenance protects user cor
 ## Related Issues
 
 - [Trackly CLI PR #100](https://github.com/trackly-app/trackly-cli/pull/100) — CLI, MCP, and skill-side durable exact recovery contract.
-- [Close AI PR #1391](https://github.com/trackly-app/close-ai/pull/1391) — backend durable recovery lineage and exact-member control plane.
+- Private backend release records document durable recovery lineage and the exact-member control plane.
 - [Durable recovery implementation plan](../../plans/2026-08-05-001-trackly-apply-durable-recovery-reconciliation-plan.md) — historical design record aligned with the released all-or-nothing recovery contract.

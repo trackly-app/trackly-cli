@@ -16,7 +16,7 @@ execution: code
 
 - **Objective:** Make Trackly Apply recover the exact interrupted jobs, preserve cumulative completion, reconcile every member in a submitted handoff, and fail closed around browser cleanup and resume upload.
 - **Authority:** The backend owns membership, lifecycle, completion credit, idempotency, and current state. The browser harness owns live DOM evidence and local tab identity. The user owns Submit, credentials, verification challenges, and ambiguous answers.
-- **Execution profile:** Deep, cross-repository reliability work in `close-ai` and `trackly-cli`. Use fresh worktrees from current `origin/main`; keep base checkouts read-only.
+- **Execution profile:** Deep, cross-repository reliability work in the private backend and `trackly-cli`. Use fresh worktrees from current `origin/main`; keep base checkouts read-only.
 - **Stop conditions:** Stop browser mutation on unexpected recovery membership, stale inspection authority, ambiguous submission state, incomplete tab inventories, unproven attachment state, or incompatible protocol versions.
 - **Tail ownership:** Merge and deploy the backend first. Then publish and install the compatible CLI and skill. Finish with no-submit fixtures and a manually submitted dogfood recovery flow.
 
@@ -300,8 +300,8 @@ The backend owns durable identity, membership, milestones, and reconciliation. T
 
 - **Goal:** Reproduce the production accounting and review-replay failure before changing persistent state.
 - **Requirements:** R1-R3, R8, AE1-AE2.
-- **Repositories:** `close-ai`.
-- **Files:** `src/services/application-profile/__tests__/apply-execution-service.test.ts`, `src/services/application-profile/__tests__/service.test.ts`, and a database integration test beside the existing application-profile integration fixtures.
+- **Repositories:** the private backend.
+- **Files:** backend execution-service tests, backend application-profile tests, and a database integration test beside the existing application-profile integration fixtures.
 - **Approach:** Exercise real execution, batch, member, run, evidence, and attestation rows through checkpoint, truth certification, bulk review outcome, one submission, and progress read. Assert both current counts and cumulative status. Preserve the existing pure calculator test as a smaller unit check.
 - **Test scenarios:** Exact duplicate review intent; stale epoch; one of two submitted; both submitted; ambiguous transport followed by refetch; concurrent submit and advance.
 - **Verification:** At least one characterization fails on pre-fix code for the same durable state mismatch observed in the incident.
@@ -311,8 +311,8 @@ The backend owns durable identity, membership, milestones, and reconciliation. T
 - **Goal:** Make target achievement durable and independent from later lifecycle or attestation projection changes.
 - **Requirements:** R1-R3, R13, AE1.
 - **Dependencies:** U1.
-- **Repositories:** `close-ai`.
-- **Files:** next sequential migration, migration runner/test if required by index strategy, `src/services/application-profile/batch-service.ts`, `src/services/application-profile/service.ts`, application-profile service tests.
+- **Repositories:** the private backend.
+- **Files:** next sequential migration, migration runner/test if required by index strategy, backend batch service, backend application-profile service, application-profile service tests.
 - **Approach:** Create a separate append-only achievement ledger rather than weakening immutable candidate rows. Insert one owner-bound credit with `ON CONFLICT DO NOTHING` only after durable review outcome or authorized submission repair, in the same transaction as execution status. Expose raw `achievementCount`, compute target-facing `completed = LEAST(achievementCount, target)`, and retain current `durablyReviewReady` and `submitted` for operator detail. Make credit the sole target-achievement input. Before migration, produce a dry-run report grouped by provable source predicate and ambiguous exclusion reason. Backfill every provable submitted row with authorized evidence, or review-ready row with an `awaiting_manual_submit` run and matching active truth attestation for the certified epoch/set; do not discard valid historical overflow above target.
 - **Test scenarios:** Credit set once; submission preserves credit; sibling submission does not reduce total; profile/attestation changes do not erase credit; concurrent writers cannot double-credit; account/execution deletion cascades correctly; ambiguous legacy rows remain uncredited; valid historical overflow remains visible; invalid-evidence revocation is append-only, audited, and cannot be triggered by ordinary lifecycle change.
 - **Verification:** AE1 passes in pure and database-backed tests, and an advance after target achievement produces no child wave. Before historical writes, a migration-owner review must approve per-predicate counts, sampled source evidence, and ambiguous-exclusion totals; any sample mismatch ships prospective crediting only and defers backfill.
@@ -322,8 +322,8 @@ The backend owns durable identity, membership, milestones, and reconciliation. T
 - **Goal:** Return existing durable milestones for exact replay and make historical/current state legible.
 - **Requirements:** R8-R9, R13, AE2.
 - **Dependencies:** U1-U2.
-- **Repositories:** `close-ai`.
-- **Files:** `src/services/application-profile/service.ts`, `src/routes/trackly-apply.ts`, route/runtime tests, service tests, batch projection tests.
+- **Repositories:** the private backend.
+- **Files:** backend application-profile service, backend Apply HTTP routes, route/runtime tests, service tests, batch projection tests.
 - **Approach:** Require an idempotency key for single and bulk outcomes. Extract a transaction-aware outcome writer, acquire the orchestration-owner lock, process bulk items in canonical member order with per-item savepoints, and persist the canonical request hash plus every item result in the same outer transaction. Return results in original request order; exact retries return `transition=replayed` from the stored result journal. Preserve partial bulk successes. State inference remains a bounded fallback for repairs created before request idempotency. Create a first-class execution-owned handoff receipt only after the ordered ready set is durable. Add explicit historical and current projection fields without mutating old rows.
 - **Test scenarios:** Exact replay; mismatched epoch; mismatched member; partial bulk replay/commit/conflict; old batch with current submitted run; repeated request after lost transport response.
 - **Verification:** Identical replay performs no version/event mutation and returns `awaiting_manual_submit`; historical views cannot be mistaken for actionable current state.
@@ -333,8 +333,8 @@ The backend owns durable identity, membership, milestones, and reconciliation. T
 - **Goal:** Reauthorize only explicitly requested eligible jobs after an expired or terminal execution.
 - **Requirements:** R4-R7, R13, R23, AE3-AE4, AE8.
 - **Dependencies:** U2-U3.
-- **Repositories:** `close-ai`.
-- **Files:** `src/services/application-profile/apply-execution-contract.ts`, `src/services/application-profile/batch-service.ts`, `src/services/application-profile/service.ts`, `src/routes/trackly-apply.ts`, `src/mcp/server.ts`, execution service/route/MCP contract tests.
+- **Repositories:** the private backend.
+- **Files:** backend execution contract, backend batch service, backend application-profile service, backend Apply HTTP routes, backend hosted MCP registry, execution service/route/MCP contract tests.
 - **Approach:** Add an authenticated discovery read returning only the user's recoverable execution IDs, snapshot hashes, stable candidate IDs, bounded lifecycle/eligibility codes, and expiry. It must not return profile values, browser data, or local paths. After explicit exact-set confirmation, create recovery with source execution, stable execution-candidate list, source snapshot hash, and idempotency key. Validate ownership and no competing mutable execution under the documented lock order. Evaluate eligibility for the entire asserted source set before creation; if any confirmed candidate is ineligible, fail atomically without creating an execution or substituting another candidate. When all are eligible, preserve source execution/candidate/member lineage, create one immutable non-replenishing recovery execution for the exact confirmed set, and require fresh epochs and browser bindings. Separate operational expiry from a bounded recovery-retention boundary so the nightly purge cannot erase eligible identity mid-window.
 - **Test scenarios:** Complete local context loss followed by discovery; cross-user discovery rejection; explicit exact-set confirmation; newer queue candidates present; saved timestamps unchanged; wholly eligible set; mixed eligible/applied/inactive set rejected with no execution; duplicate IDs; changed requisition; foreign user; concurrent identical recovery; concurrent different recovery; old evidence rejected; second interruption; recovery immediately before and after operational expiry; recovery after daily purge but before `recoverable_until`; rejection after retention expiry.
 - **Verification:** AE3-AE4 pass; AE4 explicitly proves that an ineligible confirmed member yields zero recovery executions, and every execution created by an eligible case has a response membership hash that exactly matches the full asserted source set.
@@ -344,7 +344,7 @@ The backend owns durable identity, membership, milestones, and reconciliation. T
 - **Goal:** Make exact recovery and handoff receipts safely callable from hosted and local agents.
 - **Requirements:** R7, R9-R10, R19-R22.
 - **Dependencies:** U3-U4.
-- **Repositories:** `close-ai`, then `trackly-cli`.
+- **Repositories:** the private backend, then `trackly-cli`.
 - **Files:** backend protocol route and hosted MCP schemas; `mcp/apply-tools.js`, contract history/fixture, `docs/trackly-tools.md`, MCP schema and hosted-contract tests, package changelog/version files.
 - **Approach:** First ship compatible readers that recognize or safely reject `recover_exact_members`; only then enable writes behind a feature flag. Advertise protocol capability and additive versions. Add public recovery-discovery and exact-recovery tools and result schemas. Include requested-set hash, stable candidate eligibility, fresh-epoch requirements, cumulative `completed`, handoff receipt, and persisted transition result. Keep local-only helpers out of hosted parity expectations through the existing documented exception pattern.
 - **Test scenarios:** Compatible and incompatible clients; hosted/local public-schema equality; cross-user rejection; replay response; missing capability; older active execution recovery.
@@ -355,7 +355,7 @@ The backend owns durable identity, membership, milestones, and reconciliation. T
 - **Goal:** Reconcile every job in the exact staged handoff after the user reports submission.
 - **Requirements:** R9-R13, R19, R21-R22, AE5.
 - **Dependencies:** U3, U5.
-- **Repositories:** `close-ai`, `trackly-cli`.
+- **Repositories:** the private backend, `trackly-cli`.
 - **Files:** backend ATS capability/protocol definitions; `skills/trackly-apply/SKILL.md`; `skills/trackly-apply/references/ats-playbook.md`, `review-handoff.md`, `batch-orchestration.md`, `form-integrity.md`; prompt-resource and contract tests.
 - **Approach:** Publish bounded provider strategy enums. Define the local `DetectedSubmission` boundary and require the skill to resolve group language to a handoff receipt, inspect each member's live DOM, classify each as `detected`, `user_confirmed`, `unresolved`, or `contradictory`, record positive evidence through the existing backend writer, preserve unmatched members, and ask once only for unresolved submission authority. URL/title remain identity and navigation signals only.
 - **Test scenarios:** Greenhouse redirect; Ashby unchanged route/banner; Lever redirect and same-route confirmation; one of two succeeds; both succeed quickly; explicit user confirmation preserves stronger stored evidence; contradictory “already applied” state.
@@ -377,7 +377,7 @@ The backend owns durable identity, membership, milestones, and reconciliation. T
 - **Goal:** Make recovery state and the next human/agent action obvious while completing cross-repository release gates.
 - **Requirements:** R7, R19-R22.
 - **Dependencies:** U1-U7.
-- **Repositories:** `close-ai`, `trackly-cli`.
+- **Repositories:** the private backend, `trackly-cli`.
 - **Files:** `skills/trackly-apply/references/review-handoff.md`, browser lifecycle/recovery references, MCP prompt resources, changelogs, release notes, doctor/consumer tests.
 - **Approach:** Add deterministic normal-review, recovery, visibility-unverified, upload-manual, and post-submission templates. Each recovery template shows tab, form, and authority receipts separately. Deploy/migrate backend, verify live protocol, publish/install CLI and canonical skill, run doctor, then dogfood exact recovery and grouped reconciliation without agent submission.
 - **Test scenarios:** Restart with blank forms; restored tab with expired authority; unresolved auth member; upload unavailable; one staged member unresolved; no active work; older compatible active execution.
@@ -389,11 +389,11 @@ The backend owns durable identity, membership, milestones, and reconciliation. T
 
 | Gate | Repository | Command or check | Required result |
 |---|---|---|---|
-| Type safety | `close-ai` | `npm run typecheck` | No TypeScript errors. |
-| Build | `close-ai` | `npm run build` | Production bundle succeeds. |
-| Lint | `close-ai` | `npm run lint` | No lint errors in changed code. |
-| Targeted Apply tests | `close-ai` | Run the application-profile service, execution, route, MCP-contract, migration, and new database integration test files with Vitest | Every lifecycle and concurrency scenario passes. |
-| Full backend suite | `close-ai` | `npm test` | Full suite passes. |
+| Type safety | the private backend | `npm run typecheck` | No TypeScript errors. |
+| Build | the private backend | `npm run build` | Production bundle succeeds. |
+| Lint | the private backend | `npm run lint` | No lint errors in changed code. |
+| Targeted Apply tests | the private backend | Run the application-profile service, execution, route, MCP-contract, migration, and new database integration test files with Vitest | Every lifecycle and concurrency scenario passes. |
+| Full backend suite | the private backend | `npm test` | Full suite passes. |
 | CLI tests | `trackly-cli` | `npm test` | Full Node test suite passes. |
 | CLI contract fixture | `trackly-cli` | `npm run test:contract-fixture` | Skill and MCP contract assertions pass. |
 | Hosted/local parity | `trackly-cli` | `npm run test:hosted-contract` | Public tool schemas match the deployed backend; only documented local helpers differ. |
@@ -449,10 +449,10 @@ The backend owns durable identity, membership, milestones, and reconciliation. T
 
 ### Current implementation anchors
 
-- `close-ai:src/services/application-profile/batch-service.ts` owns parent executions, immutable child waves, access dispositions, and the pure progress calculator.
-- `close-ai:src/services/application-profile/service.ts` reconstructs progress, records outcomes, applies evidence repair, and updates current job state.
-- `close-ai:src/routes/trackly-apply.ts` owns authenticated HTTP contracts.
-- `close-ai:src/mcp/server.ts` owns hosted MCP schemas and prompt resources.
+- backend batch service owns parent executions, immutable child waves, access dispositions, and the pure progress calculator.
+- backend application-profile service reconstructs progress, records outcomes, applies evidence repair, and updates current job state.
+- backend Apply HTTP routes own authenticated HTTP contracts.
+- backend hosted MCP registry owns hosted MCP schemas and prompt resources.
 - `trackly-cli:mcp/apply-tools.js` owns local/hosted HTTP wrappers and local-only helpers.
 - `trackly-cli:skills/trackly-apply/` owns reusable browser mechanics.
 

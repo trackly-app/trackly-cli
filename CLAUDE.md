@@ -16,6 +16,13 @@ This repo only consumes `https://closeai.mba`. Never modify the backend or run
 SQL against production from this repo. Backend operations are documented in
 private repositories.
 
+## Public Documentation Boundary
+
+Document the public API and CLI/MCP contracts here. Backend infrastructure,
+private source paths and internal tracking links belong in private repositories.
+Workspace review notes stay local under ignored `.context/`; local review tools
+can still read them without committing them to the public repository.
+
 ## Directory Structure
 
 ```
@@ -138,7 +145,7 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 
 The complete 58-tool inventory is in `docs/trackly-tools.md`. Helpers such as `trackly_verify_prepared_resume` and `trackly_validate_apply_resume_upload` intentionally have no CLI HTTP endpoint and therefore do not appear in the endpoint list above.
 
-Hosted `/api/mcp` tool count: the hosted registry lives in close-ai `src/mcp/server.ts` (registered through `registerHostedMcpTool`). It omits exactly four local-only tools (`trackly_diagnose_local_path`, `trackly_lint_application_text`, `trackly_validate_apply_resume_upload`, `trackly_validate_apply_tab_keep_set`) and adds `trackly_chat`, for 55. `trackly_prepare_resume` and `trackly_verify_prepared_resume` are registered on both servers. When a tool is added to or removed from either server, recount the hosted names and update every "N hosted tools" claim in `README.md`; the docs-coverage test only checks that those README claims agree.
+Hosted `/api/mcp` tool count: the backend owns the hosted registry. It omits exactly four local-only tools (`trackly_diagnose_local_path`, `trackly_lint_application_text`, `trackly_validate_apply_resume_upload`, `trackly_validate_apply_tab_keep_set`) and adds `trackly_chat`, for 55. `trackly_prepare_resume` and `trackly_verify_prepared_resume` are registered on both servers. When a tool is added to or removed from either server, recount the hosted names and update every "N hosted tools" claim in `README.md`; the docs-coverage test only checks that those README claims agree.
 
 ## Gotchas
 

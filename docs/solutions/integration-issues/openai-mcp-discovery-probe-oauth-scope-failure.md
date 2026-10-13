@@ -37,7 +37,7 @@ The OpenAI Platform could authenticate to Trackly but could not complete its man
 
 OpenAI's current MCP client probes legacy servers with the exact JSON-RPC method `server/discover` before falling back to the initialization-based protocol. Trackly's strict scope gateway treated every unknown method as a scoped operation and returned HTTP 403, so the client interpreted a compatibility probe as an OAuth authorization failure.
 
-The backend fix in `trackly-app/close-ai#1515` added only `server/discover` to the immutable scope-free protocol-method set. It did not add a tool or grant access to user data. The existing legacy SDK then returns JSON-RPC `-32601 Method not found`, which is the compatibility signal the OpenAI client needs to fall back to `initialize` and `tools/list`.
+The coordinated backend compatibility fix added only `server/discover` to the immutable scope-free protocol-method set. It did not add a tool or grant access to user data. The existing legacy SDK then returns JSON-RPC `-32601 Method not found`, which is the compatibility signal the OpenAI client needs to fall back to `initialize` and `tools/list`.
 
 The CLI contract alignment in `trackly-app/trackly-cli#106` records the exact backend source and merge provenance, locks the scope-free set and middleware behavior, and verifies the hosted catalog without broadening tool scopes. The coordinated verifier also checks the published Apply schemas, including `truthCertificationInputSchema`, in `scripts/verify-hosted-contract.js`.
 
@@ -55,5 +55,5 @@ HTTP 401/403 communicates an authentication or authorization failure, so a dual-
 
 ## Related Issues
 
-- `trackly-app/close-ai#1515` — backend compatibility fix.
+- Private backend release records document the compatibility fix.
 - `trackly-app/trackly-cli#106` — packaged contract and verifier alignment.
