@@ -462,7 +462,7 @@ function createServer() {
       if (askResult.jobsUrl) {
         // Path allowlist: /ask returns a jobsUrl string. normalizeEndpoint already blocks
         // cross-origin fetches, but a compromised backend could emit a same-origin path
-        // like `/api/admin/secret-dump`. Only follow the two handlers /ask is designed to
+        // outside the job API. Only follow the two handlers /ask is designed to
         // route to. Mirrors the same guard in bin/trackly:cmdAsk.
         const JOBS_URL_ALLOWLIST = /^\/api\/(v1|jobscout)\/jobs(\?|$)/;
         if (JOBS_URL_ALLOWLIST.test(askResult.jobsUrl)) {

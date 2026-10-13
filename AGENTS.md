@@ -8,11 +8,9 @@ Universal context for AI coding agents (Codex, Cursor, Copilot, Claude Code, Dev
 - **Stack:** Node.js 20+ / plain CommonJS JavaScript (no TypeScript, no build step)
 - **Package:** `npm install -g trackly-cli` (public npm package)
 - **Backend API:** https://closeai.mba (same as Close AI — do NOT modify the backend from this repo)
-- **Backend production source of truth:** after the 2026-06-30 Azure cutover,
-  `https://closeai.mba` is served by Azure and the live DB is Azure blue
-  Postgres behind the backend/VNet. This CLI repo is a consumer only; do not use
-  AWS RDS, Render, old DB aliases, `ssh closeai-web`, or direct SQL for live
-  production claims, migrations, user exports, or company-add decisions.
+- **Backend boundary:** This repo only consumes `https://closeai.mba`. Never modify
+  the backend or run SQL against production from this repo. Backend operations
+  are documented in private repositories.
 - **Repo:** Public GitHub — `trackly-app/trackly-cli`
 
 ## Architecture
@@ -75,7 +73,7 @@ Apply schemas, also run the cross-repository comparison against the final backen
 candidate:
 
 ```bash
-TRACKLY_BACKEND_DIR=/absolute/path/to/granola-followup-app npm run test:hosted-contract
+TRACKLY_BACKEND_DIR=/absolute/path/to/backend-candidate npm run test:hosted-contract
 ```
 
 This coordinated check belongs in the release evidence. Standalone CLI CI must
@@ -135,4 +133,4 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
    Hono is declared directly to guarantee the audited patched resolution used
    by the SDK, but the local MCP transport is stdio-only and does not initialize
    an HTTP server.
-7. **Do not modify the backend.** This repo is a consumer of the Close AI API. Backend changes go in the `granola-followup-app` repo.
+7. **Do not modify the backend.** This repo is a consumer of the Close AI API. Backend changes belong in the private backend repository.

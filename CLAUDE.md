@@ -10,14 +10,11 @@ CLI + MCP server for the Trackly job tracker. Lets users search 250K+ jobs acros
 - **Auth:** Google OAuth via local callback server, tokens stored in `~/.trackly/config.json`
 - **API:** All requests go to `https://closeai.mba` (the backend, same as CLOSE AI)
 
-## Backend Production Source Of Truth
+## Backend Boundary
 
-After the 2026-06-30 Azure cutover, `https://closeai.mba` is served by Azure and
-the live DB is Azure blue Postgres behind the backend/VNet. This CLI repo is a
-consumer only; do not use AWS RDS, Render, old DB aliases, `ssh closeai-web`, or
-direct SQL for live production claims, migrations, user exports, or company-add
-decisions. Backend data checks belong in protected close-ai admin/report
-endpoints, not this CLI repo.
+This repo only consumes `https://closeai.mba`. Never modify the backend or run
+SQL against production from this repo. Backend operations are documented in
+private repositories.
 
 ## Directory Structure
 
@@ -65,9 +62,9 @@ Apply set documented in `docs/trackly-tools.md` plus the analytics-owned
 `get_more_tools` missing-capability tool. Keep this count synchronized with
 `mcp/server.js`, `README.md`, and the docs-drift tests.
 
-Job function values — **14 canonical values** that match backend `ALL_JOB_FUNCTIONS` at `granola-followup-app/src/routes/jobscout-filter-utils.ts:17-21`, the backend `job_function` DB column, and the local mirror `JOB_FUNCTIONS` in `mcp/server.js`: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`. `partnerships` is documented in CHANGELOG `0.2.1`; any doc still listing 13 values is stale. The MCP test at `test/mcp-schema.test.js` locks this local/backend mapping.
+Job function values — **14 canonical values** that match the backend job-function contract and the local mirror `JOB_FUNCTIONS` in `mcp/server.js`: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`. `partnerships` is documented in CHANGELOG `0.2.1`; any doc still listing 13 values is stale. The MCP test at `test/mcp-schema.test.js` locks this local/backend mapping.
 
-NOTE: `/ask` lives in the backend (`trackly-app/close-ai`) and historically emitted `product_management`/`data_science` style values that the `/jobs` handler could drop. Backend PR #112 (`https://github.com/trackly-app/close-ai/pull/112`) is the proposed fix to emit modern public names (`product`, `data`, etc.). Do not document that drift as fixed/live until that PR is merged and deployed.
+NOTE: `/ask` lives in the backend and historically emitted `product_management`/`data_science` style values that the `/jobs` handler could drop. Do not document that drift as fixed/live until a backend release verifies the modern public names (`product`, `data`, etc.).
 
 ## Publishing
 

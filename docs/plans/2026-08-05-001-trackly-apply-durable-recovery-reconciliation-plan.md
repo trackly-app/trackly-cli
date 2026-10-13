@@ -168,7 +168,7 @@ None of these receipts implies another.
 
 ### Success Criteria
 
-- The faithful Postgres sequence from the August 5 incident passes without projection contradictions.
+- The faithful database sequence from the August 5 incident passes without projection contradictions.
 - Exact recovery never mutates `saved_at`, never substitutes newer jobs, and never uses old-epoch evidence.
 - Every grouped submission report produces one result per handoff member.
 - No finalizer call receives an empty or partial keep set when expected tabs exist.
@@ -208,7 +208,7 @@ None of these receipts implies another.
 ### Key Technical Decisions
 
 - KTD1. **Persist completion credit in an append-only achievement ledger.** (session-settled: user-approved — chosen over concurrent unsubmitted inventory: once a job is ready or submitted it remains part of the requested total.) Create one value-free credit per `(execution_id, user_id, frozen_job_id)`, constrained to reviewed sources such as `review_ready` and `submitted_repair`. Insert the credit in the same transaction as the durable outcome. Expose `achievementCount` as the raw unique effective-credit count and compute target-facing `completed = LEAST(achievementCount, target)`. Credits are the sole target-achievement input; current ready/submitted counts remain operator projections. Do not add mutable columns to immutable execution candidates. A credit later proven to originate from invalid evidence may be neutralized only by an append-only compensating revocation through an audited internal repair operation; later submission or lifecycle change is never a revocation reason. Governs R1-R3.
-- KTD2. **Characterize the live state sequence before changing accounting.** Current unit tests already cover `ready + submitted`, so implementation begins with a Postgres-backed checkpoint, certification, bulk-outcome, submission, and progress-read reproduction. A passing unit calculator test is not sufficient evidence. Governs R1-R3, R8.
+- KTD2. **Characterize the live state sequence before changing accounting.** Current unit tests already cover `ready + submitted`, so implementation begins with a database-backed checkpoint, certification, bulk-outcome, submission, and progress-read reproduction. A passing unit calculator test is not sufficient evidence. Governs R1-R3, R8.
 - KTD3. **Model exact recovery as a new execution mode over stable source candidates.** The original August 5 decision used `recover_exact_members` with `sourceExecutionId`, exact execution-candidate IDs proven inside the source snapshot hash, optimistic revision, and idempotency key. It persisted `source_execution_id`, `source_candidate_id`, and the attempt-specific `source_member_id` when present; identity assertion was atomic, eligibility could be partial (superseded—see the shipped-contract addendum immediately below), and the server created no substitutes. Governs R4-R7.
 
   **Shipped-contract addendum (2026-08-13):** Backend implementation and adversarial review superseded partial eligibility with an atomic all-or-nothing eligibility check. If any confirmed candidate is no longer eligible, the server creates no recovery execution and no substitutes. AE4 and U4 below reflect this shipped contract while the original decision remains recorded here.
@@ -221,7 +221,7 @@ None of these receipts implies another.
 - KTD10. **Reuse resume approval only with exact lineage.** A recovery may reuse execution-scoped content approval only when the backend proves the same resume hash, profile revision, snapshot lineage, and unexpired approval. Every run still performs immediate local file verification. Otherwise the user approves the resume again. Governs R16, R22.
 - KTD11. **Ship additive coordinated versions.** Expected releases are Apply protocol 3.6.0, MCP contract 3.7.0, skill 4.5.0, and CLI 0.14.0. Recompute versions and migration maximum immediately before implementation. Older active work keeps its published recovery path. Governs R20-R22.
 - KTD12. **Persist request-key idempotency for outcomes.** Single and bulk outcomes require an idempotency key. Atomically store operation type, canonical payload hash, and exact item results; exact retries return those saved results. Current-state inference remains a bounded repair fallback, not the primary replay mechanism. Governs R8-R12.
-- KTD13. **Retain recovery identity beyond operational expiry.** Add `recoverable_until`, computed by PostgreSQL from `expires_at` plus 30 calendar days. The stored value is immutable and cannot be extended. Daily purge may delete source execution data only after that boundary. Record only value-free interruption-to-resume duration metrics. Purge for the new mode remains feature-flagged until dogfood/private-beta evidence is reviewed and the product owner approves the 30-day recovery SLO; until then, retain the additive recovery manifest under normal account-retention rules. Governs R4-R7, R23.
+- KTD13. **Retain recovery identity beyond operational expiry.** Add `recoverable_until`, computed by the database from `expires_at` plus 30 calendar days. The stored value is immutable and cannot be extended. Daily purge may delete source execution data only after that boundary. Record only value-free interruption-to-resume duration metrics. Purge for the new mode remains feature-flagged until dogfood/private-beta evidence is reviewed and the product owner approves the 30-day recovery SLO; until then, retain the additive recovery manifest under normal account-retention rules. Governs R4-R7, R23.
 
 ### High-Level Technical Design
 
@@ -285,7 +285,7 @@ The backend owns durable identity, membership, milestones, and reconciliation. T
 | Recovery reuses stale browser evidence | Increment inspection epoch and require fresh binding, identity, contact, and review evidence. |
 | A group phrase marks the wrong jobs submitted | Resolve it to an exact handoff receipt; inspect every staged member; ask only about unresolved members. |
 | Provider strategy becomes remote executable browser code | Publish bounded declarative strategy enums and semantic evidence requirements only. |
-| Completion credit and current ready counts drift | Update/read them under the same owner lock and assert invariants in Postgres integration tests. |
+| Completion credit and current ready counts drift | Update/read them under the same owner lock and assert invariants in database integration tests. |
 | Operational expiry destroys exact recovery identity | Separate execution expiry from bounded recovery retention and purge only after `recoverable_until`. |
 | Old clients misread the new execution mode | Roll out compatible readers first; they must recognize or safely reject `recover_exact_members` before writes are enabled. |
 | Local tab helper creates a false sense of visibility | Return set-safety only; keep user-visible presentation as a separate receipt. |
@@ -301,7 +301,7 @@ The backend owns durable identity, membership, milestones, and reconciliation. T
 - **Goal:** Reproduce the production accounting and review-replay failure before changing persistent state.
 - **Requirements:** R1-R3, R8, AE1-AE2.
 - **Repositories:** `close-ai`.
-- **Files:** `src/services/application-profile/__tests__/apply-execution-service.test.ts`, `src/services/application-profile/__tests__/service.test.ts`, and a Postgres integration test beside the existing application-profile integration fixtures.
+- **Files:** `src/services/application-profile/__tests__/apply-execution-service.test.ts`, `src/services/application-profile/__tests__/service.test.ts`, and a database integration test beside the existing application-profile integration fixtures.
 - **Approach:** Exercise real execution, batch, member, run, evidence, and attestation rows through checkpoint, truth certification, bulk review outcome, one submission, and progress read. Assert both current counts and cumulative status. Preserve the existing pure calculator test as a smaller unit check.
 - **Test scenarios:** Exact duplicate review intent; stale epoch; one of two submitted; both submitted; ambiguous transport followed by refetch; concurrent submit and advance.
 - **Verification:** At least one characterization fails on pre-fix code for the same durable state mismatch observed in the incident.
@@ -315,7 +315,7 @@ The backend owns durable identity, membership, milestones, and reconciliation. T
 - **Files:** next sequential migration, migration runner/test if required by index strategy, `src/services/application-profile/batch-service.ts`, `src/services/application-profile/service.ts`, application-profile service tests.
 - **Approach:** Create a separate append-only achievement ledger rather than weakening immutable candidate rows. Insert one owner-bound credit with `ON CONFLICT DO NOTHING` only after durable review outcome or authorized submission repair, in the same transaction as execution status. Expose raw `achievementCount`, compute target-facing `completed = LEAST(achievementCount, target)`, and retain current `durablyReviewReady` and `submitted` for operator detail. Make credit the sole target-achievement input. Before migration, produce a dry-run report grouped by provable source predicate and ambiguous exclusion reason. Backfill every provable submitted row with authorized evidence, or review-ready row with an `awaiting_manual_submit` run and matching active truth attestation for the certified epoch/set; do not discard valid historical overflow above target.
 - **Test scenarios:** Credit set once; submission preserves credit; sibling submission does not reduce total; profile/attestation changes do not erase credit; concurrent writers cannot double-credit; account/execution deletion cascades correctly; ambiguous legacy rows remain uncredited; valid historical overflow remains visible; invalid-evidence revocation is append-only, audited, and cannot be triggered by ordinary lifecycle change.
-- **Verification:** AE1 passes in pure and Postgres-backed tests, and an advance after target achievement produces no child wave. Before historical writes, a migration-owner review must approve per-predicate counts, sampled source evidence, and ambiguous-exclusion totals; any sample mismatch ships prospective crediting only and defers backfill.
+- **Verification:** AE1 passes in pure and database-backed tests, and an advance after target achievement produces no child wave. Before historical writes, a migration-owner review must approve per-predicate counts, sampled source evidence, and ambiguous-exclusion totals; any sample mismatch ships prospective crediting only and defers backfill.
 
 ### U3. Make review outcomes replay-safe and projections explicit
 
@@ -392,7 +392,7 @@ The backend owns durable identity, membership, milestones, and reconciliation. T
 | Type safety | `close-ai` | `npm run typecheck` | No TypeScript errors. |
 | Build | `close-ai` | `npm run build` | Production bundle succeeds. |
 | Lint | `close-ai` | `npm run lint` | No lint errors in changed code. |
-| Targeted Apply tests | `close-ai` | Run the application-profile service, execution, route, MCP-contract, migration, and new Postgres integration test files with Vitest | Every lifecycle and concurrency scenario passes. |
+| Targeted Apply tests | `close-ai` | Run the application-profile service, execution, route, MCP-contract, migration, and new database integration test files with Vitest | Every lifecycle and concurrency scenario passes. |
 | Full backend suite | `close-ai` | `npm test` | Full suite passes. |
 | CLI tests | `trackly-cli` | `npm test` | Full Node test suite passes. |
 | CLI contract fixture | `trackly-cli` | `npm run test:contract-fixture` | Skill and MCP contract assertions pass. |

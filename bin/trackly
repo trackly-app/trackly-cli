@@ -885,7 +885,7 @@ async function cmdAsk(args) {
     if (result.jobsUrl) {
       // Path allowlist: /ask can return any string for jobsUrl. normalizeEndpoint already
       // blocks cross-origin fetches (baseUrl mismatch), but a compromised backend could
-      // still emit a same-origin path like `/api/admin/secret-dump`. Restrict to the two
+      // still emit an unrelated privileged same-origin path. Restrict to the two
       // legitimate handlers that /ask is designed to route to.
       const JOBS_URL_ALLOWLIST = /^\/api\/(v1|jobscout)\/jobs(\?|$)/;
       if (!JOBS_URL_ALLOWLIST.test(result.jobsUrl)) {

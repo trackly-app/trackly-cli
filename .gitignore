@@ -2,3 +2,4 @@ node_modules/
 .trackly/
 .DS_Store
 .mcpregistry_*
+.context/
