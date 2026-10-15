@@ -2,6 +2,8 @@
 
 Universal context for AI coding agents (Codex, Cursor, Copilot, Claude Code, Devin, Jules, etc.)
 
+> Org-wide rules for every Trackly repo: https://github.com/trackly-app/.github/blob/main/AGENTS.md (needs org access). This file overrides it where they differ.
+
 ## Project Overview
 
 - **Product:** Trackly CLI + MCP Server — terminal access to 250K+ jobs across 5,400+ companies
