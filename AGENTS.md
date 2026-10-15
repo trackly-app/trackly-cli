@@ -76,7 +76,7 @@ Publishing is fully automated via GitHub Actions:
 
 **Do not run `npm publish` locally.** No npm auth token is needed (OIDC). Manual publishes from a laptop have no OIDC context and would ship without provenance (this is what created the v0.2.7 unattested-release gap). If a manual publish is ever absolutely required as a break-glass measure, document why on the next CHANGELOG entry and plan a cosmetic version bump immediately after to restore the attestation chain via CI.
 
-Merge with merge commits only (the org rule); never `--squash` or `--rebase` in this repo.
+Agents never merge, enable auto-merge, or push to `main` in this repo, even when supervised (this public repo is stricter than the org rule): open the PR and a maintainer merges it. Maintainers merge with merge commits only; never `--squash` or `--rebase` here.
 
 ### Mandatory release and installation verification (Kevin, 2026-10-10)
 
