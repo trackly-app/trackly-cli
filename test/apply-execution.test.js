@@ -18,7 +18,7 @@ const integrity = read('skills/trackly-apply/references/form-integrity.md');
 const lifecycle = read('skills/trackly-apply/references/browser-lifecycle.md');
 const handoff = read('skills/trackly-apply/references/review-handoff.md');
 const toolDocs = read('docs/trackly-tools.md');
-const contributorDocs = read('CLAUDE.md');
+const contributorDocs = read('AGENTS.md');
 const agent = read('lib/agent.js');
 
 const executionTools = [

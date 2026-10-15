@@ -4,7 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const root = path.resolve(__dirname, '..');
-const currentSurfaces = ['package.json', 'server.json', 'README.md', 'CLAUDE.md', 'AGENTS.md'];
+const currentSurfaces = ['package.json', 'server.json', 'README.md', 'AGENTS.md'];
 const source = JSON.parse(fs.readFileSync(path.join(root, 'metrics', 'public-marketing-metrics-v1.json'), 'utf8'));
 const generated = JSON.parse(fs.readFileSync(path.join(root, 'metrics', 'public-metrics.generated.json'), 'utf8'));
 const { isFreshForBuild, publicDisplay, render, replaceMetricsCopy } = require('../scripts/sync-public-metrics');
