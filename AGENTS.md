@@ -4,7 +4,7 @@
 
 Essential org rules, repeated here because the org file needs org access (it has the full list; this file wins where they conflict):
 - Feature branch and PR; never push to `main`. Draft PR until build and tests pass; merge commits only.
-- Agents merge or enable auto-merge only when supervised: a human maintainer controls the agent in this session, it acts under their login, and required checks are green. Scheduled jobs and bots never merge. In this public repo agents never merge.
+- Agents merge or enable auto-merge only when supervised: a human maintainer controls the agent in this session, it acts under their login, and required checks are green. Scheduled jobs and bots never merge.
 - Never put secrets in commits, logs or PR bodies; never point a local process at the production database.
 - Never bypass a failing gate; fix the cause or tell the maintainer. Pin third-party GitHub Actions `uses:` to full commit SHAs, with the release tag in a comment.
 - Backend facts come from `close-ai` (`https://closeai.mba`), not from this repo.
@@ -83,7 +83,7 @@ Publishing is fully automated via GitHub Actions:
 
 **Do not run `npm publish` locally.** No npm auth token is needed (OIDC). Manual publishes from a laptop have no OIDC context and would ship without provenance (this is what created the v0.2.7 unattested-release gap). If a manual publish is ever absolutely required as a break-glass measure, document why on the next CHANGELOG entry and plan a cosmetic version bump immediately after to restore the attestation chain via CI.
 
-Agents never merge, enable auto-merge, or push to `main` in this repo, even when supervised (this public repo is stricter than the org rule): open the PR and a maintainer merges it. Maintainers merge with merge commits only; never `--squash` or `--rebase` here.
+Agents follow the org supervised-merge rule here too: merge only when a human maintainer is controlling the agent in the current session, under that maintainer's login, with required checks green. Merge with merge commits only; never `--squash` or `--rebase` here.
 
 ### Mandatory release and installation verification (Kevin, 2026-10-10)
 
