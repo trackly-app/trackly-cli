@@ -2,6 +2,13 @@
 
 > Org-wide rules for every Trackly repo: https://github.com/trackly-app/.github/blob/main/AGENTS.md (needs org access). This file overrides it where they differ.
 
+Essential org rules, repeated here because the org file needs org access (it wins on the full list):
+- Feature branch and PR; never push to `main`. Draft PR until build and tests pass; merge commits only.
+- Agents merge or enable auto-merge only when supervised: a human maintainer controls the agent in this session, it acts under their login, and required checks are green. Scheduled jobs and bots never merge. In this public repo agents never merge.
+- Never put secrets in commits, logs or PR bodies; never point a local process at the production database.
+- Never bypass a failing gate; fix the cause or tell the maintainer.
+- Backend facts come from `close-ai` (`https://closeai.mba`), not from this repo.
+
 CLI + MCP server for the Trackly job tracker. Lets users search 250K+ jobs across 5,400+ companies from the terminal or through AI agents (Claude Code, Cursor) via MCP.
 
 ## Project Overview
