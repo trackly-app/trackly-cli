@@ -15,7 +15,7 @@ const expected = {
 };
 const maximumAgeInDays = 45;
 const minimumBuildFreshnessDays = 7;
-const currentSurfaces = ['package.json', 'server.json', 'README.md', 'CLAUDE.md', 'AGENTS.md'];
+const currentSurfaces = ['package.json', 'server.json', 'README.md', 'AGENTS.md'];
 
 function validateSource(source) {
   for (const [field, value] of Object.entries(expected)) {
