@@ -2,7 +2,7 @@
 
 > Org-wide rules for every Trackly repo: https://github.com/trackly-app/.github/blob/main/AGENTS.md (needs org access). This file overrides it where they differ.
 
-Essential org rules, repeated here because the org file needs org access (it wins on the full list):
+Essential org rules, repeated here because the org file needs org access (it has the full list; this file wins where they conflict):
 - Feature branch and PR; never push to `main`. Draft PR until build and tests pass; merge commits only.
 - Agents merge or enable auto-merge only when supervised: a human maintainer controls the agent in this session, it acts under their login, and required checks are green. Scheduled jobs and bots never merge. In this public repo agents never merge.
 - Never put secrets in commits, logs or PR bodies; never point a local process at the production database.
