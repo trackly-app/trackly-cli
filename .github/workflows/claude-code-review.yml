@@ -41,8 +41,9 @@ name: Claude Code Review
 #   continue-on-error, and a visible PR notice when review can't run (so a
 #   green check is never mistaken for "reviewed clean").
 # Trigger: one review per PR, when it opens ready or is marked ready for review
-#   (reopened too). A push to the PR does NOT re-review; re-run the workflow to
-#   review a later head. Drafts skip at open (see the job `if`) and are
+#   (reopened too). A push to the PR does NOT re-review, and a rerun keeps the
+#   old head, so convert the PR to draft and back, or close and reopen it, to review a later
+#   head. Drafts skip at open (see the job `if`) and are
 #   reviewed on ready_for_review.
 # Usage cap: when BOTH attempts were refused for a usage limit
 #   (scripts/classify-review-attempts.js), the check ends green with a warning
@@ -1023,7 +1024,7 @@ jobs:
         run: |
           set -uo pipefail
           if [ "${BOTH_CAPPED:-}" = "true" ]; then
-            BODY="## 🔵 Claude Code Review"$'\n\n'"⚠️ Automated review did not run at head \`${HEAD_SHA}\` ([run](${RUN_URL})): the Claude API refused both review accounts for usage limits. This PR was NOT reviewed. This claude-review check is green only so a usage cap does not fail every PR: it is NOT an approval. Re-run this workflow once a review account has quota."
+            BODY="## 🔵 Claude Code Review"$'\n\n'"⚠️ Automated review did not run at head \`${HEAD_SHA}\` ([run](${RUN_URL})): the Claude API refused both review accounts for usage limits. This PR was NOT reviewed. This claude-review check is green only so a usage cap does not fail every PR: it is NOT an approval. Once a review account has quota, convert the PR to draft and back, or close and reopen it, for a review."
           else
           if [ "${{ steps.precompute.outputs.has_diff }}" != "true" ]; then
             REASON="the PR diff could not be computed"
@@ -1176,7 +1177,7 @@ jobs:
           for index, line in enumerate(nonempty[:20]):
               print("rejected_line", index, repr(line[:200]))
           PY
-            BODY="## 🔵 Claude Code Review"$'\n\n'"⚠️ The review ran at head \`${HEAD_SHA}\` ([run](${RUN_URL})) but lacked a valid terminal verdict. This check fails closed; inline comments and intermediate planning text are insufficient review coverage. Re-run the review or use the documented exact-head compensating review path."
+            BODY="## 🔵 Claude Code Review"$'\n\n'"⚠️ The review ran at head \`${HEAD_SHA}\` ([run](${RUN_URL})) but lacked a valid terminal verdict. This check fails closed; inline comments and intermediate planning text are insufficient review coverage. For a fresh review, convert the PR to draft and back, or close and reopen it, or use the documented exact-head compensating review path."
             python3 -c 'import json,sys;print(json.dumps({"body":sys.argv[1]}))' "$BODY" > "$RUNNER_TEMP/cr_empty.json" || exit 1
             if curl -sS --fail -X POST \
                 -H "Authorization: Bearer ${GH_TOKEN_POST}" \
