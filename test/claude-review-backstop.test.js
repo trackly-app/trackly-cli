@@ -1331,8 +1331,10 @@ test('Claude review workflow always publishes this run and fails closed without 
 test('Claude review workflow only trusts the protected default branch as its base', () => {
   assert.match(
     workflow,
-    /pull_request:\n\s+branches: \[main\]\n\s+types: \[opened, synchronize, reopened, ready_for_review\]/,
+    /pull_request:\n\s+branches: \[main\]\n\s+types: \[opened, reopened, ready_for_review\]\n/,
   );
+  // One review at ready; a push does not re-review.
+  assert.doesNotMatch(workflow.slice(workflow.indexOf('\non:'), workflow.indexOf('\nconcurrency:')), /synchronize/);
   assert.match(
     workflow,
     /github\.event\.pull_request\.base\.ref == github\.event\.repository\.default_branch &&/,
