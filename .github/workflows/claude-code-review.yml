@@ -40,10 +40,17 @@ name: Claude Code Review
 #   GITHUB_ENV delimiter, has_diff gate + empty-diff guard, precompute
 #   continue-on-error, and a visible PR notice when review can't run (so a
 #   green check is never mistaken for "reviewed clean").
+# Trigger: one review per PR, when it opens ready or is marked ready for review
+#   (reopened too). A push to the PR does NOT re-review; re-run the workflow to
+#   review a later head. Drafts skip at open (see the job `if`) and are
+#   reviewed on ready_for_review.
+# Usage cap: when BOTH attempts were refused for a usage limit
+#   (scripts/classify-review-attempts.js), the check ends green with a warning
+#   and a PR comment saying the PR was NOT reviewed. Every other failure stays red.
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review]
 
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
@@ -817,6 +824,15 @@ jobs:
             # --tools. The equals form reaches Claude Code as an empty list.
             --tools=
 
+      # The fallback writes the same execution file (the action's fixed
+      # $RUNNER_TEMP path), so move the primary's aside for the cap check below.
+      # Moving, not copying: a fallback that dies before writing its own file
+      # must not be read as the primary's. A missing file reads as not capped.
+      - name: Keep the primary attempt's execution file
+        if: steps.claude-review.outcome == 'failure'
+        shell: bash
+        run: mv -f "${RUNNER_TEMP}/claude-execution-output.json" "${RUNNER_TEMP}/claude-execution-output-primary.json" || true
+
       # FALLBACK review — berkeley token (CLAUDE_CODE_OAUTH_TOKEN_FALLBACK). Runs
       # ONLY when the primary step did not succeed (e.g. jimmy hit its session
       # limit). Identical config, different account = a second auth path so a
@@ -932,6 +948,40 @@ jobs:
             # Keep the equals form; the pinned action drops quoted empties.
             --tools=
 
+      # Usage-cap check: both attempts failed and BOTH were refused by the Claude
+      # API for a usage limit. The classifier is loaded from the protected PR
+      # base SHA (like the extractor below), never run from the PR head. If it
+      # cannot be loaded or run, both_capped stays false and the check stays red.
+      - name: Classify review attempts
+        id: attempts
+        if: >-
+          always() && steps.review-workflow.outputs.changed != 'true' &&
+          steps.claude-review.outcome == 'failure' &&
+          steps.claude-review-fallback.outcome == 'failure'
+        shell: bash
+        env:
+          GH_TOKEN_POST: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+          echo "both_capped=false" >> "$GITHUB_OUTPUT"
+          CLASSIFIER="$RUNNER_TEMP/classify-review-attempts.js"
+          if ! curl -sS --fail \
+              -H "Authorization: Bearer ${GH_TOKEN_POST}" \
+              -H "Accept: application/vnd.github.raw+json" \
+              "https://api.github.com/repos/${{ github.repository }}/contents/scripts/classify-review-attempts.js?ref=${BASE_SHA}" \
+              > "$CLASSIFIER"; then
+            echo "::warning::Could not load the attempt classifier from base ${BASE_SHA}; treating the failure as not a usage cap."
+            exit 0
+          fi
+          ATTEMPTS="$(node "$CLASSIFIER" \
+            "${RUNNER_TEMP}/claude-execution-output-primary.json" \
+            "${RUNNER_TEMP}/claude-execution-output.json" 2>/dev/null || true)"
+          echo "Review attempt classes: $(printf '%s' "$ATTEMPTS" | tr '\n' ' ')"
+          if printf '%s\n' "$ATTEMPTS" | grep -qx 'class=both-capped'; then
+            echo "both_capped=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # Detectability backstop (logs): classify the outcome so a silent
       # no-review is visible in the run summary. Distinguishes precompute-miss
       # from token-failure so the message is never misleading. (Reliability.)
@@ -946,6 +996,8 @@ jobs:
             echo "Claude review posted via the primary (jimmygregorio) token."
           elif [ "${{ steps.claude-review-fallback.outcome }}" = "success" ]; then
             echo "::notice title=Claude review used fallback::Primary failed (${{ steps.claude-review.outcome }}); posted via the berkeley fallback token."
+          elif [ "${{ steps.attempts.outputs.both_capped }}" = "true" ]; then
+            echo "::warning title=Claude review not run (both accounts capped)::The Claude API refused both review accounts for usage limits, so no review ran on PR ${{ github.event.pull_request.number }}. Green = not reviewed, NOT approved."
           else
             echo "::warning title=Claude review did not post::Both workflow auth attempts failed (primary=${{ steps.claude-review.outcome }}, fallback=${{ steps.claude-review-fallback.outcome }}). Inspect action logs for OAuth token, usage/quota, model availability, or action config. The step now fails loudly on a turn-1 SDK error (v1.0.176), so this is a real failure, not a masked one."
             exit 1
@@ -967,22 +1019,32 @@ jobs:
           GH_TOKEN_POST: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BOTH_CAPPED: ${{ steps.attempts.outputs.both_capped }}
         run: |
           set -uo pipefail
+          if [ "${BOTH_CAPPED:-}" = "true" ]; then
+            BODY="## 🔵 Claude Code Review"$'\n\n'"⚠️ Automated review did not run at head \`${HEAD_SHA}\` ([run](${RUN_URL})): the Claude API refused both review accounts for usage limits. This PR was NOT reviewed. This claude-review check is green only so a usage cap does not fail every PR: it is NOT an approval. Re-run this workflow once a review account has quota."
+          else
           if [ "${{ steps.precompute.outputs.has_diff }}" != "true" ]; then
             REASON="the PR diff could not be computed"
           else
             REASON="both workflow auth attempts failed"
           fi
           BODY="## 🔵 Claude Code Review"$'\n\n'"⚠️ Automated review could not run at head \`${HEAD_SHA}\` ([run](${RUN_URL})) - ${REASON}. This check fails closed; it is NOT an approval and NOT a clean result. If review auth failed, inspect action logs for OAuth token, usage/quota, model availability, or action config before relying on this gate."
-          python3 -c 'import json,sys;print(json.dumps({"body":sys.argv[1]}))' "$BODY" > "$RUNNER_TEMP/cr_notice.json" || { echo "::warning::could not build notice body"; exit 0; }
+          fi
+          python3 -c 'import json,sys;print(json.dumps({"body":sys.argv[1]}))' "$BODY" > "$RUNNER_TEMP/cr_notice.json" || { echo "::warning::could not build notice body"; [ "${BOTH_CAPPED:-}" = "true" ] && exit 1; exit 0; }
           curl -sS --fail -X POST \
             -H "Authorization: Bearer ${GH_TOKEN_POST}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
             -d @"$RUNNER_TEMP/cr_notice.json" >/dev/null \
             && echo "Posted review-unavailable notice to PR." \
-            || echo "::warning::Failed to post review-unavailable notice to the PR."
+            || {
+              echo "::warning::Failed to post review-unavailable notice to the PR."
+              # A green capped check with no comment would read as reviewed.
+              [ "${BOTH_CAPPED:-}" = "true" ] && { echo "::error::Capped notice not posted; failing closed."; exit 1; }
+              true
+            }
 
       # Terminal publication boundary: recover the final review from this exact
       # action execution, validate it with protected-base code, and only then
