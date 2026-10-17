@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Prepare plugin 1.1.2 with connection and account checks before job discovery or Apply: distinguish host OAuth completion and credential persistence from installation, recover interrupted embedded sign-in through supported host controls, and verify the intended account before reporting missing jobs or rebuilding a profile. This plugin-only update leaves CLI 0.20.1, native skill 4.9.1, MCP schemas, and authentication runtime unchanged.
+
 ## [0.20.1] - 2026-10-10
 
 - Ship Trackly Apply 4.9.1 and plugin 1.1.1: resolve profile-lookup validators from the loaded skill directory, require explicit work mode with revision-zero support only for fixed inspection, and reject empty fixed-inspection selections. Behavioral regressions cover both native and plugin lookup gates and preserve the exhausted accessible-execution exception.
