@@ -37,7 +37,9 @@ const {
   sha256ExactBytes,
   REVIEWED_PLUGIN_SCOPED_MIDDLEWARE_CALL_DIGESTS,
   verifyHostedContract,
+  verifyCoordinatedBackendCore,
 } = require('../scripts/verify-hosted-contract.js');
+const { CANDIDATE_PLUGIN_WRAPPER_SOURCE } = require('../scripts/verify-job-contract');
 
 test('adapter verifier rejects unbounded or broadened transport syntax', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'mcp', 'apply-tools.js'), 'utf8');
@@ -2545,6 +2547,17 @@ test('coordinated hosted verifier executes disposition, wrapper, and lifecycle w
   const verify = (candidate) => () => verifyHostedContract({ coordinatedFixture: candidate });
 
   assert.doesNotThrow(verify(structuredClone(fixture)));
+  const candidate = { ...fixture, hostedPluginSource: CANDIDATE_PLUGIN_WRAPPER_SOURCE };
+  const candidateOptions = { expectedPluginWrapperSource: CANDIDATE_PLUGIN_WRAPPER_SOURCE };
+  assert.doesNotThrow(() => verifyCoordinatedBackendCore(candidate, candidateOptions));
+  // Candidate approval must not relabel or loosen the historical wrapper pin.
+  assert.throws(verify(candidate), /wrapTool.*must preserve its locked executable branch semantics/);
+  for (const mutated of [
+    CANDIDATE_PLUGIN_WRAPPER_SOURCE.replace('if (!jobIdKey) return response;', 'if (jobIdKey) return response;'),
+    CANDIDATE_PLUGIN_WRAPPER_SOURCE.replace('normalizeJobResult(result, params[jobIdKey])', 'result'),
+    CANDIDATE_PLUGIN_WRAPPER_SOURCE.replace('resultContent(jobFailurePayload(error, payload), true)', 'resultContent(error.responseBody, true)'),
+  ]) assert.throws(() => verifyCoordinatedBackendCore({ ...candidate, hostedPluginSource: mutated }, candidateOptions),
+    /wrapTool.*must preserve its locked executable branch semantics/);
   const dispositionDrift = structuredClone(fixture);
   dispositionDrift.hostedApplySource = dispositionDrift.hostedApplySource.replace("z.literal('live')", "z.literal('shadow')");
   assert.throws(verify(dispositionDrift), /applyExecutionDispositionSchema executable AST drifted/);

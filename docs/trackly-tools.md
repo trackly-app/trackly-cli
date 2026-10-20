@@ -100,7 +100,7 @@ API-key creation attempts.
 Example: `{"jobFunctions":["finance","partnerships"],"region":["us","europe"],"sponsorship":"exclude_no","postedWithinDays":7,"limit":20}`.
 The local package and hosted service have separate release lifecycles. Refresh the client's tool discovery after upgrading or reconnecting and use only parameters its current schema advertises.
 
-- **trackly_get_job** — Get full job details by ID
+- **trackly_get_job** — Get full job details by positive numeric Trackly ID from search or the saved queue. Employer requisition IDs and URLs are not accepted.
 - **trackly_search_companies** — Semantic company search
 - **trackly_list_companies** — List all tracked companies with job counts
 - **trackly_get_stats** — Job tracker metrics dashboard
@@ -112,7 +112,11 @@ The local package and hosted service have separate release lifecycles. Refresh t
   - When server-side enforcement is active, a job remains visible when its stated minimum is less than or equal to that role's limit. Jobs with no stated minimum remain visible.
 - **trackly_update_status** — Mark a job as applied, saved, or dismissed
 - **trackly_ask** — Natural language job search (20/day limit)
-- **trackly_get_job_brief** — Get network brief for a job (company signal, top contact, actions)
+- **trackly_get_job_brief** — Get network brief for a positive numeric Trackly job ID (company signal, top contact, actions).
+
+Both job tools return JSON text and matching `structuredContent`. A recognized missing or removed posting, or an explicitly inactive posting, returns `availability: "unavailable"`, a reason, `retryable: false`, and a `nextStep` directing the agent to search for current openings. This is a normal tool result. Closed briefs retain their allowed stored company and role context, but omit stale recommended motions and application actions. A missing availability flag means unknown, not closed; detecting closed briefs requires a backend that supplies that flag.
+
+Actual failures retain `isError: true`, HTTP status when available, a closed `category`, `retryable`, `maxRetries`, and a next step. Categories are `authentication`, `authorization`, `validation`, `not_found`, `conflict`, `rate_limit`, `timeout`, `server`, `network`, `maintenance`, `access`, or `unknown`. Transient read failures permit one retry after `retryAfterSeconds`, honoring the longer valid API body or HTTP `Retry-After` delay (seconds or HTTP date); the tools add no automatic retry loop. The `nextStep.message` always explains what to do; `nextStep.tool` is present when a corresponding MCP tool exists. Authentication and invalid-input failures require a corrected request first. A route or unrelated dependency 404 remains an error. Invalid argument shapes are rejected by MCP schema validation before any API call; correct the arguments before retrying.
 - **trackly_contacts_at_company** — Search contacts at a specific company
 - **trackly_get_company_workspace** — Get full company workspace (jobs, contacts, hiring managers, campaigns)
 - **trackly_request_company** — Request that a company be added to Trackly's tracked companies. Rate-limited to 5 pending requests per user. Parameters: `companyName` (required), `companyUrl` (optional), `notes` (optional).

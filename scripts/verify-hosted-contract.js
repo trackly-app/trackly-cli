@@ -6639,7 +6639,7 @@ function verifyCoordinatedBackendCore({
   pluginLock,
   hostedPluginSource,
   sourcePaths = {},
-}) {
+}, { expectedPluginWrapperSource } = {}) {
   const localApplyPath = sourcePaths.localApply || 'local Apply source';
   const hostedApplyPath = sourcePaths.hostedApply || 'hosted Apply source';
   const hostedPluginPath = sourcePaths.hostedPlugin || 'hosted plugin source';
@@ -6669,7 +6669,7 @@ function verifyCoordinatedBackendCore({
   assertActiveFunctionDefinitionAst(
     hostedPluginSource,
     'wrapTool',
-    `function wrapTool(
+    expectedPluginWrapperSource || `function wrapTool(
       handler: (params: any) => Promise<unknown>,
       fallback: string,
       includeStructuredContent = false,

@@ -210,7 +210,7 @@ The hosted server omits those four and adds `trackly_chat`, for 55 hosted tools.
 | Tool | Description |
 |------|-------------|
 | trackly_search_jobs | Search by roles, regions, states/provinces, internship level, favorites, recency, annual USD salary floor, sponsorship, work arrangement, and pipeline status |
-| trackly_get_job | Get full details for a specific job |
+| trackly_get_job | Get details by Trackly ID, with availability and retry guidance |
 | trackly_search_companies | Semantic company search |
 | trackly_list_companies | List all tracked companies |
 | trackly_get_stats | Job tracker metrics and status counts |
@@ -218,7 +218,7 @@ The hosted server omits those four and adds `trackly_chat`, for 55 hosted tools.
 | trackly_update_experience_limits | Atomically replace role-specific limits on a job's stated minimum years |
 | trackly_update_status | Mark jobs as applied, saved, or dismissed |
 | trackly_ask | Natural language job search (20/day) |
-| trackly_get_job_brief | Get network brief for a job (company signal, top contact, actions) |
+| trackly_get_job_brief | Get a network brief, with availability and retry guidance |
 | trackly_contacts_at_company | Search contacts at a specific company |
 | trackly_get_company_workspace | Full company workspace (jobs, contacts, hiring managers, campaigns) |
 | trackly_request_company | Request a company be added to Trackly (rate-limited to 5 pending) |
