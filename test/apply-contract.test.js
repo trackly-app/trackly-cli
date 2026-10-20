@@ -2633,6 +2633,15 @@ test('standalone hosted verifier executes tool, schema, and handler snapshot wir
   assert.doesNotThrow(verifyFixture(structuredClone(originalFixture)));
   const localServerPath = path.join(temporaryRoot, 'mcp', 'server.js');
   const localServerSource = fs.readFileSync(localServerPath, 'utf8');
+  const renamedSearch = localServerSource.replace("'trackly_search_jobs'", "'trackly_shadow_search'");
+  assert.notEqual(renamedSearch, localServerSource);
+  fs.writeFileSync(localServerPath, renamedSearch);
+  assert.throws(
+    verifyFixture(structuredClone(originalFixture)),
+    /Executable local MCP registrations must exactly match/,
+  );
+  fs.writeFileSync(localServerPath, localServerSource);
+  assert.doesNotThrow(verifyFixture(structuredClone(originalFixture)));
   const registration = localServerSource.match(/^  registerApplyTools\(server, \{\n(?:.*\n)*?  \}\);\n/m);
   assert.ok(registration, 'server.js must call registerApplyTools inside createServer');
   const deadRegistration = localServerSource

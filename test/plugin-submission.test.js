@@ -14,6 +14,23 @@ function load(overrides = {}) {
 }
 const state = () => ({ errors: [], warnings: [] });
 const json = (file) => JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
+test('supplemental submission prompts cover every new search filter and preserve unknown sponsorship', () => {
+  const cases = json('plugins/trackly/listing/submission-tests.json').searchFilterCases;
+  const schema = require('../mcp/server').createServer()._registeredTools.trackly_search_jobs.inputSchema;
+  const covered = new Set();
+  for (const fixture of cases) {
+    assert.equal(schema.safeParse(fixture.expectedArguments).success, true, fixture.id);
+    Object.keys(fixture.expectedArguments).forEach((key) => covered.add(key));
+  }
+  for (const key of ['jobFunctions', 'region', 'usStates', 'caProvinces', 'internshipLevels',
+    'favoriteCompaniesOnly', 'postedWithinDays', 'salaryFloorUsd', 'since']) assert.ok(covered.has(key), key);
+  const negative = cases.find((fixture) => fixture.id === 'sponsorship-not-no-negative');
+  assert.equal(negative.expectedArguments.sponsorship, 'exclude_no');
+  assert.match(negative.mustNot.join(' '), /only_yes.*unknown/);
+  const ambiguous = cases.find((fixture) => fixture.id === 'sponsorship-ambiguous');
+  assert.equal(ambiguous.expectedArguments.sponsorship, undefined);
+  assert.match(ambiguous.mustNot.join(' '), /Ask/);
+});
 function network(handler) {
   return { request(options, callback) {
     const req = new EventEmitter();

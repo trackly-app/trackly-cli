@@ -656,6 +656,19 @@ function validateSubmissionTests(state, fixtures) {
   check(state, Array.isArray(fixtures.negative) && fixtures.negative.length === 3, 'submission fixtures must contain three negative cases');
   const positive = Array.isArray(fixtures.positive) ? fixtures.positive : [];
   const negative = Array.isArray(fixtures.negative) ? fixtures.negative : [];
+  // Supplemental search checks do not change the portal's approved five-case sequence.
+  const searchCases = fixtures.searchFilterCases;
+  check(state, Array.isArray(searchCases) && searchCases.length > 0, 'submission fixtures must include search filter cases');
+  if (Array.isArray(searchCases)) {
+    checkUniqueNormalizedStrings(state, searchCases.map((item) => item?.id), 'searchFilterCases.id');
+    for (const item of searchCases) {
+      for (const key of ['id', 'fixture', 'prompt']) checkString(state, item?.[key], `searchFilterCases.${key}`);
+      check(state, isObject(item?.expectedArguments), `${item?.id || '<unknown>'}.expectedArguments must be an object`);
+      check(state, Array.isArray(item?.mustNot) && item.mustNot.length > 0
+        && item.mustNot.every((value) => typeof value === 'string' && value.trim()),
+      `${item?.id || '<unknown>'}.mustNot must be a non-empty string array`);
+    }
+  }
   const allIds = [...positive, ...negative].map((item) => item?.id);
   allIds.forEach((id, index) => checkString(state, id, `submission fixture[${index}].id`));
   check(state, new Set(allIds).size === allIds.length, 'submission fixture IDs must be unique');

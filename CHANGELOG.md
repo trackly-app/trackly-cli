@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-19
+
+### Added
+
+- MCP search filters for multiple job functions, region arrays, US states and Canadian provinces (including REMOTE), internship levels, favorite companies, posting windows, annual USD salary floor and first-seen sync timestamps. Existing function/location aliases remain available.
+- Exact search-filter documentation, client install/update instructions and sponsorship submission checks. Unknown sponsorship remains visible with `exclude_no`; unknown or non-comparable salaries remain visible with the salary floor.
+
+### Fixed
+
+- Reject unsupported search controls and conflicting aliases before HTTP. Preserve strict runtime schemas when analytics adds optional context; real SDK regression coverage reproduces the prior silent argument loss.
+- Make the advertised 20-result MCP default explicit, allow the API's full 100-result page, and validate integer pagination. Protocol telemetry is covered through real initialization; no client model identifier is inferred.
+
+The industry/literal-discovery candidate remains unreleased until its backend capability is available. Hosted MCP and client installations follow separate update and verification lifecycles.
+
 ## [0.20.0] - 2026-10-10
 
 ### Changed

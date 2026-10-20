@@ -175,6 +175,30 @@ Then use natural language in any of these clients:
 - "What remote engineering roles are available?"
 - "Mark job 1234 as applied"
 
+### Search filters and updates
+
+`trackly_search_jobs` supports multiple roles and regions, US states and Canadian
+provinces, internship education levels, favorite companies, posting windows,
+annual USD salary floors, incremental sync, work arrangement, sponsorship and
+pipeline status. [Exact values and examples](docs/trackly-tools.md#available-tools).
+Search returns 20 jobs by default; request up to 100 and use `offset` to page.
+
+For sponsorship, “exclude no” keeps yes **and not mentioned**. Use `exclude_no`;
+`only_yes` excludes jobs with unknown sponsorship. Ask the user when intent is
+ambiguous. Salary floors also keep unknown and non-comparable salaries visible.
+Unsupported industry/specialization/literal-search controls are rejected.
+
+For a local server without a global package install, run `npx -y trackly-cli mcp`.
+For Codex, use `codex mcp add trackly -- npx -y trackly-cli mcp`; Cursor and
+Windsurf can use `"command": "npx", "args": ["-y", "trackly-cli", "mcp"]`.
+Authenticate with `npx -y trackly-cli login` first, or configure `TRACKLY_API_KEY`.
+
+Existing global installs require `npm install --global trackly-cli@latest`.
+Restart the MCP process/client and refresh tool discovery after updating.
+For native skills and marketplace plugin updates, follow the
+[release and update guide](docs/release-verification.md#existing-public-users).
+Hosted and local releases are separate: the current client schema is authoritative.
+
 ## MCP Tools Reference
 
 The local stdio server (`trackly mcp`) registers the 58 tools below. Four are
@@ -185,7 +209,7 @@ The hosted server omits those four and adds `trackly_chat`, for 55 hosted tools.
 
 | Tool | Description |
 |------|-------------|
-| trackly_search_jobs | Search and filter jobs by function, company, region, employment type, work arrangement, visa sponsorship, and status |
+| trackly_search_jobs | Search by roles, regions, states/provinces, internship level, favorites, recency, annual USD salary floor, sponsorship, work arrangement, and pipeline status |
 | trackly_get_job | Get full details for a specific job |
 | trackly_search_companies | Semantic company search |
 | trackly_list_companies | List all tracked companies |

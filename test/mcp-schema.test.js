@@ -1018,6 +1018,9 @@ test('search exposes established granular filters and sends each criterion witho
   assert.equal(requests[2].searchParams.get('jobFunction'), extractArrayLiteral(SERVER_SRC, 'JOB_FUNCTIONS').join(','));
   assert.equal(requests[2].searchParams.get('limit'), '20', 'agent searches default to a concise page');
   assert.notEqual((await call({ limit: 100 })).isError, true, 'the full public API page size is available');
+  assert.notEqual((await call({ region: ['europe'], workArrangements: ['remote'] })).isError, true);
+  assert.notEqual((await call({ region: ['europe'], usStates: ['REMOTE'], caProvinces: ['ON'] })).isError, true,
+    'a real child in either country preserves remote alternatives');
   const invalidCases = [
     { unsupportedFocus: 'private-value' }, { jobFunctions: [] }, { usStates: ['XX'] },
     { caProvinces: ['CA'] }, { internshipLevels: ['phd'] }, { postedWithinDays: 2 },
@@ -1025,6 +1028,9 @@ test('search exposes established granular filters and sends each criterion witho
     { since: 'yesterday' }, { function: 'product', jobFunctions: ['data'] },
     { region: ['us'], locationFilter: 'europe' }, { remote: true, usStates: ['CA'] },
     { remote: true, caProvinces: ['ON'] },
+    { remote: true, region: ['europe'] }, { remote: true, locationFilter: 'us' },
+    { region: ['europe'], usStates: ['REMOTE'] },
+    { locationFilter: 'canada', caProvinces: ['REMOTE'] },
   ];
   for (const invalid of invalidCases) {
     const before = requests.length;

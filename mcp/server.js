@@ -272,7 +272,7 @@ function createServer() {
       region: z.array(z.enum(REGION_TAGS)).min(1).max(10).optional().describe('Region tags combined with OR, including us. Use instead of locationFilter; this avoids its legacy mixed-US list limitation. Geographic child behavior follows the backend location rollout.'),
       usStates: z.array(z.enum(US_STATES)).min(1).max(53).optional().describe('US state codes, DC, PR, or REMOTE. Multiple values select alternatives. REMOTE alongside codes also includes remote jobs. Under canonical location enforcement children select their parent; legacy rollout keeps compatibility behavior. Do not combine with remote=true.'),
       caProvinces: z.array(z.enum(CA_PROVINCES)).min(1).max(14).optional().describe('Canadian province/territory codes or REMOTE. Multiple values select alternatives. REMOTE alongside codes also includes remote jobs. Parent-scoped OR requires canonical location enforcement. Do not combine with remote=true.'),
-      internshipLevels: z.array(z.enum(INTERNSHIP_LEVELS)).min(1).max(4).optional().describe('Internship education levels, combined with OR: undergraduate, graduate, mba, not_specified. Applies to internships in jobModality=internship or all; full-time jobs remain unaffected.'),
+      internshipLevels: z.array(z.enum(INTERNSHIP_LEVELS)).min(1).max(4).optional().describe('Internship education levels, combined with OR: undergraduate, graduate, mba, not_specified. Applies to internships in jobModality=internship or all; full-time jobs remain unaffected. This does not change the saved/default modality: set jobModality explicitly when you want internships.'),
       favoriteCompaniesOnly: z.boolean().optional().describe('true limits results to your favorited companies; false explicitly disables this restriction.'),
       postedWithinDays: z.union([z.literal(1), z.literal(3), z.literal(7), z.literal(14), z.literal(30)]).optional().describe('Posting-recency window in days: 1, 3, 7, 14, or 30. Uses the backend discovery-date policy; not an incremental-sync cursor. Omit to use the saved/default window.'),
       salaryFloorUsd: z.number().int().min(0).max(1_000_000).optional().describe('Annual USD minimum salary floor. Excludes comparable listed annual-USD minimums below this amount; unknown, hourly and non-USD salaries remain visible. 0 disables the floor; omitted uses saved/default preferences. This is not a guaranteed salary threshold.'),
@@ -290,7 +290,7 @@ function createServer() {
       workArrangements: z.array(z.enum(WORK_ARRANGEMENTS)).min(1).max(4).optional().describe(
         'Work arrangement filter, independent from geography and employment type. Values: remote, hybrid, in_person, unspecified. Multiple values use OR semantics.'
       ),
-      remote: z.boolean().optional().describe('Filter to remote jobs only (maps to usStates=REMOTE).'),
+      remote: z.boolean().optional().describe('Filter to global remote-only jobs (maps to usStates=REMOTE). Do not combine with region/locationFilter or geographic child arrays. For remote work within a region, use workArrangements=["remote"] with region instead.'),
       status: z.enum(STATUS_VALUES).optional().describe(
         'Filter by YOUR application pipeline state. Not a generic job-posting status. Values: ' + STATUS_VALUES.join(', ')
       ),
@@ -311,6 +311,12 @@ function createServer() {
       }
       if (params.remote === true && (params.usStates !== undefined || params.caProvinces !== undefined)) {
         throw new Error('Use remote=true alone for remote-only jobs, or include REMOTE in the geographic arrays for alternatives.');
+      }
+      const hasParentLocation = params.region !== undefined || params.locationFilter !== undefined;
+      const childLocations = [...(params.usStates ?? []), ...(params.caProvinces ?? [])];
+      const remoteOnlyChildren = childLocations.length > 0 && childLocations.every((value) => value === 'REMOTE');
+      if (hasParentLocation && (params.remote === true || remoteOnlyChildren)) {
+        throw new Error('REMOTE-only location overrides the parent region. Use workArrangements=["remote"] with region or locationFilter for remote work within that geography.');
       }
       const qs = new URLSearchParams();
       // When `function` isn't specified, request ALL canonical functions so the
