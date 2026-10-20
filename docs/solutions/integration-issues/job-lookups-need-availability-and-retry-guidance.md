@@ -17,14 +17,14 @@ tags: [mcp, jobs, availability, errors, retry]
 
 A generic HTTP error wrapper cannot decide whether a 404 means an unavailable
 posting or a broken route. Normalize only the job endpoint's recognized missing
-envelopes and explicit availability flags. Preserve unrelated 404s and genuine
+envelopes (including their explicit failure flag) and availability flags. Preserve unrelated 404s and genuine
 service failures as errors. An absent flag is unknown, never evidence of closure.
 
 Keep this decision inside the job tools. Generic HTTP clients and Apply mutations
 have different error and retry contracts. Return ordinary structured results for
 expected unavailability, with a fixed explanation, retryable=false and another
-search as the next step. Closed briefs must omit obsolete application actions.
-For real errors, expose a closed category and bounded retry guidance while
+search as the next step. Closed briefs retain allowed context while omitting obsolete recommended motions and application actions.
+For real errors, expose a closed category and bounded retry guidance that honors longer valid API delays, while
 retaining the original failure only for the existing content-free telemetry path.
 
 Test through a real MCP client and local HTTP fixture, including recognized job

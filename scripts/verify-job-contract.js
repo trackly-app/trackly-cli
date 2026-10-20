@@ -6,6 +6,29 @@ const {
   activeToolRegistrations, registrationInputSchemaAst, canonicalSchemaAst,
 } = require('./verify-hosted-contract');
 
+const CANDIDATE_PLUGIN_WRAPPER_SOURCE = `function wrapTool(
+  handler: (params: any) => Promise<unknown>,
+  fallback: string,
+  includeStructuredContent = false,
+  jobIdKey?: string,
+) {
+  return async (params: any) => {
+    try {
+      const result = await handler(params);
+      return resultContent(jobIdKey ? normalizeJobResult(result, params[jobIdKey]) : result, includeStructuredContent);
+    } catch (error: any) {
+      const unavailable = jobIdKey && unavailableJobFromError(
+        { ...error, ...error?.responseBody, status: error?.status }, params[jobIdKey],
+      );
+      if (unavailable) return resultContent(unavailable, true);
+      const response = errorContent(error, fallback);
+      if (!jobIdKey) return response;
+      const payload = JSON.parse(response.content[0].text);
+      return { ...response, ...resultContent(jobFailurePayload(error, payload), true) };
+    }
+  };
+}`;
+
 function property(object, name) {
   assert.equal(object?.type, 'ObjectExpression', 'Expected an explicit object');
   assert.ok(object.properties.every(p => p.type === 'ObjectProperty' && !p.computed), 'No dynamic projection fields');
@@ -76,4 +99,4 @@ function assertJobLookupParity({ localSource, hostedSource, pluginSource }) {
   }
 }
 
-module.exports = { assertJobLookupParity };
+module.exports = { assertJobLookupParity, CANDIDATE_PLUGIN_WRAPPER_SOURCE };

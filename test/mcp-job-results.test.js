@@ -80,7 +80,9 @@ test('job lookups distinguish unavailable postings from failures through the rea
         ['removed job', 410, { code: 'job_removed', error: 'Gone' }, false, undefined, false, 'removed'],
         ['closed job', 200, { success: true, job: { id: 42, isActive: false } }, false, undefined, false, 'closed'],
         ['closed stored detail', 200, { success: true, job: { id: 42, active: false } }, false, undefined, false, 'closed'],
-        ['closed brief', 200, { success: true, brief: { jobId: 42, isActive: false, nextActions: [{ type: 'open_job_posting' }] } }, false, undefined, false, 'closed'],
+        ['closed brief', 200, { success: true, brief: { jobId: 42, isActive: false, companyName: 'Example', companySignal: { openRoleCount: 7 }, recommendedMotion: 'ask_referral', nextActions: [{ type: 'open_job_posting' }] } }, false, undefined, false, 'closed'],
+        ...[true, undefined, 'false'].map(success => ['noncanonical missing', 404, { success, error: 'Job not found' }, true, 'not_found', false]),
+        ['mismatched missing ID', 404, { success: false, error: 'Job 43 not found' }, true, 'not_found', false],
         ['route missing', 404, { error: 'Cannot GET /private-route' }, true, 'not_found', false],
         ['unrecognized gone', 410, { error: 'unrelated resource gone' }, true, 'not_found', false],
         ['unrecognized code', 404, { code: 'constructor', error: 'Missing route' }, true, 'not_found', false],
@@ -90,6 +92,9 @@ test('job lookups distinguish unavailable postings from failures through the rea
         ['access unavailable', 503, { code: 'ACCESS_CHECK_UNAVAILABLE', error: 'private-access' }, true, 'access', true],
         ['invalid backend ID', 400, { error: 'Invalid job ID' }, true, 'validation', false],
         ['rate limited', 429, { error: 'private-limit' }, true, 'rate_limit', true],
+        ['longer rate limit', 429, { error: 'private-limit', retryAfterSeconds: 600 }, true, 'rate_limit', true],
+        ['longer server delay', 500, { error: 'private-server', retryAfterSeconds: 90 }, true, 'server', true],
+        ...[30, 0, -1, '120', 120.5, Number.MAX_SAFE_INTEGER + 1].map(retryAfterSeconds => ['default rate delay', 429, { error: 'private-limit', retryAfterSeconds }, true, 'rate_limit', true]),
         ['timeout', 408, { error: 'private-timeout' }, true, 'timeout', true],
         ['server failure', 500, { error: 'private-network-brief-error' }, true, 'server', true],
         ['maintenance', 503, { code: 'maintenance_mode', message: 'Trackly is upgrading' }, true, 'maintenance', false],
@@ -116,12 +121,20 @@ test('job lookups distinguish unavailable postings from failures through the rea
           assert.equal(payload.maxRetries, 0, label);
           assert.equal(payload.nextStep.tool, 'trackly_search_jobs', label);
           assert.match(payload.nextStep.message, /do not retry/i, label);
-          assert.equal(payload.brief, undefined, 'closed brief must not recommend applying');
+          if (label === 'closed brief') {
+            assert.equal(payload.brief.companyName, 'Example');
+            assert.deepEqual(payload.brief.companySignal, { openRoleCount: 7 });
+            assert.equal(payload.brief.nextActions, undefined);
+            assert.equal(payload.brief.recommendedMotion, undefined);
+          }
         } else if (expectedError) {
           assert.equal(payload.category, category, label);
           assert.equal(payload.retryable, retryable, label);
           assert.equal(payload.maxRetries, retryable ? 1 : 0, label);
           if (retryable) assert.ok(payload.retryAfterSeconds >= 5, label);
+          if (label === 'default rate delay') assert.equal(payload.retryAfterSeconds, 60);
+          if (label === 'longer rate limit') assert.equal(payload.retryAfterSeconds, 600);
+          if (label === 'longer server delay') assert.equal(payload.retryAfterSeconds, 90);
           assert.equal(payload.status, status > 0 ? status : undefined, label);
           assert.ok(payload.nextStep.message, label);
           assert.doesNotMatch(JSON.stringify(payload), /private-|20 natural language queries/);
