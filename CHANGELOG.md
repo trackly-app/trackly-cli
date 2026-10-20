@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-10-20
+
+### Fixed
+
+- Explain successful search pages whose totals are temporarily unavailable. Matching jobs and pagination remain usable; follow count guidance instead of repeatedly retrying for a total. Add real stdio regression coverage for unavailable totals, known zero and actual page failures.
+
 ## [0.22.0] - 2026-10-20
 
 - **Changed contract:** Job lookups now report recognized unavailable postings as successful structured results, remove stale brief recommendations, and require positive safe integer Trackly IDs. Clients should follow `availability`, `category` and retry guidance.
