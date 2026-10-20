@@ -285,7 +285,7 @@ function createServer() {
 
   server.registerTool(
     'trackly_search_jobs',
-    { description: 'Search and filter job postings. Returns one matching page with title, company, location, structured fields and backend pagination. Use jobFunctions for multiple roles, region for multiple regions, and usStates/caProvinces for geographic detail. Work arrangement is independent from geography and employment type. Unknown sponsorship and non-comparable salary data stay visible with exclude_no and salaryFloorUsd. Never invent industry, specialization, exclusion or literal-search controls; ask when sponsorship intent is ambiguous.',
+    { description: 'Search and filter job postings. Returns one matching page with title, company, location, structured fields and backend pagination. Use jobFunctions for multiple roles, region for multiple regions, and usStates/caProvinces for geographic detail. Work arrangement is independent from geography and employment type. Unknown sponsorship and non-comparable salary data stay visible with exclude_no and salaryFloorUsd. Never invent industry, specialization, exclusion or literal-search controls; ask when sponsorship intent is ambiguous. If the total is unavailable, returned matching jobs remain valid. Explain countGuidance and use hasMore/pagination; do not retry just for totals.',
     inputSchema: z.object({
       function: z.enum(JOB_FUNCTIONS).optional().describe('Job function filter. One of: ' + JOB_FUNCTIONS.join(', ')),
       jobFunctions: z.array(z.enum(JOB_FUNCTIONS)).min(1).max(14).optional().describe('Multiple job functions, combined with OR. Use instead of function. Omit both to request all 14 functions.'),
