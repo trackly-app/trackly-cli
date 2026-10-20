@@ -37,7 +37,7 @@ test('job lookups distinguish unavailable postings from failures through the rea
     }
     if (fixture.status === 0) return request.socket.destroy();
     if (fixture.status === -1) return;
-    response.writeHead(fixture.status, { 'Content-Type': 'application/json' });
+    response.writeHead(fixture.status, { 'Content-Type': 'application/json', ...fixture.headers });
     response.end(JSON.stringify(fixture.body));
   });
   await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
@@ -70,7 +70,7 @@ test('job lookups distinguish unavailable postings from failures through the rea
     ['trackly_get_job_brief', 'jobId', { success: true, brief: { jobId: 42, isActive: true } }],
   ]) {
     await t.test(name, async () => {
-      for (const [label, status, body, expectedError, category, retryable, reason] of [
+      for (const [label, status, body, expectedError, category, retryable, reason, headers] of [
         ['missing job', 404, { success: false, error: 'Job not found' }, false, undefined, false, 'not_found'],
         ['available', 200, success, false],
         ['unknown availability', 200, { success: true, job: { id: 42, isActive: null } }, false],
@@ -89,6 +89,13 @@ test('job lookups distinguish unavailable postings from failures through the rea
         ['expired auth', 401, { error: 'private-token-error' }, true, 'authentication', false],
         ['forbidden', 403, { error: 'private-denial' }, true, 'authorization', false],
         ['invite required', 403, { code: 'INVITATION_REQUIRED', error: 'Invitation required' }, true, 'access', false],
+        ['longer access delay', 503, { code: 'ACCESS_CHECK_UNAVAILABLE', retryAfterSeconds: 600 }, true, 'access', true],
+        ['header rate delay', 429, { error: 'private-limit' }, true, 'rate_limit', true, undefined, { 'Retry-After': '600' }],
+        ['header server delay', 503, { error: 'private-server' }, true, 'server', true, undefined, { 'Retry-After': '900' }],
+        ['header access delay', 503, { code: 'ACCESS_CHECK_UNAVAILABLE', retryAfterSeconds: 600 }, true, 'access', true, undefined, { 'Retry-After': '900' }],
+        ['body delay wins', 429, { retryAfterSeconds: 900 }, true, 'rate_limit', true, undefined, { 'Retry-After': '600' }],
+        ['date header delay', 429, {}, true, 'rate_limit', true, undefined, { 'Retry-After': new Date(Date.now() + 3600000).toUTCString() }],
+        ...['invalid', '-1', '1.5', '0', '9007199254740992', '123garbage'].map(value => ['invalid header delay', 429, {}, true, 'rate_limit', true, undefined, { 'Retry-After': value }]),
         ['access unavailable', 503, { code: 'ACCESS_CHECK_UNAVAILABLE', error: 'private-access' }, true, 'access', true],
         ['invalid backend ID', 400, { error: 'Invalid job ID' }, true, 'validation', false],
         ['rate limited', 429, { error: 'private-limit' }, true, 'rate_limit', true],
@@ -103,7 +110,7 @@ test('job lookups distinguish unavailable postings from failures through the rea
         ['false not found server error', 500, { error: 'Job not found' }, true, 'server', true],
         ['unknown failure', 402, { error: 'private-other-error' }, true, 'unknown', false],
       ]) {
-        fixture = { status, body };
+        fixture = { status, body, headers };
         events.length = 0;
         const before = requests.length;
         const result = await client.callTool({ name, arguments: { [field]: 42 } });
@@ -134,6 +141,10 @@ test('job lookups distinguish unavailable postings from failures through the rea
           if (retryable) assert.ok(payload.retryAfterSeconds >= 5, label);
           if (label === 'default rate delay') assert.equal(payload.retryAfterSeconds, 60);
           if (label === 'longer rate limit') assert.equal(payload.retryAfterSeconds, 600);
+          if (label === 'longer access delay' || label === 'header rate delay') assert.equal(payload.retryAfterSeconds, 600);
+          if (['header server delay', 'header access delay', 'body delay wins'].includes(label)) assert.equal(payload.retryAfterSeconds, 900);
+          if (label === 'date header delay') assert.ok(payload.retryAfterSeconds > 3500 && payload.retryAfterSeconds <= 3600);
+          if (label === 'invalid header delay') assert.equal(payload.retryAfterSeconds, 60);
           if (label === 'longer server delay') assert.equal(payload.retryAfterSeconds, 90);
           assert.equal(payload.status, status > 0 ? status : undefined, label);
           assert.ok(payload.nextStep.message, label);

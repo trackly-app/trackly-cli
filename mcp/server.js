@@ -236,8 +236,7 @@ function wrapTool(handler, fallbackMessage, jobIdKey) {
         guidance.error = payload.error;
         guidance.retryable = payload.retryable;
         guidance.maxRetries = payload.retryable ? 1 : 0;
-        delete guidance.retryAfterSeconds;
-        if (payload.retryable) guidance.retryAfterSeconds = 5;
+        if (!payload.retryable) delete guidance.retryAfterSeconds;
         guidance.nextStep = { message: payload.guidance || payload.message || payload.error };
       }
       if (error?.status === 429) delete payload.hint;

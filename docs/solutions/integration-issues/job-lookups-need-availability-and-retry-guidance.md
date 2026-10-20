@@ -24,7 +24,7 @@ Keep this decision inside the job tools. Generic HTTP clients and Apply mutation
 have different error and retry contracts. Return ordinary structured results for
 expected unavailability, with a fixed explanation, retryable=false and another
 search as the next step. Closed briefs retain allowed context while omitting obsolete recommended motions and application actions.
-For real errors, expose a closed category and bounded retry guidance that honors longer valid API delays, while
+For real errors, expose a closed category and bounded retry guidance that honors longer valid API delays and HTTP Retry-After headers, while
 retaining the original failure only for the existing content-free telemetry path.
 
 Test through a real MCP client and local HTTP fixture, including recognized job
@@ -37,3 +37,8 @@ Sanitized stack coordinates alone do not identify a backend response or rejected
 argument. Reproduce emitted source using the exact build options and version,
 and distinguish the throw-site proof from synthetic input examples. Never report
 a fixture's invalid ID as the recovered cause of a historical incident.
+
+Carry Retry-After metadata through the HTTP client without adding retries. Parse
+only positive safe integer seconds or a standard HTTP date, choose the longer
+body/header delay, and preserve it when applying transient access guidance. Test
+these failure branches; healthy responses never exercise them.
