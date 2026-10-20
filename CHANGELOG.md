@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-10-19
+
+### Fixed
+
+- Clarify that omitted posting-window and salary-floor filters inherit saved preferences only with status omitted, `new`, or `all`. Explicit pipeline views skip those saved constraints; explicit request filters still apply. Match the coordinated hosted MCP descriptions without changing query behavior.
+
 ## [0.21.0] - 2026-10-19
 
 ### Added
