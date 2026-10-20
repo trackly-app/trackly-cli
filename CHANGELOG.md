@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.3] - 2026-10-20
+
+### Fixed
+
+- Return a structured, non-error result for recognized missing/removed jobs and explicitly inactive postings. Explain that the job is no longer available, direct agents to current openings, and prohibit retries of the same unavailable ID. Closed briefs omit stale application actions; detecting closure requires the backend availability field.
+- Give actual job-detail and brief failures closed categories and explicit retry guidance. Preserve authentication refresh and existing maintenance/access instructions; add no automatic retry loop. Validate positive numeric Trackly IDs and explain their source.
+
 ## [0.21.2] - 2026-10-19
 
 ### Fixed

@@ -9,6 +9,7 @@ const { version: PACKAGE_VERSION } = require('../package.json');
 const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 const { registerApplyTools } = require('./apply-tools');
 const { configureMcpAnalytics, shutdownMcpAnalytics } = require('./analytics');
+const { normalizeJobResult, unavailableJobFromError, jobFailureGuidance } = require('../lib/job-result');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
 const MCP_SHUTDOWN_TIMEOUT_MS = 2_000;
@@ -219,18 +220,39 @@ function throwMcpResourceError(error) {
   throw error;
 }
 
-function wrapTool(handler, fallbackMessage) {
+function wrapTool(handler, fallbackMessage, jobIdKey) {
   return async (params, extra) => {
+    const successResult = (value) => ({
+      content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
+      ...(jobIdKey ? { structuredContent: value } : {}),
+    });
+    const failureResult = (error) => {
+      const result = createErrorResult(error, fallbackMessage, error?.status === 401 ? { hint: AUTH_HINT } : {});
+      if (!jobIdKey) return result;
+      const payload = JSON.parse(result.content[0].text);
+      const guidance = jobFailureGuidance(error);
+      if (payload.code === 'maintenance_mode' || createTracklyAccessError(error, error?.status)) {
+        guidance.category = payload.code === 'maintenance_mode' ? 'maintenance' : 'access';
+        guidance.error = payload.error;
+        guidance.retryable = payload.retryable;
+        guidance.maxRetries = payload.retryable ? 1 : 0;
+        delete guidance.retryAfterSeconds;
+        if (payload.retryable) guidance.retryAfterSeconds = 5;
+        guidance.nextStep = { message: payload.guidance || payload.message || payload.error };
+      }
+      if (error?.status === 429) delete payload.hint;
+      return { ...result, ...successResult({ ...payload, ...guidance }) };
+    };
     try {
       if (!hasAuth()) {
-        return createAuthErrorResult();
+        return jobIdKey ? failureResult({ message: 'Not authenticated', status: 401 }) : createAuthErrorResult();
       }
 
       const result = await handler(params);
-      return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-      };
+      return successResult(jobIdKey ? normalizeJobResult(result, params[jobIdKey]) : result);
     } catch (error) {
+      const unavailable = jobIdKey && unavailableJobFromError(error, params[jobIdKey]);
+      if (unavailable) return successResult(unavailable);
       if (extra && typeof extra === 'object') {
         const statusPrefix = Number.isInteger(error?.status) ? `HTTP ${error.status}: ` : '';
         extra.__mcp_analytics_error = error instanceof Error
@@ -240,11 +262,7 @@ function wrapTool(handler, fallbackMessage) {
             { cause: error },
           );
       }
-      return createErrorResult(
-        error,
-        fallbackMessage,
-        error?.status === 401 ? { hint: AUTH_HINT } : {}
-      );
+      return failureResult(error);
     }
   };
 }
@@ -370,13 +388,13 @@ function createServer() {
 
   server.tool(
     'trackly_get_job',
-    'Get full details for a specific job posting including description.',
+    'Get full details for a Trackly job ID returned by search or your saved queue. Missing or closed postings return availability=unavailable with retryable=false and a next step; do not retry that ID. Failures include a category and retry guidance.',
     {
-      id: z.number().describe('Job posting ID'),
+      id: z.number().int().positive().safe().describe('Positive numeric Trackly job ID from trackly_search_jobs or your saved queue, not an employer requisition ID or URL. Correct invalid arguments before retrying.'),
     },
     wrapTool(async ({ id }) => {
       return apiRequest('GET', `/api/jobscout/jobs/${id}`, null, false, false, MCP_USER_AGENT);
-    }, 'Failed to fetch job')
+    }, 'Failed to fetch job', 'id')
   );
 
   server.tool(
@@ -532,13 +550,13 @@ function createServer() {
 
   server.tool(
     'trackly_get_job_brief',
-    'Get a network brief for a specific job. Returns company signal, recommended motion, top contact, and suggested actions.',
+    'Get a network brief for a Trackly job ID, including company signal, recommended motion, top contact and suggested actions. Missing or closed postings return availability=unavailable with retryable=false; search for another opening. Failures include a category and retry guidance.',
     {
-      jobId: z.number().describe('Job posting ID'),
+      jobId: z.number().int().positive().safe().describe('Positive numeric Trackly job ID from trackly_search_jobs or your saved queue, not an employer requisition ID or URL. Correct invalid arguments before retrying.'),
     },
     wrapTool(async ({ jobId }) => {
       return apiRequest('GET', `/api/jobscout/jobs/${jobId}/network-brief`, null, false, false, MCP_USER_AGENT);
-    }, 'Failed to fetch network brief')
+    }, 'Failed to fetch network brief', 'jobId')
   );
 
   server.tool(
