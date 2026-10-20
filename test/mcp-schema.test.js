@@ -1011,9 +1011,10 @@ test('search exposes established granular filters and sends each criterion witho
     postedWithinDays: '7', salaryFloorUsd: '120000', since: criteria.since,
     sponsorship: 'exclude_no', status: 'new', sort: 'newest', limit: '50', offset: '0', search: 'analyst',
   });
-  assert.notEqual((await call({ favoriteCompaniesOnly: true, salaryFloorUsd: 0 })).isError, true);
+  assert.notEqual((await call({ favoriteCompaniesOnly: true, salaryFloorUsd: 0, postedWithinDays: 0 })).isError, true);
   assert.equal(requests[1].searchParams.get('favoriteCompaniesOnly'), 'true');
   assert.equal(requests[1].searchParams.get('salaryFloorUsd'), '0');
+  assert.equal(requests[1].searchParams.get('postedWithinDays'), '0', 'callers can disable saved posting windows');
   assert.notEqual((await call({})).isError, true);
   assert.equal(requests[2].searchParams.get('jobFunction'), extractArrayLiteral(SERVER_SRC, 'JOB_FUNCTIONS').join(','));
   assert.equal(requests[2].searchParams.get('limit'), '20', 'agent searches default to a concise page');
