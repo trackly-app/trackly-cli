@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { parseExpression } = require('@babel/parser');
+const { assertJobLookupParity, CANDIDATE_PLUGIN_WRAPPER_SOURCE } = require('./verify-job-contract');
 const {
   gitOutput, activeToolRegistrations, registrationInputSchemaAst, HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256,
   APPLY_392_CHECKPOINT_ACTION_SCHEMA_SHA256,
@@ -149,7 +150,7 @@ function verifyCandidateContract({ cliRoot = path.join(__dirname, '..'), backend
     hostedPluginSource: readBackend('src/mcp/plugin-server.ts'),
   };
   assertSurfaceEnumBindings(localSource, hostedSource, fixture.hostedBatchServiceSource, local.constants);
-  verifyCoordinatedBackendCore(fixture);
+  verifyCoordinatedBackendCore(fixture, { expectedPluginWrapperSource: CANDIDATE_PLUGIN_WRAPPER_SOURCE });
   assertCandidateCheckpointActionSchema(hostedSource, local.contractVersion);
   assertCoordinatedCheckpointHelperSemantics({
     ...fixture,
@@ -159,6 +160,11 @@ function verifyCandidateContract({ cliRoot = path.join(__dirname, '..'), backend
       // The candidate adds client/upgrade_required; deployed snapshot pins stay unchanged.
       applyCheckpointActionSchema: CANDIDATE_CHECKPOINT_ACTION_SHA256,
     },
+  });
+  assertJobLookupParity({
+    localSource: read(cliRoot, 'mcp/server.js'),
+    hostedSource,
+    pluginSource: fixture.hostedPluginSource,
   });
   return { contractVersion: local.contractVersion, backendSha: expectedBackendSha, sharedTools: Object.keys(hosted.tools).length };
 }
