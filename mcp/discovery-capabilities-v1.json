@@ -1,0 +1,131 @@
+{
+  "success": true,
+  "discovery": {
+    "version": 1,
+    "available": false,
+    "activation": "JOBSCOUT_DISCOVERY_V1_ENABLED=true after production query validation",
+    "preferenceWrites": false,
+    "sorts": [
+      "newest",
+      "relevance"
+    ],
+    "modes": {
+      "filters": true,
+      "filters_plus_focus": false,
+      "focus_only": false
+    },
+    "keywords": {
+      "parameter": "search",
+      "fields": [
+        "title",
+        "company",
+        "description",
+        "skills"
+      ],
+      "defaultFields": [
+        "title",
+        "company",
+        "description",
+        "skills"
+      ],
+      "allTerms": true,
+      "quotedPhrases": true,
+      "leadingMinus": true,
+      "maxLength": 500,
+      "maxTerms": 8,
+      "maxTermLength": 80,
+      "matching": "literal_whole_word_case_insensitive_nfkc",
+      "positiveMissingEvidence": "no_match",
+      "negativeMissingEvidence": "not_checked",
+      "descriptionSource": "description_text",
+      "skillsSource": [
+        "structured_jd.requiredSkills",
+        "structured_jd.preferredSkills"
+      ],
+      "companySource": "employer company row or posting organization; aggregator name is not employer evidence",
+      "provider": "postgresql",
+      "semanticExpansion": false,
+      "indexSupport": "validated_same_row_expression_gin_v1",
+      "supportedStrategy": "ascii_anchored_plan_selected_sets_or_exact_regex",
+      "unavailableClasses": [
+        "non_ascii_query",
+        "pure_punctuation"
+      ],
+      "unicodeSourceSafetyCohort": "included_and_rechecked; worst_case_requires_production_benchmark",
+      "performance": "unvalidated_on_azure; readiness_is_not_latency_proof"
+    },
+    "facets": {
+      "jobFunction": {
+        "ids": [
+          "product",
+          "engineering",
+          "design",
+          "data",
+          "marketing",
+          "sales",
+          "partnerships",
+          "finance",
+          "strategy",
+          "operations",
+          "people",
+          "legal",
+          "support",
+          "other"
+        ],
+        "unknown": "include",
+        "source": "job_function"
+      },
+      "industries": {
+        "ids": [
+          "fintech",
+          "healthtech",
+          "ai-ml",
+          "cybersecurity",
+          "ecommerce",
+          "gaming",
+          "devtools",
+          "edtech",
+          "crypto-web3",
+          "robotics",
+          "aerospace",
+          "hr-recruiting",
+          "insurance",
+          "enterprise-saas",
+          "social-media",
+          "media-entertainment",
+          "logistics-supply-chain",
+          "proptech",
+          "legaltech",
+          "biotech-pharma",
+          "climate-cleantech",
+          "hardware-semiconductors",
+          "telecom",
+          "automotive",
+          "food-agriculture",
+          "travel-hospitality",
+          "retail",
+          "marketplace",
+          "consulting-services",
+          "data-analytics",
+          "cloud-infrastructure",
+          "other"
+        ],
+        "unknown": "include",
+        "includeUnknownParameter": "includeUnknownIndustries",
+        "strictSelection": true,
+        "source": "employer company.industry; unresolved aggregator parents are unknown"
+      },
+      "roleSpecializations": {
+        "supported": false,
+        "reason": "No populated canonical taxonomy"
+      },
+      "subindustries": {
+        "supported": false,
+        "reason": "No populated canonical taxonomy"
+      }
+    },
+    "coverage": "unmeasured",
+    "counts": "same_sql_predicate; existing countMode and countCap semantics",
+    "readiness": "disabled"
+  }
+}

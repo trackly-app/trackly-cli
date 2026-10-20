@@ -1,0 +1,364 @@
+{
+  "type": "object",
+  "required": [
+    "success",
+    "discovery"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "success": {
+      "const": true
+    },
+    "discovery": {
+      "type": "object",
+      "required": [
+        "version",
+        "available",
+        "activation",
+        "preferenceWrites",
+        "sorts",
+        "modes",
+        "keywords",
+        "facets",
+        "coverage",
+        "counts",
+        "readiness"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "activation": {
+          "const": "JOBSCOUT_DISCOVERY_V1_ENABLED=true after production query validation"
+        },
+        "preferenceWrites": {
+          "const": false
+        },
+        "sorts": {
+          "const": [
+            "newest",
+            "relevance"
+          ]
+        },
+        "modes": {
+          "type": "object",
+          "required": [
+            "filters",
+            "filters_plus_focus",
+            "focus_only"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "filters": {
+              "const": true
+            },
+            "filters_plus_focus": {
+              "const": false
+            },
+            "focus_only": {
+              "const": false
+            }
+          }
+        },
+        "keywords": {
+          "type": "object",
+          "required": [
+            "parameter",
+            "fields",
+            "defaultFields",
+            "allTerms",
+            "quotedPhrases",
+            "leadingMinus",
+            "maxLength",
+            "maxTerms",
+            "maxTermLength",
+            "matching",
+            "positiveMissingEvidence",
+            "negativeMissingEvidence",
+            "descriptionSource",
+            "skillsSource",
+            "companySource",
+            "provider",
+            "semanticExpansion",
+            "indexSupport",
+            "supportedStrategy",
+            "unavailableClasses",
+            "unicodeSourceSafetyCohort",
+            "performance"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "parameter": {
+              "const": "search"
+            },
+            "fields": {
+              "const": [
+                "title",
+                "company",
+                "description",
+                "skills"
+              ]
+            },
+            "defaultFields": {
+              "const": [
+                "title",
+                "company",
+                "description",
+                "skills"
+              ]
+            },
+            "allTerms": {
+              "const": true
+            },
+            "quotedPhrases": {
+              "const": true
+            },
+            "leadingMinus": {
+              "const": true
+            },
+            "maxLength": {
+              "const": 500
+            },
+            "maxTerms": {
+              "const": 8
+            },
+            "maxTermLength": {
+              "const": 80
+            },
+            "matching": {
+              "const": "literal_whole_word_case_insensitive_nfkc"
+            },
+            "positiveMissingEvidence": {
+              "const": "no_match"
+            },
+            "negativeMissingEvidence": {
+              "const": "not_checked"
+            },
+            "descriptionSource": {
+              "const": "description_text"
+            },
+            "skillsSource": {
+              "const": [
+                "structured_jd.requiredSkills",
+                "structured_jd.preferredSkills"
+              ]
+            },
+            "companySource": {
+              "const": "employer company row or posting organization; aggregator name is not employer evidence"
+            },
+            "provider": {
+              "const": "postgresql"
+            },
+            "semanticExpansion": {
+              "const": false
+            },
+            "indexSupport": {
+              "const": "validated_same_row_expression_gin_v1"
+            },
+            "supportedStrategy": {
+              "const": "ascii_anchored_plan_selected_sets_or_exact_regex"
+            },
+            "unavailableClasses": {
+              "const": [
+                "non_ascii_query",
+                "pure_punctuation"
+              ]
+            },
+            "unicodeSourceSafetyCohort": {
+              "const": "included_and_rechecked; worst_case_requires_production_benchmark"
+            },
+            "performance": {
+              "const": "unvalidated_on_azure; readiness_is_not_latency_proof"
+            }
+          }
+        },
+        "facets": {
+          "type": "object",
+          "required": [
+            "jobFunction",
+            "industries",
+            "roleSpecializations",
+            "subindustries"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "jobFunction": {
+              "type": "object",
+              "required": [
+                "ids",
+                "unknown",
+                "source"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "ids": {
+                  "const": [
+                    "product",
+                    "engineering",
+                    "design",
+                    "data",
+                    "marketing",
+                    "sales",
+                    "partnerships",
+                    "finance",
+                    "strategy",
+                    "operations",
+                    "people",
+                    "legal",
+                    "support",
+                    "other"
+                  ]
+                },
+                "unknown": {
+                  "const": "include"
+                },
+                "source": {
+                  "const": "job_function"
+                }
+              }
+            },
+            "industries": {
+              "type": "object",
+              "required": [
+                "ids",
+                "unknown",
+                "includeUnknownParameter",
+                "strictSelection",
+                "source"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "ids": {
+                  "const": [
+                    "fintech",
+                    "healthtech",
+                    "ai-ml",
+                    "cybersecurity",
+                    "ecommerce",
+                    "gaming",
+                    "devtools",
+                    "edtech",
+                    "crypto-web3",
+                    "robotics",
+                    "aerospace",
+                    "hr-recruiting",
+                    "insurance",
+                    "enterprise-saas",
+                    "social-media",
+                    "media-entertainment",
+                    "logistics-supply-chain",
+                    "proptech",
+                    "legaltech",
+                    "biotech-pharma",
+                    "climate-cleantech",
+                    "hardware-semiconductors",
+                    "telecom",
+                    "automotive",
+                    "food-agriculture",
+                    "travel-hospitality",
+                    "retail",
+                    "marketplace",
+                    "consulting-services",
+                    "data-analytics",
+                    "cloud-infrastructure",
+                    "other"
+                  ]
+                },
+                "unknown": {
+                  "const": "include"
+                },
+                "includeUnknownParameter": {
+                  "const": "includeUnknownIndustries"
+                },
+                "strictSelection": {
+                  "const": true
+                },
+                "source": {
+                  "const": "employer company.industry; unresolved aggregator parents are unknown"
+                }
+              }
+            },
+            "roleSpecializations": {
+              "type": "object",
+              "required": [
+                "supported",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "supported": {
+                  "const": false
+                },
+                "reason": {
+                  "const": "No populated canonical taxonomy"
+                }
+              }
+            },
+            "subindustries": {
+              "type": "object",
+              "required": [
+                "supported",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "supported": {
+                  "const": false
+                },
+                "reason": {
+                  "const": "No populated canonical taxonomy"
+                }
+              }
+            }
+          }
+        },
+        "coverage": {
+          "const": "unmeasured"
+        },
+        "counts": {
+          "const": "same_sql_predicate; existing countMode and countCap semantics"
+        },
+        "readiness": {
+          "enum": [
+            "disabled",
+            "unavailable",
+            "ready"
+          ]
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://closeai.mba/contracts/discovery/capabilities-v1.schema.json",
+  "title": "Prepared discovery capability v1 contract; activation requires independent production approval",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "discovery": {
+            "properties": {
+              "available": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "discovery": {
+            "properties": {
+              "readiness": {
+                "const": "ready"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
