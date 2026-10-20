@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.2] - 2026-10-19
+
+### Fixed
+
+- Populate MCP error types with closed categories and client attribution with a fixed family label on every analytics event. Successful calls use `none`; missing client metadata uses `unknown`, and unrecognized clients use `other`.
+- Preserve HTTP status when capturing handled API failures, so job-detail and network-brief 404/429/500 responses are classified correctly. Error and exception categories survive repeated privacy projection. Raw queries, conversation text and private response content remain excluded.
+
 ## [0.21.1] - 2026-10-19
 
 ### Fixed

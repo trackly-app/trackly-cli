@@ -118,6 +118,27 @@ const SAFE_ENUM_KEYS = new Set([
   'region', 'regiontag', 'locationfilter', 'sort', 'sponsorship',
 ]);
 const SDK_FAILURE_WARNING = /Warning: (?:Failed to instrument server|Failed to setup tool call instrumentation|No PostHog client passed)/i;
+const ERROR_CATEGORIES = new Set([
+  'authentication', 'authorization', 'rate_limit', 'timeout', 'not_found',
+  'validation', 'conflict', 'network', 'server', 'unknown',
+]);
+const HTTP_ERROR_CATEGORIES = {
+  400: 'validation', 401: 'authentication', 403: 'authorization',
+  404: 'not_found', 409: 'conflict', 429: 'rate_limit',
+};
+const CLIENT_FAMILIES = [
+  ['chatgpt', /\bchatgpt\b/],
+  ['claude', /\bclaude(?: desktop)?\b/],
+  ['codex', /\bcodex\b/],
+  ['cursor', /\bcursor\b/],
+  ['windsurf', /\bwindsurf\b/],
+  ['vscode', /\b(?:vscode|visual studio code)\b/],
+  ['continue', /\bcontinue\b/],
+  ['cline', /\bcline\b/],
+  ['roo', /\broo(?: code)?\b/],
+  ['zed', /\bzed\b/],
+  ['mcp-inspector', /\bmcp inspector\b/],
+];
 
 const ALLOWED_EVENT_PROPERTY_KEYS = new Set([
   '$exception_list', '$lib', '$lib_version', '$mcp_client_name',
@@ -250,6 +271,12 @@ function classifyIntent(toolName, value) {
 
 function classifyError(value) {
   const text = typeof value === 'string' ? value.toLowerCase() : '';
+  if (ERROR_CATEGORIES.has(text)) return text;
+  // HTTP status is authoritative; endpoint words such as "network brief"
+  // must not turn an upstream 500 into a transport/network classification.
+  const status = /\bhttp\s+([45]\d\d)\b/.exec(text)?.[1];
+  if (status && HTTP_ERROR_CATEGORIES[status]) return HTTP_ERROR_CATEGORIES[status];
+  if (status?.startsWith('5')) return 'server';
   if (/\b(?:401|unauthenticated|authentication|invalid token|expired token)\b/.test(text)) {
     return 'authentication';
   }
@@ -262,6 +289,38 @@ function classifyError(value) {
   if (/\b(?:fetch|network|socket|connection|dns|econn)\b/.test(text)) return 'network';
   if (/\b(?:500|502|503|504|internal|upstream|unavailable)\b/.test(text)) return 'server';
   return 'unknown';
+}
+
+function canonicalClientFamily(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 240) return undefined;
+  const normalized = value.toLowerCase().replace(/[_-]/g, ' ');
+  return CLIENT_FAMILIES.find(([, pattern]) => pattern.test(normalized))?.[0];
+}
+
+function projectEventAttribution(properties, eventName) {
+  const clientValues = [
+    properties.$mcp_vendor_client,
+    properties.$mcp_client_name,
+    properties.$mcp_client_user_agent,
+  ];
+  const clientFamily = clientValues.map(canonicalClientFamily).find(Boolean)
+    || (clientValues.some((value) => (
+      typeof value === 'string' && value.trim() && value !== 'unknown'
+    )) ? 'other' : 'unknown');
+  properties.$mcp_vendor_client = clientFamily;
+  properties.$mcp_client_name = clientFamily;
+  if (properties.$mcp_client_user_agent !== undefined) {
+    properties.$mcp_client_user_agent = canonicalClientFamily(properties.$mcp_client_user_agent)
+      || 'other';
+  }
+
+  const errorMessage = properties.$mcp_error_message;
+  const exceptionMessage = properties.$exception_list?.[0]?.value;
+  const isError = eventName === '$exception' || properties.$mcp_is_error === true;
+  properties.$mcp_error_type = isError
+    ? classifyError(errorMessage ?? exceptionMessage ?? properties.$mcp_error_type)
+    : 'none';
+  return errorMessage;
 }
 
 function safeFrameName(value, maxLength = 120) {
@@ -311,7 +370,7 @@ function projectExceptionList(value, errorValue) {
     }).filter((frame) => Object.keys(frame).length > 0);
     return {
       type: safeFrameName(exception.type, 80) || 'Error',
-      category: classifyError(exception.value ?? errorValue),
+      category: classifyError(exception.category ?? exception.value ?? errorValue),
       stacktrace: { frames: projectedFrames },
     };
   });
@@ -521,6 +580,7 @@ function sanitizeMcpAnalyticsEvent(event) {
   }
   const properties = sanitized.properties;
   if (!properties || typeof properties !== 'object') return sanitized;
+  const sourceErrorMessage = projectEventAttribution(properties, event.event);
 
   // Identity is backend-owned. The CLI may carry only its ephemeral anonymous
   // session identifier; verified user/person properties never cross this relay.
@@ -582,7 +642,6 @@ function sanitizeMcpAnalyticsEvent(event) {
     delete properties.$mcp_intent_source;
   }
 
-  const sourceErrorMessage = properties.$mcp_error_message;
   if (typeof sourceErrorMessage === 'string') {
     properties.$mcp_error_message = classifyError(sourceErrorMessage);
   }

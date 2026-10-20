@@ -232,9 +232,13 @@ function wrapTool(handler, fallbackMessage) {
       };
     } catch (error) {
       if (extra && typeof extra === 'object') {
+        const statusPrefix = Number.isInteger(error?.status) ? `HTTP ${error.status}: ` : '';
         extra.__mcp_analytics_error = error instanceof Error
           ? error
-          : new Error(error?.message || fallbackMessage, { cause: error });
+          : new Error(
+            `${statusPrefix}${error?.error || error?.message || fallbackMessage}`,
+            { cause: error },
+          );
       }
       return createErrorResult(
         error,

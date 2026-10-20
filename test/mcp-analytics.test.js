@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const http = require('node:http');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
@@ -853,7 +854,70 @@ test('exception fallback classification uses the original error message', () => 
   });
 
   assert.equal(result.properties.$mcp_error_message, 'rate_limit');
+  assert.equal(result.properties.$mcp_error_type, 'rate_limit');
   assert.equal(result.properties.$exception_list[0].category, 'rate_limit');
+  assert.equal(sanitizeMcpAnalyticsEvent(result).properties.$exception_list[0].category, 'rate_limit');
+  const sdkException = sanitizeMcpAnalyticsEvent({
+    event: '$exception',
+    properties: {
+      $exception_list: [{ type: 'Error', value: 'HTTP 429 Too Many Requests' }],
+    },
+  });
+  assert.equal(sdkException.properties.$mcp_error_type, 'rate_limit');
+  assert.equal(sanitizeMcpAnalyticsEvent(sdkException).properties.$exception_list[0].category, 'rate_limit');
+});
+
+test('error categories survive repeated privacy projection without retaining free text', () => {
+  const cases = [
+    ['HTTP 401 Authentication required', 'authentication'],
+    ['HTTP 403 Forbidden', 'authorization'],
+    ['HTTP 429 Too Many Requests', 'rate_limit'],
+    ['Request timed out', 'timeout'],
+    ['HTTP 404 Job not found', 'not_found'],
+    ['HTTP 400 Invalid job ID', 'validation'],
+    ['HTTP 409 Stale revision', 'conflict'],
+    ['Socket connection failed', 'network'],
+    ['HTTP 503 Service unavailable', 'server'],
+    ['HTTP 500: Failed to build network brief', 'server'],
+    ['private-unclassified-failure', 'unknown'],
+  ];
+  for (const [message, category] of cases) {
+    const result = sanitizeMcpAnalyticsEvent({
+      event: '$mcp_tool_call',
+      properties: {
+        $mcp_tool_name: 'trackly_get_job_brief',
+        $mcp_is_error: true,
+        $mcp_error_type: 'Error',
+        $mcp_error_message: message,
+      },
+    });
+    assert.equal(result.properties.$mcp_error_type, category, message);
+    const repeated = sanitizeMcpAnalyticsEvent(result);
+    assert.equal(repeated.properties.$mcp_error_type, category, `repeated ${message}`);
+    assert.equal(repeated.properties.$mcp_error_message, category);
+    assert.doesNotMatch(JSON.stringify(repeated), /private-unclassified-failure/);
+  }
+});
+
+test('client attribution uses only closed families with explicit unknown and other values', () => {
+  const cases = [
+    [{ $mcp_client_name: 'Cursor' }, 'cursor'],
+    [{ $mcp_client_name: 'codex_mcp_client' }, 'codex'],
+    [{ $mcp_client_name: 'Claude Desktop' }, 'claude'],
+    [{ $mcp_client_user_agent: 'ChatGPT/1.0' }, 'chatgpt'],
+    [{ $mcp_vendor_client: 'Windsurf', $mcp_client_name: 'custom' }, 'windsurf'],
+    [{ $mcp_vendor_client: 'custom', $mcp_client_name: 'Cursor' }, 'cursor'],
+    [{ $mcp_client_name: 'private-client-name person@example.com' }, 'other'],
+    [{}, 'unknown'],
+  ];
+  for (const [properties, expected] of cases) {
+    const result = sanitizeMcpAnalyticsEvent({ event: '$mcp_tools_list', properties });
+    assert.equal(result.properties.$mcp_vendor_client, expected);
+    assert.equal(result.properties.$mcp_client_name, expected);
+    assert.equal(result.properties.$mcp_error_type, 'none');
+    assert.equal(sanitizeMcpAnalyticsEvent(result).properties.$mcp_vendor_client, expected);
+    assert.doesNotMatch(JSON.stringify(result), /private-client-name|person@/);
+  }
 });
 
 test('structured rich-response projection drops configured and working-directory paths', () => {
@@ -936,6 +1000,13 @@ test('enabled instrumentation preserves strict validation, optional context and 
   const initialized = captures.find((capture) => capture.event === '$mcp_initialize');
   assert.ok(initialized, 'real SDK initialization must emit an event');
   assert.match(initialized.properties.$mcp_protocol_version, /^\d{4}-\d{2}-\d{2}$/);
+  for (const capture of captures) {
+    assert.equal(capture.properties.$mcp_vendor_client, 'other', capture.event);
+    assert.equal(capture.properties.$mcp_client_name, 'other', capture.event);
+    assert.equal(capture.properties.$mcp_error_type,
+      capture.properties.$mcp_is_error || capture.event === '$exception' ? 'validation' : 'none',
+      capture.event);
+  }
   assert.doesNotMatch(JSON.stringify(captures), /private-unsupported-value/);
 
   await assert.doesNotReject(client.callTool({
@@ -1191,6 +1262,71 @@ test('handled Trackly tool failures retain sanitized stack frames for analytics'
   assert.ok(exception);
   assert.ok(exception.properties.$exception_list[0].stacktrace.frames.length > 0);
   assert.doesNotMatch(JSON.stringify(exception), /trk_stack_test|synthetic backend failure/);
+});
+
+test('job detail and brief HTTP failures retain their status category through real MCP calls', async (t) => {
+  const previous = {
+    apiKey: process.env.TRACKLY_API_KEY,
+    baseUrl: process.env.TRACKLY_BASE_URL,
+  };
+  const captures = [];
+  const requests = [];
+  let status = 200;
+  const httpServer = http.createServer((request, response) => {
+    requests.push(request.url);
+    response.writeHead(status, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify(status === 200
+      ? { success: true, job: { id: 42 } }
+      : { success: false, error: 'private-backend-failure' }));
+  });
+  await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+  process.env.TRACKLY_API_KEY = 'trk_http_fixture';
+  process.env.TRACKLY_BASE_URL = `http://127.0.0.1:${httpServer.address().port}`;
+  const server = createServer();
+  configureMcpAnalytics(server, {
+    createRelay: () => ({ capture: (event) => captures.push(event), async _shutdown() {} }),
+  });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'Cursor', version: '1.0.0' });
+  t.after(async () => {
+    await client.close().catch(() => {});
+    await server.close().catch(() => {});
+    await shutdownMcpAnalytics(server);
+    await new Promise((resolve) => httpServer.close(resolve));
+    for (const [key, value] of Object.entries({
+      TRACKLY_API_KEY: previous.apiKey, TRACKLY_BASE_URL: previous.baseUrl,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  for (const [name, args, expectedPath] of [
+    ['trackly_get_job', { id: 42 }, '/api/jobscout/jobs/42'],
+    ['trackly_get_job_brief', { jobId: 42 }, '/api/jobscout/jobs/42/network-brief'],
+  ]) {
+    for (const [httpStatus, category] of [
+      [200, 'none'], [404, 'not_found'], [429, 'rate_limit'], [500, 'server'],
+    ]) {
+      status = httpStatus;
+      captures.length = 0;
+      const result = await client.callTool({ name, arguments: args });
+      assert.equal(requests.at(-1), expectedPath);
+      assert.equal(result.isError === true, httpStatus !== 200);
+      if (httpStatus !== 200) assert.equal(JSON.parse(result.content[0].text).status, httpStatus);
+      await new Promise((resolve) => setImmediate(resolve));
+      const toolEvent = captures.find(({ event }) => event === '$mcp_tool_call');
+      assert.ok(toolEvent);
+      assert.equal(toolEvent.properties.$mcp_error_type, category, `${name}: ${httpStatus}`);
+      for (const event of captures) {
+        assert.equal(event.properties.$mcp_vendor_client, 'cursor');
+        assert.equal(event.properties.$mcp_error_type, category);
+      }
+      assert.doesNotMatch(JSON.stringify(captures), /private-backend-failure|trk_http_fixture/);
+    }
+  }
 });
 
 test('SDK private-tool registry drift disables analytics visibly without breaking tools', () => {

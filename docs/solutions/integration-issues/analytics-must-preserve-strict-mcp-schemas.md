@@ -37,3 +37,17 @@ Verification: `node --test test/mcp-analytics.test.js test/mcp-schema.test.js`
 and `npm test`. The real transport regression failed with the old instrumentation
 and passed after the fix. Keyword telemetry continues to retain length only;
 this change does not permit raw query or context storage.
+
+Error and client attribution also need real SDK coverage. The SDK's error type
+may be a JavaScript constructor name, and its vendor field comes from HTTP
+headers that stdio does not have. Normalize both at the privacy boundary:
+derive a closed error category from the failure and a closed client family from
+available metadata, with explicit `none`, `other` and `unknown` states.
+
+The HTTP client rejects response records containing numeric status and an
+`error` field. Capturing only `message` loses that status and substitutes a
+generic fallback. Preserve the status in the telemetry-only exception and give
+it precedence over endpoint words such as "network brief". Verify job detail
+and brief calls through a local HTTP fixture with 404, 429 and 500 responses;
+assert unchanged tool results and classified, content-free telemetry. Sanitize
+the result twice because the SDK hook and backend relay both project events.
