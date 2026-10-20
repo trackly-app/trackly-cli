@@ -615,11 +615,14 @@ function addOptionalContextToTools(server) {
     if (Object.hasOwn(shape, 'context')) continue;
 
     const originalHandler = tool.handler;
+    const schema = tool.inputSchema;
+    const context = z.string().optional().describe(CONTEXT_DESCRIPTION);
+    // SDK update(paramsSchema) rebuilds objects and drops strict/catchall rules.
+    // Retain real object schemas; SDK-created empty Mini schemas need the shape API.
+    const paramsSchema = typeof schema.extend === 'function' ? null : { ...shape, context };
+    if (paramsSchema === null) tool.inputSchema = schema.extend({ context });
     tool.update({
-      paramsSchema: {
-        ...shape,
-        context: z.string().optional().describe(CONTEXT_DESCRIPTION),
-      },
+      ...(paramsSchema === null ? {} : { paramsSchema }),
       callback: (args, extra) => {
         if (!args || typeof args !== 'object' || !Object.hasOwn(args, 'context')) {
           return originalHandler(args, extra);

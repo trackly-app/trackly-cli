@@ -966,6 +966,73 @@ test('trackly_search_jobs defaults jobFunction to ALL functions when caller omit
   );
 });
 
+test('search exposes established granular filters and sends each criterion without silent loss', async (t) => {
+  const requests = [];
+  const httpServer = http.createServer((req, res) => {
+    requests.push(new URL(req.url, 'http://localhost'));
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ success: true, jobs: [], total: 0, hasMore: false }));
+  });
+  await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+  const previous = { apiKey: process.env.TRACKLY_API_KEY, baseUrl: process.env.TRACKLY_BASE_URL };
+  process.env.TRACKLY_API_KEY = 'trk_search_fixture';
+  process.env.TRACKLY_BASE_URL = `http://127.0.0.1:${httpServer.address().port}`;
+  const server = createServer();
+  const client = new Client({ name: 'search-contract-test', version: '1.0.0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  t.after(async () => {
+    await client.close().catch(() => {});
+    await server.close().catch(() => {});
+    await new Promise((resolve) => httpServer.close(resolve));
+    for (const [envKey, value] of [['TRACKLY_API_KEY', previous.apiKey], ['TRACKLY_BASE_URL', previous.baseUrl]]) {
+      if (value === undefined) delete process.env[envKey];
+      else process.env[envKey] = value;
+    }
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const call = (args) => client.callTool({ name: 'trackly_search_jobs', arguments: args });
+  const criteria = {
+    jobFunctions: ['finance', 'partnerships'], region: ['us', 'canada'],
+    usStates: ['CA', 'NY'], caProvinces: ['ON', 'BC', 'REMOTE'],
+    internshipLevels: ['mba', 'graduate'], jobModality: 'all',
+    workArrangements: ['hybrid', 'unspecified'], favoriteCompaniesOnly: false,
+    postedWithinDays: 7, salaryFloorUsd: 120000, since: '2026-10-18T12:00:00-07:00',
+    sponsorship: 'exclude_no', sort: 'newest', limit: 50, offset: 0, keywords: 'analyst',
+  };
+  const result = await call(criteria);
+  assert.notEqual(result.isError, true, JSON.stringify(result));
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].pathname, '/api/jobscout/jobs');
+  assert.deepEqual(Object.fromEntries(requests[0].searchParams), {
+    jobFunction: 'finance,partnerships', region: 'us,canada', usStates: 'CA,NY',
+    caProvinces: 'ON,BC,REMOTE', internshipLevels: 'mba,graduate', jobModality: 'all',
+    workArrangements: 'hybrid,unspecified', favoriteCompaniesOnly: 'false',
+    postedWithinDays: '7', salaryFloorUsd: '120000', since: criteria.since,
+    sponsorship: 'exclude_no', status: 'new', sort: 'newest', limit: '50', offset: '0', search: 'analyst',
+  });
+  assert.notEqual((await call({ favoriteCompaniesOnly: true, salaryFloorUsd: 0 })).isError, true);
+  assert.equal(requests[1].searchParams.get('favoriteCompaniesOnly'), 'true');
+  assert.equal(requests[1].searchParams.get('salaryFloorUsd'), '0');
+  assert.notEqual((await call({})).isError, true);
+  assert.equal(requests[2].searchParams.get('jobFunction'), extractArrayLiteral(SERVER_SRC, 'JOB_FUNCTIONS').join(','));
+  assert.equal(requests[2].searchParams.get('limit'), '20', 'agent searches default to a concise page');
+  assert.notEqual((await call({ limit: 100 })).isError, true, 'the full public API page size is available');
+  const invalidCases = [
+    { unsupportedFocus: 'private-value' }, { jobFunctions: [] }, { usStates: ['XX'] },
+    { caProvinces: ['CA'] }, { internshipLevels: ['phd'] }, { postedWithinDays: 2 },
+    { salaryFloorUsd: -1 }, { limit: 0 }, { limit: 1.5 }, { limit: 101 }, { offset: -1 }, { offset: 0.5 },
+    { since: 'yesterday' }, { function: 'product', jobFunctions: ['data'] },
+    { region: ['us'], locationFilter: 'europe' }, { remote: true, usStates: ['CA'] },
+    { remote: true, caProvinces: ['ON'] },
+  ];
+  for (const invalid of invalidCases) {
+    const before = requests.length;
+    assert.equal((await call(invalid)).isError, true, JSON.stringify(invalid));
+    assert.equal(requests.length, before, 'invalid search must fail before HTTP');
+  }
+});
+
 test('sensitive consent revocation forwards the token and relays the service challenge', async (t) => {
   const sampleToken = 'a'.repeat(64);
   const serviceChallenge = {
