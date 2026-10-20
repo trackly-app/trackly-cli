@@ -879,6 +879,11 @@ test('error categories survive repeated privacy projection without retaining fre
     ['Socket connection failed', 'network'],
     ['HTTP 503 Service unavailable', 'server'],
     ['HTTP 500: Failed to build network brief', 'server'],
+    ['HTTP 408: Failed to build network brief', 'timeout'],
+    ['HTTP 410: Failed to build network brief', 'not_found'],
+    ['HTTP 413: Failed to build network brief', 'validation'],
+    ['HTTP 422: Failed to build network brief', 'validation'],
+    ['HTTP 402: Failed to build network brief', 'unknown'],
     ['private-unclassified-failure', 'unknown'],
   ];
   for (const [message, category] of cases) {
@@ -1308,7 +1313,9 @@ test('job detail and brief HTTP failures retain their status category through re
     ['trackly_get_job_brief', { jobId: 42 }, '/api/jobscout/jobs/42/network-brief'],
   ]) {
     for (const [httpStatus, category] of [
-      [200, 'none'], [404, 'not_found'], [429, 'rate_limit'], [500, 'server'],
+      [200, 'none'], [404, 'not_found'], [408, 'timeout'], [410, 'not_found'],
+      [413, 'validation'], [422, 'validation'], [402, 'unknown'],
+      [429, 'rate_limit'], [500, 'server'],
     ]) {
       status = httpStatus;
       captures.length = 0;

@@ -124,7 +124,8 @@ const ERROR_CATEGORIES = new Set([
 ]);
 const HTTP_ERROR_CATEGORIES = {
   400: 'validation', 401: 'authentication', 403: 'authorization',
-  404: 'not_found', 409: 'conflict', 429: 'rate_limit',
+  404: 'not_found', 408: 'timeout', 409: 'conflict', 410: 'not_found',
+  413: 'validation', 422: 'validation', 429: 'rate_limit',
 };
 const CLIENT_FAMILIES = [
   ['chatgpt', /\bchatgpt\b/],
@@ -277,6 +278,7 @@ function classifyError(value) {
   const status = /\bhttp\s+([45]\d\d)\b/.exec(text)?.[1];
   if (status && HTTP_ERROR_CATEGORIES[status]) return HTTP_ERROR_CATEGORIES[status];
   if (status?.startsWith('5')) return 'server';
+  if (status) return 'unknown';
   if (/\b(?:401|unauthenticated|authentication|invalid token|expired token)\b/.test(text)) {
     return 'authentication';
   }
