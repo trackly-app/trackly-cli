@@ -80,7 +80,7 @@ test('job lookups distinguish unavailable postings from failures through the rea
         ['removed job', 410, { code: 'job_removed', error: 'Gone' }, false, undefined, false, 'removed'],
         ['closed job', 200, { success: true, job: { id: 42, isActive: false } }, false, undefined, false, 'closed'],
         ['closed stored detail', 200, { success: true, job: { id: 42, active: false } }, false, undefined, false, 'closed'],
-        ['closed brief', 200, { success: true, brief: { jobId: 42, isActive: false, companyName: 'Example', companySignal: { openRoleCount: 7 }, recommendedMotion: 'ask_referral', nextActions: [{ type: 'open_job_posting' }] } }, false, undefined, false, 'closed'],
+        ['closed brief', 200, { success: true, brief: { jobId: 42, isActive: false, companyName: 'Example', companySignal: { openRoleCount: 7 }, actions: [{ type: 'apply' }], recommendedMotion: 'ask_referral', nextActions: [{ type: 'open_job_posting' }] } }, false, undefined, false, 'closed'],
         ...[true, undefined, 'false'].map(success => ['noncanonical missing', 404, { success, error: 'Job not found' }, true, 'not_found', false]),
         ['mismatched missing ID', 404, { success: false, error: 'Job 43 not found' }, true, 'not_found', false],
         ['route missing', 404, { error: 'Cannot GET /private-route' }, true, 'not_found', false],
@@ -131,6 +131,7 @@ test('job lookups distinguish unavailable postings from failures through the rea
           if (label === 'closed brief') {
             assert.equal(payload.brief.companyName, 'Example');
             assert.deepEqual(payload.brief.companySignal, { openRoleCount: 7 });
+            assert.equal(payload.brief.actions, undefined);
             assert.equal(payload.brief.nextActions, undefined);
             assert.equal(payload.brief.recommendedMotion, undefined);
           }
