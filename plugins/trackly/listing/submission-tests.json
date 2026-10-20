@@ -366,5 +366,154 @@
         "infer or fabricate a legal answer"
       ]
     }
+  ],
+  "searchFilterCases": [
+    {
+      "id": "search-multiple-functions",
+      "fixture": "synthetic-search-filters",
+      "prompt": "Find finance or partnerships jobs.",
+      "expectedArguments": {
+        "jobFunctions": [
+          "finance",
+          "partnerships"
+        ]
+      },
+      "mustNot": [
+        "Do not narrow to one function or omit the role filter."
+      ]
+    },
+    {
+      "id": "search-multiple-regions",
+      "fixture": "synthetic-search-filters",
+      "prompt": "Show jobs in the US or Europe.",
+      "expectedArguments": {
+        "region": [
+          "us",
+          "europe"
+        ]
+      },
+      "mustNot": [
+        "Do not use the legacy mixed-US locationFilter array."
+      ]
+    },
+    {
+      "id": "search-us-states",
+      "fixture": "synthetic-search-filters",
+      "prompt": "Find jobs in California or New York, and include remote alternatives.",
+      "expectedArguments": {
+        "usStates": [
+          "CA",
+          "NY",
+          "REMOTE"
+        ]
+      },
+      "mustNot": [
+        "Do not silently replace state choices with remote=true."
+      ]
+    },
+    {
+      "id": "search-ca-provinces",
+      "fixture": "synthetic-search-filters",
+      "prompt": "Find jobs in Ontario or British Columbia.",
+      "expectedArguments": {
+        "caProvinces": [
+          "ON",
+          "BC"
+        ]
+      },
+      "mustNot": [
+        "Do not substitute US state codes."
+      ]
+    },
+    {
+      "id": "search-internship-levels",
+      "fixture": "synthetic-search-filters",
+      "prompt": "Find MBA or graduate internships.",
+      "expectedArguments": {
+        "internshipLevels": [
+          "mba",
+          "graduate"
+        ],
+        "jobModality": "internship"
+      },
+      "mustNot": [
+        "Do not interpret internship level as years of experience."
+      ]
+    },
+    {
+      "id": "search-favorites",
+      "fixture": "synthetic-search-filters",
+      "prompt": "Show jobs only from my favorite companies.",
+      "expectedArguments": {
+        "favoriteCompaniesOnly": true
+      },
+      "mustNot": [
+        "Do not guess company IDs or write favorites."
+      ]
+    },
+    {
+      "id": "search-posting-window",
+      "fixture": "synthetic-search-filters",
+      "prompt": "Show jobs posted within the past week.",
+      "expectedArguments": {
+        "postedWithinDays": 7
+      },
+      "mustNot": [
+        "Do not substitute the first-seen sync cursor."
+      ]
+    },
+    {
+      "id": "search-posting-window-off",
+      "fixture": "synthetic-search-filters",
+      "prompt": "Disable my saved posting window for this search, keeping older jobs visible.",
+      "expectedArguments": { "postedWithinDays": 0 },
+      "mustNot": ["Do not omit the argument: omission would retain the saved posting window."]
+    },
+    {
+      "id": "search-salary-floor",
+      "fixture": "synthetic-search-filters",
+      "prompt": "Hide jobs with listed annual USD minimums below 120000, but keep unknown, hourly and non-USD pay.",
+      "expectedArguments": {
+        "salaryFloorUsd": 120000
+      },
+      "mustNot": [
+        "Do not claim all returned salaries meet a guaranteed 120000 threshold."
+      ]
+    },
+    {
+      "id": "search-incremental-sync",
+      "fixture": "synthetic-search-filters",
+      "prompt": "Fetch jobs first seen since yesterday at noon UTC, 20 at a time starting at offset 20.",
+      "expectedArguments": {
+        "limit": 20,
+        "offset": 20
+      },
+      "mustNot": [
+        "Compute yesterday at noon UTC from the review-run calendar date and send its ISO-8601 timestamp; never send a rule token or use employer posting dates."
+      ],
+      "dynamicExpectedArguments": {
+        "since": "yesterday_at_noon_utc"
+      }
+    },
+    {
+      "id": "sponsorship-not-no-negative",
+      "fixture": "synthetic-search-filters",
+      "prompt": "Do not hide jobs whose sponsorship policy is not mentioned. Exclude only explicit no-sponsorship jobs.",
+      "expectedArguments": {
+        "sponsorship": "exclude_no"
+      },
+      "mustNot": [
+        "Never use only_yes: that would incorrectly exclude unknown/not-mentioned sponsorship."
+      ]
+    },
+    {
+      "id": "sponsorship-ambiguous",
+      "fixture": "synthetic-search-filters",
+      "prompt": "I need visa-friendly jobs.",
+      "expectedArguments": {},
+      "mustNot": [
+        "Ask whether to exclude explicit no while retaining unknown or require explicit yes; do not silently choose only_yes."
+      ]
+    }
   ]
 }

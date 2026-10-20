@@ -74,17 +74,32 @@ API-key creation attempts.
 
 - **get_more_tools** — Report what the agent wanted to do when no Trackly tool fit, so Trackly can improve its MCP surface. The tool is always available; report delivery is best-effort and occurs only when usage analytics are enabled.
 - **trackly_search_jobs** — Search/filter jobs.
-  - `function` (14 values): `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`
-  - `locationFilter`: pass ONE of
+  - `function` (one value) or `jobFunctions` (nonempty array, OR; use one spelling only). The 14 values are: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`
+  - `region`: nonempty array of `us`, `europe`, `latam`, `middle_east`, `asia`, `africa`, `canada`, `oceania`, `remote`, `unknown`, combined with OR. Use instead of `locationFilter`; unlike its legacy list form, this supports US plus other regions.
+  - `usStates`: nonempty array of US codes `AL`, `AK`, `AZ`, `AR`, `CA`, `CO`, `CT`, `DC`, `DE`, `FL`, `GA`, `HI`, `ID`, `IL`, `IN`, `IA`, `KS`, `KY`, `LA`, `ME`, `MD`, `MA`, `MI`, `MN`, `MS`, `MO`, `MT`, `NE`, `NV`, `NH`, `NJ`, `NM`, `NY`, `NC`, `ND`, `OH`, `OK`, `OR`, `PA`, `RI`, `SC`, `SD`, `TN`, `TX`, `UT`, `VT`, `VA`, `WA`, `WV`, `WI`, `WY`, `PR`, `REMOTE`.
+  - `caProvinces`: nonempty array of `AB`, `BC`, `MB`, `NB`, `NL`, `NS`, `NT`, `NU`, `ON`, `PE`, `QC`, `SK`, `YT`, `REMOTE`. Geographic children follow the backend location rollout: parent-scoped OR applies under canonical enforcement; legacy compatibility remains before that. `REMOTE` alongside codes also includes remote jobs.
+  - `internshipLevels`: nonempty array of `undergraduate`, `graduate`, `mba`, `not_specified`, combined with OR. Applies to internships when `jobModality=internship` or `all`; full-time jobs remain unaffected. Set `jobModality` explicitly when you want internships; education levels do not change your saved/default modality.
+  - `favoriteCompaniesOnly` (boolean): restrict to your favorited companies; `false` explicitly disables it.
+  - `postedWithinDays`: `0`, `1`, `3`, `7`, `14`, `30`; `0` disables the saved posting window. Uses the backend discovery-date policy; omitted uses saved/default preferences.
+  - `salaryFloorUsd`: integer `0`–`1000000`. Excludes comparable listed annual-USD minimums below this floor. Unknown, hourly and non-USD salaries remain visible; this is not a guaranteed salary threshold. `0` disables the floor; omitted uses saved/default preferences.
+  - `since`: ISO-8601 date or timestamp within the past 90 days, never in the future. Filters when Trackly first saw a job, rather than the employer posting date. Prefer a timestamp with timezone for incremental sync. Other saved filters still apply: use `postedWithinDays:0` and `salaryFloorUsd:0` to disable those saved constraints.
+  - `locationFilter`: compatibility alias; use instead of `region`. Pass ONE of
     - a single scalar: `us`, `non_us`, `all`, or a region tag (`europe`, `latam`, `middle_east`, `asia`, `africa`, `canada`, `oceania`, `remote`, `unknown`), OR
     - an array of region tags for multi-region (e.g. `["europe", "canada"]`). The array form excludes `us` — combining `us` with other tags in an array causes the backend to silently drop the others. To get "not US" use the scalar `non_us` alone.
   - `jobModality`: `full_time`, `internship`, `all` — employment type, NOT work arrangement.
   - `workArrangements`: one or more of `remote`, `hybrid`, `in_person`, `unspecified`. This is an independent axis and combines with region, employment type, and function filters.
-  - `remote` (boolean): filter to remote jobs only. Maps to `usStates=REMOTE`.
+  - `remote` (boolean): filter to remote jobs only. Maps to `usStates=REMOTE`. Do not combine `remote=true` with geographic child arrays; use their `REMOTE` token for alternatives. Do not combine a parent region with `remote=true` or only `REMOTE` children: that backend form overrides the parent. Use `workArrangements:["remote"]` plus your region for remote work within that geography.
   - `status`: your application pipeline state. Values: `new`, `applied_confirmed`, `check_later`, `not_interested`, `all`.
   - `sort`: `newest` (default) or `match` (highest match score first; requires a resume on file). Backend rejects the deprecated values `oldest` and `company` with HTTP 400.
-  - `sponsorship`: `all` (default), `exclude_no`, `only_yes`. `exclude_no` hides jobs with a reliable explicit "does not sponsor" statement (~13% of active US jobs); `only_yes` keeps only jobs with a reliable explicit "sponsors" statement (~2%). Most postings never state a policy either way, so `only_yes` is a very narrow slice.
-  - `keywords`, `companyId`, `limit`, `offset`.
+  - `sponsorship`: `all` (no restriction), `exclude_no` (keep yes **and unknown/not mentioned**, exclude reliable explicit no), `only_yes` (reliable explicit yes only). “Not no” means `exclude_no`, never `only_yes`; ask when intent is ambiguous. Filtering requires `status=new`, which is defaulted when omitted; other pipeline views ignore this filter.
+  - `keywords`: legacy keyword search, maximum 500 characters. Title/company/location matching is supported; description recall depends on the backend provider. This is not guaranteed full-catalog literal, phrase or exclusion search.
+  - `companyId`: positive integer from company search.
+  - `limit`: integer `1`–`100`, MCP default `20`; `offset`: non-negative safe integer, default `0`. Keep all filters and sort unchanged while paging. The live catalog may change between calls.
+  - Unsupported keys are rejected before HTTP, including when usage analytics is enabled. Industry, specialization and literal-search controls are not exposed until their backend contract is deployed.
+
+Example: `{"jobFunctions":["finance","partnerships"],"region":["us","europe"],"sponsorship":"exclude_no","postedWithinDays":7,"limit":20}`.
+The local package and hosted service have separate release lifecycles. Refresh the client's tool discovery after upgrading or reconnecting and use only parameters its current schema advertises.
+
 - **trackly_get_job** — Get full job details by ID
 - **trackly_search_companies** — Semantic company search
 - **trackly_list_companies** — List all tracked companies with job counts

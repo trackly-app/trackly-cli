@@ -883,7 +883,7 @@ test('structured rich-response projection drops configured and working-directory
   }
 });
 
-test('enabled instrumentation advertises optional context and strips it before handlers', async (t) => {
+test('enabled instrumentation preserves strict validation, optional context and protocol metadata', async (t) => {
   const captures = [];
   const posthog = {
     capture(event) { captures.push(event); },
@@ -891,10 +891,9 @@ test('enabled instrumentation advertises optional context and strips it before h
   };
   const server = new McpServer({ name: 'analytics-test', version: '1.0.0' });
   let handlerArgs;
-  server.tool(
+  server.registerTool(
     'trackly_search_jobs',
-    'Search jobs',
-    { keywords: z.string() },
+    { description: 'Search jobs', inputSchema: z.object({ keywords: z.string() }).strict() },
     async (args) => {
       handlerArgs = args;
       return { content: [{ type: 'text', text: '{"jobs":[]}' }] };
@@ -923,11 +922,21 @@ test('enabled instrumentation advertises optional context and strips it before h
   assert.ok(searchTool);
   assert.ok(searchTool.inputSchema.properties.context);
   assert.ok(!searchTool.inputSchema.required.includes('context'));
+  const unsupported = await client.callTool({
+    name: 'trackly_search_jobs',
+    arguments: { keywords: 'fintech', unsupportedFocus: 'private-unsupported-value' },
+  });
+  assert.equal(unsupported.isError, true, 'analytics must not strip unsupported search controls');
+  assert.equal(handlerArgs, undefined, 'invalid controls must never reach the handler');
   await assert.doesNotReject(client.callTool({
     name: 'trackly_search_jobs',
     arguments: { keywords: 'fintech' },
   }));
   assert.deepEqual(handlerArgs, { keywords: 'fintech' });
+  const initialized = captures.find((capture) => capture.event === '$mcp_initialize');
+  assert.ok(initialized, 'real SDK initialization must emit an event');
+  assert.match(initialized.properties.$mcp_protocol_version, /^\d{4}-\d{2}-\d{2}$/);
+  assert.doesNotMatch(JSON.stringify(captures), /private-unsupported-value/);
 
   await assert.doesNotReject(client.callTool({
     name: 'trackly_search_jobs',

@@ -52,6 +52,14 @@ const JOB_MODALITIES = ['full_time', 'internship', 'all'];
 // Independent from geography and employment type. Matches the backend's
 // workArrangements query contract and job_postings constraint.
 const WORK_ARRANGEMENTS = ['remote', 'hybrid', 'in_person', 'unspecified'];
+const US_STATES = [
+  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DC', 'DE', 'FL', 'GA', 'HI', 'ID',
+  'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO',
+  'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA',
+  'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'PR', 'REMOTE',
+];
+const CA_PROVINCES = ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT', 'REMOTE'];
+const INTERNSHIP_LEVELS = ['undergraduate', 'graduate', 'mba', 'not_specified'];
 
 const MCP_MISSING_CAPABILITY_VALUES = [
   'search', 'inspect', 'compare', 'rank', 'recommend', 'track', 'update', 'apply',
@@ -254,12 +262,21 @@ function createServer() {
     version: PACKAGE_VERSION,
   });
 
-  server.tool(
+  server.registerTool(
     'trackly_search_jobs',
-    'Search and filter job postings. Returns matching jobs with title, company, location, and structured fields. Use companyId to filter jobs at a specific company (get companyId from trackly_search_companies first). Work arrangement is independent from region and employment type: use workArrangements for remote, hybrid, in-person, or unspecified classifications.',
-    {
+    { description: 'Search and filter job postings. Returns one matching page with title, company, location, structured fields and backend pagination. Use jobFunctions for multiple roles, region for multiple regions, and usStates/caProvinces for geographic detail. Work arrangement is independent from geography and employment type. Unknown sponsorship and non-comparable salary data stay visible with exclude_no and salaryFloorUsd. Never invent industry, specialization, exclusion or literal-search controls; ask when sponsorship intent is ambiguous.',
+    inputSchema: z.object({
       function: z.enum(JOB_FUNCTIONS).optional().describe('Job function filter. One of: ' + JOB_FUNCTIONS.join(', ')),
-      companyId: z.number().optional().describe('Filter jobs by company ID (get from trackly_search_companies)'),
+      jobFunctions: z.array(z.enum(JOB_FUNCTIONS)).min(1).max(14).optional().describe('Multiple job functions, combined with OR. Use instead of function. Omit both to request all 14 functions.'),
+      companyId: z.number().int().positive().optional().describe('Filter jobs by company ID (get from trackly_search_companies)'),
+      region: z.array(z.enum(REGION_TAGS)).min(1).max(10).optional().describe('Region tags combined with OR, including us. Use instead of locationFilter; this avoids its legacy mixed-US list limitation. Geographic child behavior follows the backend location rollout.'),
+      usStates: z.array(z.enum(US_STATES)).min(1).max(53).optional().describe('US state codes, DC, PR, or REMOTE. Multiple values select alternatives. REMOTE alongside codes also includes remote jobs. Under canonical location enforcement children select their parent; legacy rollout keeps compatibility behavior. Do not combine with remote=true.'),
+      caProvinces: z.array(z.enum(CA_PROVINCES)).min(1).max(14).optional().describe('Canadian province/territory codes or REMOTE. Multiple values select alternatives. REMOTE alongside codes also includes remote jobs. Parent-scoped OR requires canonical location enforcement. Do not combine with remote=true.'),
+      internshipLevels: z.array(z.enum(INTERNSHIP_LEVELS)).min(1).max(4).optional().describe('Internship education levels, combined with OR: undergraduate, graduate, mba, not_specified. Applies to internships in jobModality=internship or all; full-time jobs remain unaffected. This does not change the saved/default modality: set jobModality explicitly when you want internships.'),
+      favoriteCompaniesOnly: z.boolean().optional().describe('true limits results to your favorited companies; false explicitly disables this restriction.'),
+      postedWithinDays: z.union([z.literal(0), z.literal(1), z.literal(3), z.literal(7), z.literal(14), z.literal(30)]).optional().describe('Posting-recency window in days: 1, 3, 7, 14, or 30; 0 disables the saved window. Uses the backend discovery-date policy; not an incremental-sync cursor. Omit to use the saved/default window.'),
+      salaryFloorUsd: z.number().int().min(0).max(1_000_000).optional().describe('Annual USD minimum salary floor. Excludes comparable listed annual-USD minimums below this amount; unknown, hourly and non-USD salaries remain visible. 0 disables the floor; omitted uses saved/default preferences. This is not a guaranteed salary threshold.'),
+      since: z.string().regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/).optional().describe('Incremental sync: jobs first seen by Trackly since this ISO-8601 date/timestamp, not employer posting dates. Must be within the past 90 days and not in the future; backend validates the range. Prefer a timestamp with timezone. Other saved filters still apply; use postedWithinDays=0 and salaryFloorUsd=0 to disable those saved constraints.'),
       locationFilter: z.union([
         z.enum(['us', 'non_us', 'all']),
         z.enum(REGION_TAGS),
@@ -273,19 +290,34 @@ function createServer() {
       workArrangements: z.array(z.enum(WORK_ARRANGEMENTS)).min(1).max(4).optional().describe(
         'Work arrangement filter, independent from geography and employment type. Values: remote, hybrid, in_person, unspecified. Multiple values use OR semantics.'
       ),
-      remote: z.boolean().optional().describe('Filter to remote jobs only (maps to usStates=REMOTE).'),
+      remote: z.boolean().optional().describe('Filter to global remote-only jobs (maps to usStates=REMOTE). Do not combine with region/locationFilter or geographic child arrays. For remote work within a region, use workArrangements=["remote"] with region instead.'),
       status: z.enum(STATUS_VALUES).optional().describe(
         'Filter by YOUR application pipeline state. Not a generic job-posting status. Values: ' + STATUS_VALUES.join(', ')
       ),
       sort: z.enum(SORT_VALUES).optional().describe('Sort order: newest (default) or match (highest match score first; requires resume). Backend rejects legacy oldest/company with HTTP 400.'),
       sponsorship: z.enum(SPONSORSHIP_VALUES).optional().describe(
-        "Visa sponsorship filter. 'exclude_no' hides jobs with a reliable explicit \"does not sponsor\" statement (~13% of active US jobs); 'only_yes' keeps only jobs with a reliable explicit \"sponsors\" statement (~2% — most postings never state a policy either way). Default 'all' shows every job. Applies only to the discovery view: when you pass a filtering mode without `status`, status defaults to 'new' (the backend ignores the filter on tracked/pipeline views)."
+        "Visa sponsorship: all applies no filter; exclude_no removes reliable explicit no statements and keeps yes plus unknown/not mentioned; only_yes requires reliable explicit yes and excludes unknown. 'Not no' means exclude_no, never only_yes. Ask when intent is ambiguous. Filtering requires status=new (defaulted when omitted); the backend ignores sponsorship on other pipeline views."
       ),
-      limit: z.number().max(50).optional().describe('Max results (default 20, max 50)'),
-      offset: z.number().min(0).optional().describe('Pagination offset'),
-      keywords: z.string().max(500).optional().describe('Keyword search in title, company, or description'),
-    },
+      limit: z.number().int().min(1).max(100).optional().describe('Page size, integer 1-100; MCP default 20 for concise agent results. Request up to the full API limit of 100 when needed.'),
+      offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe('Pagination offset, non-negative integer. Keep filters and sort unchanged when paging; live catalog changes can move rows.'),
+      keywords: z.string().max(500).optional().describe('Legacy keyword search. Title/company/location matches are supported; description recall depends on the backend provider. Not a guaranteed full-catalog literal/phrase/exclusion search.'),
+    }).strict() },
     wrapTool(async (params) => {
+      if (params.function !== undefined && params.jobFunctions !== undefined) {
+        throw new Error('Use either function or jobFunctions, not both.');
+      }
+      if (params.region !== undefined && params.locationFilter !== undefined) {
+        throw new Error('Use either region or locationFilter, not both.');
+      }
+      if (params.remote === true && (params.usStates !== undefined || params.caProvinces !== undefined)) {
+        throw new Error('Use remote=true alone for remote-only jobs, or include REMOTE in the geographic arrays for alternatives.');
+      }
+      const hasParentLocation = params.region !== undefined || params.locationFilter !== undefined;
+      const childLocations = [...(params.usStates ?? []), ...(params.caProvinces ?? [])];
+      const remoteOnlyChildren = childLocations.length > 0 && childLocations.every((value) => value === 'REMOTE');
+      if (hasParentLocation && (params.remote === true || remoteOnlyChildren)) {
+        throw new Error('REMOTE-only location overrides the parent region. Use workArrangements=["remote"] with region or locationFilter for remote work within that geography.');
+      }
       const qs = new URLSearchParams();
       // When `function` isn't specified, request ALL canonical functions so the
       // backend takes the all-roles short-circuit (granola-followup-app
@@ -296,6 +328,13 @@ function createServer() {
       // Health (id=3350) — both had non-PM-only job sets and search_jobs
       // returned total=0 without an explicit function filter.
       qs.set('jobFunction', params.function !== undefined ? params.function : JOB_FUNCTIONS.join(','));
+      if (params.jobFunctions !== undefined) qs.set('jobFunction', params.jobFunctions.join(','));
+      for (const key of ['region', 'usStates', 'caProvinces', 'internshipLevels']) {
+        if (params[key] !== undefined) qs.set(key, params[key].join(','));
+      }
+      for (const key of ['favoriteCompaniesOnly', 'postedWithinDays', 'salaryFloorUsd', 'since']) {
+        if (params[key] !== undefined) qs.set(key, String(params[key]));
+      }
       if (params.companyId !== undefined) qs.set('companyId', String(params.companyId));
       if (params.locationFilter !== undefined) {
         const value = Array.isArray(params.locationFilter)
@@ -318,7 +357,7 @@ function createServer() {
           qs.set('status', 'new');
         }
       }
-      if (params.limit !== undefined) qs.set('limit', String(params.limit));
+      qs.set('limit', String(params.limit ?? 20));
       if (params.offset !== undefined) qs.set('offset', String(params.offset));
       if (params.keywords !== undefined) qs.set('search', params.keywords);
       return apiRequest('GET', `/api/jobscout/jobs?${qs.toString()}`, null, false, false, MCP_USER_AGENT);

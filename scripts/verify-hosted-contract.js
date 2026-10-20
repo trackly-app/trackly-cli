@@ -40,6 +40,17 @@ const HOSTED_APPLY_REPLAY_HELPER_AST_SHA256 = Object.freeze({
   storedCheckpointResult: '41227684c75aa7be1a96f3891372b6c9677d2c3fcf91d5e589425396c1a6b052',
 });
 
+const LOCAL_ONLY_TOOLS = [
+  'trackly_lint_application_text',
+  'trackly_diagnose_local_path',
+  'trackly_validate_apply_tab_keep_set',
+  'trackly_validate_apply_resume_upload',
+];
+const LOCAL_ONLY_CONSTANTS = [];
+const HOSTED_ONLY_TOOLS = [
+  'trackly_chat',
+];
+
 const parsedSourceCache = new Map();
 
 function parseFullSource(source, sourcePath) {
@@ -6809,22 +6820,20 @@ function verifyCheckedInHostedContractFixture(
   const localServerSourcePath = path.join(cliRoot, 'mcp', 'server.js');
   const localApplySource = fs.readFileSync(localApplySourcePath, 'utf8');
   const localServerSource = fs.readFileSync(localServerSourcePath, 'utf8');
-  for (const method of ['tool', 'registerTool']) {
-    directToolRegistrationsInNamedParameterFunction(
-      localApplySource,
-      'registerApplyTools',
-      'server',
-      method,
-      localApplySourcePath,
-    );
-  }
-  directToolRegistrationsInNamedParameterFunction(
-    localServerSource,
-    'createServer',
-    'server',
-    'tool',
-    localServerSourcePath,
-    'direct-construction',
+  const localRegistrations = ['tool', 'registerTool'].flatMap((method) => [
+    ...directToolRegistrationsInNamedParameterFunction(
+      localApplySource, 'registerApplyTools', 'server', method, localApplySourcePath,
+    ),
+    ...directToolRegistrationsInNamedParameterFunction(
+      localServerSource, 'createServer', 'server', method, localServerSourcePath, 'direct-construction',
+    ),
+  ]);
+  const localNames = localRegistrations.map(({ name }) => name);
+  assert.equal(new Set(localNames).size, localNames.length, 'Executable local MCP names must be unique');
+  assert.deepEqual(
+    [...localNames].sort(),
+    [...lock.hostedMcpToolAllowlist.filter((name) => !HOSTED_ONLY_TOOLS.includes(name)), ...LOCAL_ONLY_TOOLS].sort(),
+    'Executable local MCP registrations must exactly match the locked hosted catalog minus hosted-only chat plus local-only tools',
   );
   // The Apply registration call must be live: imported from ./apply-tools and
   // executed before createServer's sole final return, exactly as backend mode
@@ -7116,16 +7125,6 @@ assertCoordinatedCheckpointHelperSemantics({
     : {}),
 });
 
-const LOCAL_ONLY_TOOLS = [
-  'trackly_lint_application_text',
-  'trackly_diagnose_local_path',
-  'trackly_validate_apply_tab_keep_set',
-  'trackly_validate_apply_resume_upload',
-];
-const LOCAL_ONLY_CONSTANTS = [];
-const HOSTED_ONLY_TOOLS = [
-  'trackly_chat',
-];
 
 for (const constantName of [
   'applyExecutionMaxTarget',
@@ -8620,14 +8619,11 @@ const executableLocalApplyRegistrations = [
     localApplySourcePath,
   ),
 ];
-const executableLocalBaseRegistrations = directToolRegistrationsInNamedParameterFunction(
-  localServerSource,
-  'createServer',
-  'server',
-  'tool',
-  localServerSourcePath,
-  'direct-construction',
-);
+const executableLocalBaseRegistrations = ['tool', 'registerTool'].flatMap((method) => (
+  directToolRegistrationsInNamedParameterFunction(
+    localServerSource, 'createServer', 'server', method, localServerSourcePath, 'direct-construction',
+  )
+));
 const executableHostedRegistrations = directHostedToolRegistrationsInNamedFactory(
   hostedApplySource,
   'createTracklyMcpServer',
