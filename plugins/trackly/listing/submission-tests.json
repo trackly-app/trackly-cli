@@ -476,15 +476,17 @@
     {
       "id": "search-incremental-sync",
       "fixture": "synthetic-search-filters",
-      "prompt": "Fetch jobs first seen since the fixture sync timestamp, 20 at a time starting at offset 20.",
+      "prompt": "Fetch jobs first seen since yesterday at noon UTC, 20 at a time starting at offset 20.",
       "expectedArguments": {
-        "since": "2026-10-18T12:00:00-07:00",
         "limit": 20,
         "offset": 20
       },
       "mustNot": [
-        "Use a fixture timestamp within the last 90 days; do not use employer posting dates."
-      ]
+        "Compute yesterday at noon UTC from the review-run calendar date and send its ISO-8601 timestamp; never send a rule token or use employer posting dates."
+      ],
+      "dynamicExpectedArguments": {
+        "since": "yesterday_at_noon_utc"
+      }
     },
     {
       "id": "sponsorship-not-no-negative",

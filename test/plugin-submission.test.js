@@ -19,11 +19,28 @@ test('supplemental submission prompts cover every new search filter and preserve
   const schema = require('../mcp/server').createServer()._registeredTools.trackly_search_jobs.inputSchema;
   const covered = new Set();
   for (const fixture of cases) {
-    assert.equal(schema.safeParse(fixture.expectedArguments).success, true, fixture.id);
-    Object.keys(fixture.expectedArguments).forEach((key) => covered.add(key));
+    const args = { ...fixture.expectedArguments };
+    for (const [key, rule] of Object.entries(fixture.dynamicExpectedArguments || {})) {
+      assert.equal(key, 'since');
+      assert.equal(rule, 'yesterday_at_noon_utc');
+      for (const now of ['2027-01-20T08:00:00Z', '2028-03-01T08:00:00Z']) {
+        const since = new Date(now);
+        since.setUTCDate(since.getUTCDate() - 1);
+        since.setUTCHours(12, 0, 0, 0);
+        args.since = since.toISOString();
+        assert.ok(since < new Date(now), 'relative sync cursor stays in the past');
+        assert.equal(schema.safeParse(args).success, true, fixture.id);
+      }
+    }
+    assert.equal(schema.safeParse(args).success, true, fixture.id);
+    Object.keys(args).forEach((key) => covered.add(key));
   }
   for (const key of ['jobFunctions', 'region', 'usStates', 'caProvinces', 'internshipLevels',
     'favoriteCompaniesOnly', 'postedWithinDays', 'salaryFloorUsd', 'since']) assert.ok(covered.has(key), key);
+  const sync = cases.find((fixture) => fixture.id === 'search-incremental-sync');
+  assert.equal(sync.expectedArguments.since, undefined, 'live review dates must not age out');
+  assert.equal(sync.dynamicExpectedArguments.since, 'yesterday_at_noon_utc');
+  assert.deepEqual(sync.expectedArguments, { limit: 20, offset: 20 });
   const negative = cases.find((fixture) => fixture.id === 'sponsorship-not-no-negative');
   assert.equal(negative.expectedArguments.sponsorship, 'exclude_no');
   assert.match(negative.mustNot.join(' '), /only_yes.*unknown/);

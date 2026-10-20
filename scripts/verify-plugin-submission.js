@@ -664,6 +664,12 @@ function validateSubmissionTests(state, fixtures) {
     for (const item of searchCases) {
       for (const key of ['id', 'fixture', 'prompt']) checkString(state, item?.[key], `searchFilterCases.${key}`);
       check(state, isObject(item?.expectedArguments), `${item?.id || '<unknown>'}.expectedArguments must be an object`);
+      if (item?.dynamicExpectedArguments !== undefined) {
+        const rules = item.dynamicExpectedArguments;
+        check(state, isObject(rules) && Object.keys(rules).length === 1
+          && rules.since === 'yesterday_at_noon_utc' && item?.expectedArguments?.since === undefined,
+        `${item?.id || '<unknown>'}.dynamicExpectedArguments must compute since at review time`);
+      }
       check(state, Array.isArray(item?.mustNot) && item.mustNot.length > 0
         && item.mustNot.every((value) => typeof value === 'string' && value.trim()),
       `${item?.id || '<unknown>'}.mustNot must be a non-empty string array`);
