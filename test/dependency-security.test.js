@@ -4,6 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
+const { spawnSync } = require('node:child_process');
 
 const {
   validateAuditReport,
@@ -80,4 +82,43 @@ test('audit gate reports registry failures without misclassifying the schema ver
     }, policy()),
     /npm audit did not return an advisory report: request to the npm audit endpoint failed/i,
   );
+});
+
+test('audit command executes the npm lifecycle CLI path without shell parsing', (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'trackly-audit-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const npmPath = path.join(fixture, 'npm fixture & cli.cjs');
+  const receipt = path.join(fixture, 'argv.json');
+  fs.writeFileSync(npmPath, `
+    require('node:fs').writeFileSync(${JSON.stringify(receipt)}, JSON.stringify(process.argv.slice(2)));
+    process.stdout.write(${JSON.stringify(JSON.stringify(cleanReport()))});
+  `);
+  const result = spawnSync(process.execPath, [
+    path.join(__dirname, '..', 'scripts', 'verify-audit-exceptions.js'),
+  ], {
+    env: { ...process.env, npm_execpath: npmPath },
+    encoding: 'utf8',
+    timeout: 10000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(receipt, 'utf8')), [
+    'audit', '--json', '--audit-level=moderate',
+  ]);
+  assert.match(result.stdout, /npm audit is clean/);
+});
+
+test('audit command can invoke the Windows npm shim outside an npm lifecycle', {
+  skip: process.platform !== 'win32',
+}, (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'trackly-audit-shim-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(fixture, 'npm.cmd'), `@echo off\r\necho ${JSON.stringify(cleanReport())}\r\n`);
+  const env = { ...process.env, npm_execpath: '' };
+  const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') || 'PATH';
+  env[pathKey] = `${fixture}${path.delimiter}${env[pathKey] || ''}`;
+  const result = spawnSync(process.execPath, [
+    path.join(__dirname, '..', 'scripts', 'verify-audit-exceptions.js'),
+  ], { env, encoding: 'utf8', timeout: 10000 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /npm audit is clean/);
 });
