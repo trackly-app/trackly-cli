@@ -73,8 +73,8 @@
     "@modelcontextprotocol/sdk": "1.32.1",
     "@posthog/mcp": "0.11.0",
     "fast-uri": "3.1.8",
-    "hono": "4.13.7",
-    "ip-address": "10.7.3",
+    "hono": "4.13.11",
+    "ip-address": "10.7.4",
     "posthog-node": "5.48.1",
     "zod": "^3.23.0"
   },
@@ -84,7 +84,7 @@
   "overrides": {
     "@hono/node-server": "2.0.12",
     "fast-uri": "3.1.8",
-    "ip-address": "10.7.3",
+    "ip-address": "10.7.4",
     "qs": "6.16.0"
   },
   "devDependencies": {

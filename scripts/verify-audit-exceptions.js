@@ -12,7 +12,6 @@ const DEFAULT_POLICY_PATH = path.join(
   'security',
   'audit-exceptions.json',
 );
-const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 function selectAdvisoryFields(advisory) {
   return {
@@ -112,10 +111,19 @@ function loadPolicy(policyPath = DEFAULT_POLICY_PATH) {
 }
 
 function runAudit() {
-  const result = spawnSync(NPM, ['audit', '--json', '--audit-level=moderate'], {
+  // npm.cmd is not directly executable on Windows. During npm run, invoke
+  // its CLI with Node so paths containing spaces or shell characters stay literal.
+  const npmCli = process.env.npm_execpath;
+  const command = npmCli ? process.execPath
+    : process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : 'npm';
+  const args = npmCli ? [npmCli, 'audit', '--json', '--audit-level=moderate']
+    : process.platform === 'win32' ? ['/d', '/s', '/c', 'npm.cmd audit --json --audit-level=moderate']
+      : ['audit', '--json', '--audit-level=moderate'];
+  const result = spawnSync(command, args, {
     cwd: path.join(__dirname, '..'),
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
+    windowsHide: true,
   });
 
   if (result.error) {
