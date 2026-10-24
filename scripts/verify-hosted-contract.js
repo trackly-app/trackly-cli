@@ -8948,7 +8948,7 @@ assertActiveFunctionDefinitionAst(
   'readinessMissingProfileKey',
   `function readinessMissingProfileKey(key: unknown): key is string {
     return typeof key === 'string' && key.length <= 200
-      && (CANONICAL_PROFILE_KEY.test(key) || CANONICAL_EDUCATION_KEYS.has(key));
+      && (CANONICAL_PROFILE_KEY.test(key) || CANONICAL_EDUCATION_KEYS.has(key) || PROFILE_COLLECTION_LABELS.has(key));
   }`,
   hostedPluginSourcePath,
 );
