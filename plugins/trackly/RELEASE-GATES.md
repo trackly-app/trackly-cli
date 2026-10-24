@@ -171,7 +171,7 @@ The backend helper's signature is
 non-destructive, which matches the Destructive column above, and idempotent (retries replay by idempotency key; the table does not list idempotency). The helper
 `readOnlyAnnotations` emits read-only, non-destructive and idempotent.
 
-Accepted backend rule (Alan, 2026-10-24): in `audit` and `enforce` modes, verified machine credentials skip the invite and Berkeley gates (close-ai #2789). These credentials are hosted MCP OAuth, MCP bearer tokens, non-extension API keys and `client_platform: 'trackly-cli'` JWTs. `client_platform` is a signed claim that the server sets when it mints the token; no header or User-Agent counts as proof. `assertMachineAccessSemantics` in `scripts/verify-hosted-contract.js` pins this exactly, so any change to it fails the coordinated gate.
+Accepted backend rule (Alan, 2026-10-24): in `audit` and `enforce` modes, verified machine credentials skip the request-level invite gate (close-ai #2789). The Berkeley-only check for CLI and MCP sign-in is decided earlier, at Google sign-in (`googleTracklyOAuthDecision` in close-ai `src/config/passport.ts`, keyed on the `cli:`/`mcp:` OAuth state), and this gate does not pin it. These credentials are hosted MCP OAuth, MCP bearer tokens, non-extension API keys and `client_platform: 'trackly-cli'` JWTs. `client_platform` is a signed claim that the server sets when it mints the token; no header or User-Agent counts as proof. `assertMachineAccessSemantics` in `scripts/verify-hosted-contract.js` pins the request-level rule exactly, so any change to it fails the coordinated gate.
 
 ## Product verification
 

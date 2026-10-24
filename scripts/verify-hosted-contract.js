@@ -1577,7 +1577,8 @@ function directToolRegistrationsInExportedFunction(
 }
 
 // close-ai #2789 (accepted by Alan, 2026-10-24): in audit and enforce modes a
-// verified machine credential skips the invite and Berkeley gates, and MCP
+// verified machine credential skips the request-level invite gate (Berkeley-only
+// is decided at Google sign-in in passport.ts, not pinned here), and MCP
 // OAuth legs only log that allow (requireMcpEntitlement). Proof comes only from
 // server-verified facts (signed hosted-MCP claim, SDK bearer auth, DB-resolved
 // non-extension API key, or the server-set signed `client_platform` claim);
