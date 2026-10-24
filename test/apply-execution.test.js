@@ -1051,7 +1051,9 @@ test('local MCP accepts only fully bound live-probe dispositions', () => {
     assert.throws(() => registration.schema.parse({
       ...common,
       dispositions: [disposition],
-    }), /Required|Invalid input/i, missing);
+    }), error => error.issues?.some(issue =>
+      JSON.stringify(issue.path) === JSON.stringify(['dispositions', 0, missing])
+      && ['invalid_type', 'invalid_value'].includes(issue.code)), missing);
   }
   for (const source of ['cache_hint', 'static_policy']) {
     assert.throws(() => registration.schema.parse({
@@ -1510,10 +1512,10 @@ test('advance replay returns the backend current revision and progress unchanged
   assert.deepEqual(result, response);
 });
 
-test('skill 4.9.1 recovers executions before legacy batches and distinguishes complete from inspect requests', () => {
-  assert.match(agent, /const SKILL_VERSION = '4\.9\.1'/);
+test('skill 4.9.2 recovers executions before legacy batches and distinguishes complete from inspect requests', () => {
+  assert.match(agent, /const SKILL_VERSION = '4\.9\.2'/);
   assert.match(agent, /const MIN_APPLY_PROTOCOL_VERSION = '3\.7\.0'/);
-  assert.match(skill, /Skill 4\.9\.1 requires protocol 3\.7\.0 or newer/);
+  assert.match(skill, /Skill 4\.9\.2 requires protocol 3\.7\.0 or newer/);
   assert.match(skill, /trackly_get_active_apply_execution[\s\S]*before[\s\S]*trackly_get_active_apply_batch/i);
   assert.match(skill, /complete_next_n_accessible/);
   assert.match(skill, /durablyReviewReady/);

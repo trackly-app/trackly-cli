@@ -283,7 +283,7 @@ test('local MCP preference tools use the authoritative V2 and revision contracts
   assert.match(getRegion, /apiRequest\(\s*['"]GET['"]\s*,\s*['"]\/api\/jobscout\/me['"]/);
   assert.match(
     updateRegion,
-    /experienceLimitsByJobFunction:\s*z\.record\(z\.enum\(JOB_FUNCTIONS\),\s*z\.number\(\)\.int\(\)\.min\(0\)\.max\(60\)\)/,
+    /experienceLimitsByJobFunction:\s*z\.partialRecord\(z\.enum\(JOB_FUNCTIONS\),\s*z\.number\(\)\.int\(\)\.min\(0\)\.max\(60\)\)/,
   );
   assert.match(
     updateRegion,

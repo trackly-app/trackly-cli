@@ -16,7 +16,7 @@ Use trackly as the source of truth for current openings, monitored companies, sa
 5. Present returned facts as returned by trackly. Label any model inference as an inference and never imply a posting is still open when trackly reports otherwise.
 6. Call `trackly_update_status` only after the user chooses a job or explicitly asks to update its status. Marking a job `applied` additionally requires Apply write permission because it reconciles the application run; never use it to infer or claim submission.
 
-Do not rescore an approved application inside this discovery skill. When the user asks to fill an approved application, use the `trackly-apply` skill.
+Do not rescore an approved application inside this discovery skill. When the user asks to finish Apply setup, resolve missing profile or resume requirements, or fill an approved application, use the `trackly-apply` skill.
 
 ## Scope boundary
 

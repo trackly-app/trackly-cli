@@ -1,11 +1,11 @@
 ---
 name: trackly-apply
-description: Use trackly Apply to fill a user-approved job application in a controlled browser, resolve missing answers with the user, and stop at final review. Use when the user asks to fill, continue, or review an approved application.
+description: Help users finish Trackly Apply setup, resolve missing profile or resume requirements, and fill user-approved applications in a controlled browser before manual review. Use when the user asks to set up Apply, fix an incomplete profile, or fill, continue, or review an approved application.
 ---
 
 # trackly Apply
 
-Skill 4.9.1: read [handoff compatibility](references/handoff-compatibility.md) before browser readiness; its documented markHandoff path supersedes contradictory receipt/finalizer wording below.
+Skill 4.9.2: read [handoff compatibility](references/handoff-compatibility.md) before browser readiness; its documented markHandoff path supersedes contradictory receipt/finalizer wording below.
 
 
 Use trackly as the source of truth for approved work, reusable application answers, resume artifacts, and durable application progress. Read [references/operational-checkpoints.md](references/operational-checkpoints.md), [references/access-probe.md](references/access-probe.md), [references/lifecycle-contract.md](references/lifecycle-contract.md), [references/browser-safety.md](references/browser-safety.md), and [references/review-handoff.md](references/review-handoff.md) before selecting, probing, or changing an employer form. Read and run [references/answer-resolution.md](references/answer-resolution.md) before generating an employer-form question packet or filling controls. Read [references/application-writing.md](references/application-writing.md) before drafting free text.
@@ -22,6 +22,8 @@ Use trackly as the source of truth for approved work, reusable application answe
 8. Preserve every application tab and unsaved draft. Before any form mutation, require a verified end-to-end preservation path: either the documented session finalizer plus complete current controller-owned and user-owned tab inventories for its explicit keep list, or a documented per-tab durable-handoff primitive with an exact verifiable persistence receipt for every target tab. Otherwise fail browser readiness. Before ending every browser turn, put every live bound application tab in the finalizer's explicit keep list with `status: handoff`, or durably hand off every live tab and verify every receipt. Never end a browser turn after omitted, empty, partial, inferred, stale, or unverified preservation.
 
 ## Start or resume
+
+First read [onboarding guidance](references/onboarding.md). Help the user complete only the missing requirements, verify every save, and distinguish an incomplete profile from disabled Apply capability before starting application work.
 
 1. Call `trackly_get_apply_readiness` and obey its authoritative blockers and next action. Treat each readiness section as usable only when its matching `availability` flag is true; an unavailable card is not saved state. `queue.pageCount` is only the returned page count, and `hasMore: true` makes it a lower bound. Its `profile.missingRequired` entries contain only canonical keys and public labels; obtain values from the user, never from inference. Its `profile.availableFields` entries identify resolved saved canonical facts by key and public label without exposing values.
 2. If restricted information must be stored and consent is absent, explain what would be stored and why. Call `trackly_grant_sensitive_storage_consent` only after the user explicitly agrees. If the user declines, continue only where the response says run-only use is supported. Use `trackly_revoke_sensitive_storage_consent` only on an explicit revocation request.
