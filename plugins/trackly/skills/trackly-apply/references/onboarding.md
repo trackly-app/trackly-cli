@@ -1,6 +1,6 @@
 # Finish Apply setup
 
-Treat setup as a guided conversation. Follow onboarding.nextAction and guidance from current readiness when supplied. On older responses, derive these steps from available profile data. Explain Apply capability separately from profile completion. Incomplete setup is not a rollout failure, and missing answers or an absent upload do not resolve by waiting.
+Treat setup as a guided conversation. Follow onboarding.nextAction and guidance from current readiness when supplied. Use onboarding.questions inputType, sensitivity and public option labels/values when supplied. Never guess a stored enum from its label. On older responses without verified question definitions, guide missing fields through https://usetrackly.app/profile with the same account instead of guessing values. Explain Apply capability separately from profile completion. Incomplete setup is not a rollout failure, and missing answers or an absent upload do not resolve by waiting.
 
 1. Check availability before interpreting a section. An unavailable profile or schema means saved state is unknown. Report the failed check and a concrete next action without asking the user to repeat saved setup.
 2. Explain remaining requirements in the user's language. Ask only canonical questions that remain unknown or need confirmation. Preserve answered, declined and intentionally blank fields. Save only user-confirmed facts and scopes using the current revision, then refetch readiness. Never invent missing facts or claim an unsaved conversational answer was stored.
