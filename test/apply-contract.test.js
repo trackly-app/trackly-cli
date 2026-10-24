@@ -35,6 +35,10 @@ const {
   gitOutput,
   parseSchemaExpression,
   sha256ExactBytes,
+  assertMachineAccessSemantics,
+  HOSTED_MACHINE_ACCESS_SOURCES,
+  HOSTED_REQUIRE_MCP_ENTITLEMENT_SOURCE,
+  REVIEWED_DISJOINT_ROUTER_MOUNT_DIGESTS,
   REVIEWED_PLUGIN_SCOPED_MIDDLEWARE_CALL_DIGESTS,
   verifyHostedContract,
   verifyCoordinatedBackendCore,
@@ -155,7 +159,11 @@ test('coordinated hosted bindings resolve to unshadowed reviewed imports', () =>
 
 const assertPluginRoutePrecedence = (...args) => assertPluginRoutePrecedenceProduction(
   ...args,
-  { reviewedGlobalMiddlewareCallDigests: [], reviewedPluginScopedMiddlewareCallDigests: [] },
+  {
+    reviewedGlobalMiddlewareCallDigests: [],
+    reviewedPluginScopedMiddlewareCallDigests: [],
+    reviewedDisjointRouterMountDigests: [],
+  },
 );
 
 function activeFunctionDigest(sourceText, name, sourcePath) {
@@ -1450,6 +1458,80 @@ test('hosted process guards lock active semantics, invocation inventory, and nor
   );
 });
 
+test('machine-credential access pins reject new proofs, widened modes and moved gates (close-ai #2789)', () => {
+  const accessSource = [
+    "import { EXTENSION_KEY_PROVENANCE } from '../utils/extension-google-auth-protocol.js';",
+    ...Object.values(HOSTED_MACHINE_ACCESS_SOURCES),
+  ].join('\n');
+  const verify = (access, oauth = HOSTED_REQUIRE_MCP_ENTITLEMENT_SOURCE) => () => assertMachineAccessSemantics(
+    access,
+    'machine access fixture',
+    oauth,
+    'oauth provider fixture',
+  );
+  assert.doesNotThrow(verify(accessSource));
+  for (const [label, from, to, expected] of [
+    ['User-Agent as proof',
+      "if (rawTracklyCliPlatform(input.clientPlatform)) return 'trackly-cli';",
+      "if (rawTracklyCliPlatform(input.clientPlatform) || rawTracklyCliPlatform(input.userAgent)) return 'trackly-cli';",
+      /classifyMachineAccess.*locked executable branch semantics/],
+    ['extension keys as proof', 'if (input.apiKeyProvenance === EXTENSION_KEY_PROVENANCE) return null;', '',
+      /classifyMachineAccess.*locked executable branch semantics/],
+    ['native surface exemption', 'if (input.nativeSurface) return null;', '',
+      /classifyMachineAccess.*locked executable branch semantics/],
+    ['off mode exempt', "return mode === 'audit' || mode === 'enforce';", "return mode !== 'disabled';",
+      /machineSurfaceIsExempt.*locked executable branch semantics/],
+    ['prefix platform match', "value.trim().toLowerCase() === 'trackly-cli'", "value.trim().toLowerCase().startsWith('trackly')",
+      /rawTracklyCliPlatform.*locked executable branch semantics/],
+    ['allow without a mode check', 'if (!machineSurfaceIsExempt(mode)) return false;', '',
+      /allowVerifiedMachineSurface.*locked executable branch semantics/],
+    ['allow without a proof', 'if (machineProof && allowVerifiedMachineSurface(mode, {', 'if (machineProof || allowVerifiedMachineSurface(mode, {',
+      /requireTracklyAccessForSurface.*locked executable branch semantics/],
+    ['decoy provenance module', "from '../utils/extension-google-auth-protocol.js';", "from './decoy-provenance.js';",
+      /must import EXTENSION_KEY_PROVENANCE as EXTENSION_KEY_PROVENANCE exactly once from \.\.\/utils\/extension-google-auth-protocol\.js/],
+  ]) {
+    assert.ok(accessSource.includes(from), `${label} mutation must apply`);
+    assert.throws(verify(accessSource.replace(from, to)), expected, label);
+  }
+  assert.throws(
+    verify(accessSource, HOSTED_REQUIRE_MCP_ENTITLEMENT_SOURCE.replace('getTracklyAccessMode()', "'enforce'")),
+    /requireMcpEntitlement.*locked executable branch semantics/,
+  );
+});
+
+test('hosted plugin route accepts only the exact reviewed disjoint /api router mount before it', () => {
+  const source = `
+    export function createApp() {
+      const app = express();
+      app.use('/api', scraperIngestRoutes);
+      app.use('/api/plugin/trackly/mcp', tracklyPluginMcpRoutes);
+      return app;
+    }
+  `;
+  const check = (candidate, reviewedDisjointRouterMountDigests) => () => assertPluginRoutePrecedenceProduction(
+    candidate,
+    'tracklyPluginMcpRoutes',
+    '/api/plugin/trackly/mcp',
+    'disjoint router fixture',
+    {
+      reviewedGlobalMiddlewareCallDigests: [],
+      reviewedPluginScopedMiddlewareCallDigests: [],
+      reviewedDisjointRouterMountDigests,
+    },
+  );
+  assert.doesNotThrow(check(source, REVIEWED_DISJOINT_ROUTER_MOUNT_DIGESTS));
+  // Unreviewed, it is an earlier /api router that could shadow the plugin mount.
+  assert.throws(check(source, []), /must not have an earlier Express route or path-scoped middleware covering/);
+  assert.throws(
+    check(source.replace('scraperIngestRoutes', 'otherRoutes'), REVIEWED_DISJOINT_ROUTER_MOUNT_DIGESTS),
+    /complete reviewed disjoint router inventory|must not have an earlier Express route/,
+  );
+  assert.throws(
+    check(source.replace("app.use('/api', scraperIngestRoutes);", ''), REVIEWED_DISJOINT_ROUTER_MOUNT_DIGESTS),
+    /complete reviewed disjoint router inventory/,
+  );
+});
+
 test('hosted plugin route rejects earlier Express handlers covering its canonical mount', () => {
   const source = `
     export function createApp() {
@@ -2520,7 +2602,8 @@ test('coordinated hosted verifier executes disposition, wrapper, and lifecycle w
       leaseToken: z.string().optional(),
     });
   `;
-  const hostedPluginSource = `
+  // close-ai #3089 deployed the job wrapper candidate; this is the wrapper before it.
+  const preJobWrapperSource = `
     function wrapTool(
       handler: (params: any) => Promise<unknown>,
       fallback: string,
@@ -2542,7 +2625,7 @@ test('coordinated hosted verifier executes disposition, wrapper, and lifecycle w
     hostedApplySource,
     hostedPluginContract: { lifecycle: { submissionBoundary: 'manual_only' } },
     pluginLock: { publicLifecycleContract: { submissionBoundary: 'manual_only' } },
-    hostedPluginSource,
+    hostedPluginSource: CANDIDATE_PLUGIN_WRAPPER_SOURCE,
   };
   const verify = (candidate) => () => verifyHostedContract({ coordinatedFixture: candidate });
 
@@ -2550,8 +2633,11 @@ test('coordinated hosted verifier executes disposition, wrapper, and lifecycle w
   const candidate = { ...fixture, hostedPluginSource: CANDIDATE_PLUGIN_WRAPPER_SOURCE };
   const candidateOptions = { expectedPluginWrapperSource: CANDIDATE_PLUGIN_WRAPPER_SOURCE };
   assert.doesNotThrow(() => verifyCoordinatedBackendCore(candidate, candidateOptions));
-  // Candidate approval must not relabel or loosen the historical wrapper pin.
-  assert.throws(verify(candidate), /wrapTool.*must preserve its locked executable branch semantics/);
+  // The deployed pin no longer accepts the pre-#3089 wrapper.
+  assert.throws(
+    verify({ ...fixture, hostedPluginSource: preJobWrapperSource }),
+    /wrapTool.*must preserve its locked executable branch semantics/,
+  );
   for (const mutated of [
     CANDIDATE_PLUGIN_WRAPPER_SOURCE.replace('if (!jobIdKey) return response;', 'if (jobIdKey) return response;'),
     CANDIDATE_PLUGIN_WRAPPER_SOURCE.replace('normalizeJobResult(result, params[jobIdKey])', 'result'),
@@ -3383,7 +3469,7 @@ test('hosted plugin route accepts only the exact reviewed plugin-scoped middlewa
     'tracklyPluginMcpRoutes',
     '/api/plugin/trackly/mcp',
     label,
-    { reviewedGlobalMiddlewareCallDigests: [] },
+    { reviewedGlobalMiddlewareCallDigests: [], reviewedDisjointRouterMountDigests: [] },
   );
   assert.doesNotThrow(check(source, 'reviewed plugin cors fixture'));
   for (const [label, mutated] of [

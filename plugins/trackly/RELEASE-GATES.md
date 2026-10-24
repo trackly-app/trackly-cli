@@ -160,8 +160,9 @@ the host's own browser tool, and only the user clicks Submit.
 
 The fixture-pinned `mutationAnnotationContract` in
 `scripts/verify-hosted-contract.js` mirrors the runtime pinned in
-`hosted-contract-fixture.json`. trackly-app/trackly-cli#154 recaptures that
-fixture from the deployed close-ai merge `dded739620bcdee1e6863324c8f660e6b999d0cc` (close-ai #2014), retaining
+`hosted-contract-fixture.json`. The fixture is recaptured from the deployed
+close-ai merge `6be6d4d2105f7de7f491c7b55bfdf00057d193f4` (close-ai #3186; it
+was `dded739620bcdee1e6863324c8f660e6b999d0cc` from trackly-app/trackly-cli#154), retaining
 `trackly_defer_apply_access` and `trackly_clear_apply_access_deferment` to
 `mutationAnnotations(false, true)`, matching the table above.
 The backend helper's signature is
@@ -169,6 +170,8 @@ The backend helper's signature is
 `readOnlyHint: false` and `openWorldHint: false`. So `(false, true)` means
 non-destructive, which matches the Destructive column above, and idempotent (retries replay by idempotency key; the table does not list idempotency). The helper
 `readOnlyAnnotations` emits read-only, non-destructive and idempotent.
+
+Accepted backend rule (Alan, 2026-10-24): in `audit` and `enforce` modes, verified machine credentials skip the request-level invite gate (close-ai #2789). The Berkeley-only check for CLI and MCP sign-in is decided earlier, at Google sign-in (`googleTracklyOAuthDecision` in close-ai `src/config/passport.ts`, keyed on the `cli:`/`mcp:` OAuth state), and this gate does not pin it. These credentials are hosted MCP OAuth, MCP bearer tokens, non-extension API keys and `client_platform: 'trackly-cli'` JWTs. `client_platform` is a signed claim that the server sets when it mints the token; no header or User-Agent counts as proof. `assertMachineAccessSemantics` in `scripts/verify-hosted-contract.js` pins the request-level rule exactly, so any change to it fails the coordinated gate.
 
 ## Product verification
 
