@@ -35,6 +35,7 @@ const {
   gitOutput,
   parseSchemaExpression,
   sha256ExactBytes,
+  REVIEWED_DISJOINT_ROUTER_MOUNT_DIGESTS,
   REVIEWED_PLUGIN_SCOPED_MIDDLEWARE_CALL_DIGESTS,
   verifyHostedContract,
   verifyCoordinatedBackendCore,
@@ -155,7 +156,11 @@ test('coordinated hosted bindings resolve to unshadowed reviewed imports', () =>
 
 const assertPluginRoutePrecedence = (...args) => assertPluginRoutePrecedenceProduction(
   ...args,
-  { reviewedGlobalMiddlewareCallDigests: [], reviewedPluginScopedMiddlewareCallDigests: [] },
+  {
+    reviewedGlobalMiddlewareCallDigests: [],
+    reviewedPluginScopedMiddlewareCallDigests: [],
+    reviewedDisjointRouterMountDigests: [],
+  },
 );
 
 function activeFunctionDigest(sourceText, name, sourcePath) {
@@ -1450,6 +1455,39 @@ test('hosted process guards lock active semantics, invocation inventory, and nor
   );
 });
 
+test('hosted plugin route accepts only the exact reviewed disjoint /api router mount before it', () => {
+  const source = `
+    export function createApp() {
+      const app = express();
+      app.use('/api', scraperIngestRoutes);
+      app.use('/api/plugin/trackly/mcp', tracklyPluginMcpRoutes);
+      return app;
+    }
+  `;
+  const check = (candidate, reviewedDisjointRouterMountDigests) => () => assertPluginRoutePrecedenceProduction(
+    candidate,
+    'tracklyPluginMcpRoutes',
+    '/api/plugin/trackly/mcp',
+    'disjoint router fixture',
+    {
+      reviewedGlobalMiddlewareCallDigests: [],
+      reviewedPluginScopedMiddlewareCallDigests: [],
+      reviewedDisjointRouterMountDigests,
+    },
+  );
+  assert.doesNotThrow(check(source, REVIEWED_DISJOINT_ROUTER_MOUNT_DIGESTS));
+  // Unreviewed, it is an earlier /api router that could shadow the plugin mount.
+  assert.throws(check(source, []), /must not have an earlier Express route or path-scoped middleware covering/);
+  assert.throws(
+    check(source.replace('scraperIngestRoutes', 'otherRoutes'), REVIEWED_DISJOINT_ROUTER_MOUNT_DIGESTS),
+    /complete reviewed disjoint router inventory|must not have an earlier Express route/,
+  );
+  assert.throws(
+    check(source.replace("app.use('/api', scraperIngestRoutes);", ''), REVIEWED_DISJOINT_ROUTER_MOUNT_DIGESTS),
+    /complete reviewed disjoint router inventory/,
+  );
+});
+
 test('hosted plugin route rejects earlier Express handlers covering its canonical mount', () => {
   const source = `
     export function createApp() {
@@ -2520,7 +2558,8 @@ test('coordinated hosted verifier executes disposition, wrapper, and lifecycle w
       leaseToken: z.string().optional(),
     });
   `;
-  const hostedPluginSource = `
+  // close-ai #3089 deployed the job wrapper candidate; this is the wrapper before it.
+  const preJobWrapperSource = `
     function wrapTool(
       handler: (params: any) => Promise<unknown>,
       fallback: string,
@@ -2542,7 +2581,7 @@ test('coordinated hosted verifier executes disposition, wrapper, and lifecycle w
     hostedApplySource,
     hostedPluginContract: { lifecycle: { submissionBoundary: 'manual_only' } },
     pluginLock: { publicLifecycleContract: { submissionBoundary: 'manual_only' } },
-    hostedPluginSource,
+    hostedPluginSource: CANDIDATE_PLUGIN_WRAPPER_SOURCE,
   };
   const verify = (candidate) => () => verifyHostedContract({ coordinatedFixture: candidate });
 
@@ -2550,8 +2589,11 @@ test('coordinated hosted verifier executes disposition, wrapper, and lifecycle w
   const candidate = { ...fixture, hostedPluginSource: CANDIDATE_PLUGIN_WRAPPER_SOURCE };
   const candidateOptions = { expectedPluginWrapperSource: CANDIDATE_PLUGIN_WRAPPER_SOURCE };
   assert.doesNotThrow(() => verifyCoordinatedBackendCore(candidate, candidateOptions));
-  // Candidate approval must not relabel or loosen the historical wrapper pin.
-  assert.throws(verify(candidate), /wrapTool.*must preserve its locked executable branch semantics/);
+  // The deployed pin no longer accepts the pre-#3089 wrapper.
+  assert.throws(
+    verify({ ...fixture, hostedPluginSource: preJobWrapperSource }),
+    /wrapTool.*must preserve its locked executable branch semantics/,
+  );
   for (const mutated of [
     CANDIDATE_PLUGIN_WRAPPER_SOURCE.replace('if (!jobIdKey) return response;', 'if (jobIdKey) return response;'),
     CANDIDATE_PLUGIN_WRAPPER_SOURCE.replace('normalizeJobResult(result, params[jobIdKey])', 'result'),
@@ -3383,7 +3425,7 @@ test('hosted plugin route accepts only the exact reviewed plugin-scoped middlewa
     'tracklyPluginMcpRoutes',
     '/api/plugin/trackly/mcp',
     label,
-    { reviewedGlobalMiddlewareCallDigests: [] },
+    { reviewedGlobalMiddlewareCallDigests: [], reviewedDisjointRouterMountDigests: [] },
   );
   assert.doesNotThrow(check(source, 'reviewed plugin cors fixture'));
   for (const [label, mutated] of [

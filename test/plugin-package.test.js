@@ -80,6 +80,7 @@ const {
 const FIXTURE_ROUTE_OPTIONS = Object.freeze({
   reviewedGlobalMiddlewareCallDigests: Object.freeze([]),
   reviewedPluginScopedMiddlewareCallDigests: Object.freeze([]),
+  reviewedDisjointRouterMountDigests: Object.freeze([]),
 });
 function assertLivePluginRouterMount(
   source,
@@ -619,18 +620,22 @@ test('plugin tool scope map rejects mutation, reassignment, aliasing, and escape
     const TRACKLY_PLUGIN_TOOL_NAMES = Object.freeze(
       Object.keys(TRACKLY_PLUGIN_TOOL_SCOPES),
     );
+    const { trackly_report_apply_progress: _progress, trackly_get_apply_work: _work, ...sharedToolScopes } = TRACKLY_PLUGIN_TOOL_SCOPES;
+    export const TRACKLY_OPENAI_TOOL_SCOPES: Readonly<Record<string, readonly McpScope[]>> = Object.freeze({
+      ...sharedToolScopes,
+      ...Object.fromEntries(Object.values(OPENAI_PROGRESS_ACTIONS).map(({ name }) => [name, ['apply:write'] as const])),
+      trackly_get_apply_progress: TRACKLY_PLUGIN_TOOL_SCOPES.trackly_get_apply_work,
+      trackly_get_apply_snapshot: TRACKLY_PLUGIN_TOOL_SCOPES.trackly_get_apply_work,
+    });
     function diagnosticToolName(value: unknown): string {
-      return typeof value === 'string' && Object.hasOwn(TRACKLY_PLUGIN_TOOL_SCOPES, value)
+      return typeof value === 'string' && (requiredScopesForPluginTool(value) !== null || requiredScopesForPluginTool(value, 'openai') !== null)
         ? value
         : '[redacted]';
     }
-    function requiredScopesForPluginTool(toolName: string): string[] | null {
-      if (!Object.hasOwn(TRACKLY_PLUGIN_TOOL_SCOPES, toolName)) return null;
-      return [
-        ...TRACKLY_PLUGIN_TOOL_SCOPES[
-          toolName as keyof typeof TRACKLY_PLUGIN_TOOL_SCOPES
-        ],
-      ];
+    function requiredScopesForPluginTool(toolName: string, surface = 'legacy'): string[] | null {
+      const catalog = surface === 'legacy' ? TRACKLY_PLUGIN_TOOL_SCOPES : TRACKLY_OPENAI_TOOL_SCOPES;
+      if (!Object.hasOwn(catalog, toolName)) return null;
+      return [...catalog[toolName]];
     }
   `;
   assert.doesNotThrow(() => assertImmutablePluginToolScopesSemantics(source, 'scope-map fixture'));
@@ -643,16 +648,30 @@ test('plugin tool scope map rejects mutation, reassignment, aliasing, and escape
   ]) {
     assert.throws(
       () => assertImmutablePluginToolScopesSemantics(`${source}\n${mutation}`, 'mutated scope-map fixture'),
-      /must (?:not be reassigned, mutated, aliased, escaped, or referenced outside its locked names catalog, diagnostic redaction, and requiredScopesForPluginTool|never be assigned or updated after declaration)/,
+      /must (?:not be reassigned, mutated, aliased, escaped, or referenced outside its locked names catalog, OpenAI catalog derivation, and requiredScopesForPluginTool|never be assigned or updated after declaration)/,
     );
   }
   assert.throws(
     () => assertImmutablePluginToolScopesSemantics(
-      source.replace("Object.hasOwn(TRACKLY_PLUGIN_TOOL_SCOPES, value)", "typeof value === 'string'"),
+      source.replace("requiredScopesForPluginTool(value, 'openai') !== null", 'true'),
       'widened diagnostic fixture',
     ),
     /diagnosticToolName.*locked executable branch semantics/,
   );
+  for (const [label, widened] of [
+    ['shared rows keep apply work', source.replace('trackly_get_apply_work: _work, ', '')],
+    ['progress action without apply:write', source.replace("['apply:write'] as const", "['jobs:read'] as const")],
+    ['snapshot borrows another row', source.replace(
+      'trackly_get_apply_snapshot: TRACKLY_PLUGIN_TOOL_SCOPES.trackly_get_apply_work',
+      'trackly_get_apply_snapshot: TRACKLY_PLUGIN_TOOL_SCOPES.trackly_active',
+    )],
+  ]) {
+    assert.throws(
+      () => assertImmutablePluginToolScopesSemantics(widened, `${label} fixture`),
+      /two legacy apply work tools|TRACKLY_OPENAI_TOOL_SCOPES/,
+      label,
+    );
+  }
 });
 
 test('OAuth scope normalization and subset checks stay fail-closed against the canonical scope catalog', () => {
@@ -838,7 +857,7 @@ test('the exported plugin router must be mounted on the exact production applica
   const source = `
     import express from 'express';
     import rateLimit from 'express-rate-limit';
-    import { authLimiter } from './middleware/auth-rate-limit.js';
+    import { authFlowLimiter, authLimiter, oauthStartLimiter } from './middleware/auth-rate-limit.js';
     import tracklyPluginMcpRoutes from './mcp/plugin-router';
     import { azureRehearsalRateLimitOptions } from './utils/azure-rehearsal-ip';
     const PORT = 3000;
@@ -847,12 +866,18 @@ test('the exported plugin router must be mounted on the exact production applica
       const generalLimiter = rateLimit({ ...azureRehearsalRateLimitOptions() });
       app.use('/api/plugin/trackly/mcp', tracklyPluginMcpRoutes);
       app.use('/api/', collapseOnboardingTrailingSlashes, generalLimiter);
-      app.use('/auth/', authLimiter);
+      app.use('/auth/', authLimiter, oauthStartLimiter, authFlowLimiter);
       app.use('/api/admin/login', authLimiter);
       return app;
     }
     function startServer() {
       installProcessGuards();
+      if (shouldRunStartupDbWrites()) {
+        startRefreshGraceSweep();
+        startMuseTraceRetention(pool, (postgresCode) => {
+          logger.warn('muse-retention', 'Muse diagnostic cleanup failed; retrying next minute', { postgresCode });
+        });
+      }
       const app = createApp();
       app.listen(PORT);
     }
@@ -973,11 +998,13 @@ test('the exported plugin router must be mounted on the exact production applica
     );
   }
   for (const [label, mount] of [
-    ['auth path', "app.use('/auth/', skipEverything, authLimiter);"],
+    ['auth path', "app.use('/auth/', skipEverything, authLimiter, oauthStartLimiter, authFlowLimiter);"],
+    ['auth path tail', "app.use('/auth/', authLimiter, oauthStartLimiter, skipEverything);"],
+    ['auth path missing flow limiter', "app.use('/auth/', authLimiter, oauthStartLimiter);"],
     ['admin login', "app.use('/api/admin/login', collapseOnboardingTrailingSlashes, authLimiter);"],
   ]) {
-    const original = label === 'auth path'
-      ? "app.use('/auth/', authLimiter);"
+    const original = label.startsWith('auth path')
+      ? "app.use('/auth/', authLimiter, oauthStartLimiter, authFlowLimiter);"
       : "app.use('/api/admin/login', authLimiter);";
     assert.notEqual(source.replace(original, mount), source);
     assert.throws(
@@ -988,7 +1015,7 @@ test('the exported plugin router must be mounted on the exact production applica
         '/api/plugin/trackly/mcp',
         `${label} auth limiter fixture`,
       ),
-      /authLimiter.*must run after only the reviewed middleware on each mount/,
+      /authLimiter.*(?:must run after only|may be followed only by) the reviewed middleware on each mount/,
     );
   }
   assert.throws(
@@ -1206,7 +1233,17 @@ test('the exported plugin router must be mounted on the exact production applica
       '/api/plugin/trackly/mcp',
       'unreachable application mount fixture',
     ),
-    /must execute only installProcessGuards before creating the live application/,
+    /must execute only installProcessGuards and its locked maintenance prelude before creating the live application/,
+  );
+  assert.throws(
+    () => assertLivePluginRouterMount(
+      source.replace('if (shouldRunStartupDbWrites()) {', 'if (true) {'),
+      'tracklyPluginMcpRoutes',
+      './mcp/plugin-router',
+      '/api/plugin/trackly/mcp',
+      'unguarded maintenance prelude fixture',
+    ),
+    /must execute only installProcessGuards and its locked maintenance prelude before creating the live application/,
   );
   assert.throws(
     () => assertLivePluginRouterMount(
@@ -1231,8 +1268,8 @@ test('the exported plugin router must be mounted on the exact production applica
   assert.throws(
     () => assertLivePluginRouterMount(
       source.replace(
-        'installProcessGuards();\n      const app = createApp();',
-        'installProcessGuards();\n      const app = createApp(), dead = process.exit(0);',
+        '}\n      const app = createApp();',
+        '}\n      const app = createApp(), dead = process.exit(0);',
       ),
       'tracklyPluginMcpRoutes',
       './mcp/plugin-router',
@@ -1987,351 +2024,278 @@ test('application field sensitivity catalog extraction is static and fail closed
 });
 
 test('plugin registration proof binds the exported factory to the live POST route', () => {
-  const routerFixture = (
-    handlerBody,
-    authInfoExpression = '(req as Request & { auth: HostedOAuthAuthInfo }).auth',
-    authTokenExpression = 'generateHostedOAuthInternalToken(authInfo)',
-    routeWrapperStart = '',
-    routeWrapperEnd = '',
-  ) => `
-    import { Router } from 'express';
-    import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
-    import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-    import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
-    import { tracklyOAuthProvider } from './oauth-provider.js';
-    import { MCP_PLUGIN_RESOURCE } from './mcp-tokens.js';
-    import { enforceTracklyPluginScope } from './plugin-scopes.js';
-    import { requireTracklyAccess } from '../services/trackly-access.js';
-    import { azureRehearsalRateLimitOptions } from '../utils/azure-rehearsal-ip.js';
-    import { createTracklyPluginMcpServer } from './plugin-server.js';
-    import { generateHostedOAuthInternalToken } from './server.js';
-    import {
-      isAllowedMcpOrigin,
-      MCP_PLUGIN_RESOURCE_METADATA_URL,
-    } from './mcp-config.js';
-    const router = Router();
-    export const RESOURCE_METADATA_URL = MCP_PLUGIN_RESOURCE_METADATA_URL;
-    export function validateOrigin(req: Request, res: Response, next: NextFunction): void {
-      const origin = req.headers.origin;
-      if (!isAllowedMcpOrigin(origin)) {
-        res.status(403).json({ error: 'Forbidden origin' });
-        return;
-      }
-      next();
-    }
-    const bearerAuth = requireBearerAuth({
-      verifier: tracklyOAuthProvider,
-      resourceMetadataUrl: RESOURCE_METADATA_URL,
-    });
-    export function enforcePluginResource(
-      req: Request,
-      res: Response,
-      next: NextFunction,
-    ): void {
-      if ((req as Request & { auth?: HostedOAuthAuthInfo }).auth?.extra?.resource === MCP_PLUGIN_RESOURCE) {
-        next();
-        return;
-      }
-      res.setHeader('WWW-Authenticate', \`Bearer resource_metadata="\${RESOURCE_METADATA_URL}"\`);
-      res.status(401).json({ error: 'Bearer token is not valid for the trackly plugin resource' });
-    }
-    export function requirePluginEnabled(
-      _req: Request,
-      res: Response,
-      next: NextFunction,
-    ): void {
-      if (process.env.MCP_SERVER_ENABLED === 'true') {
-        next();
-        return;
-      }
-      res.status(503).json({ error: 'trackly plugin is not enabled' });
-    }
-    export const PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX = 6_000;
-    const ipLimiter = rateLimit({
-      windowMs: 60_000,
-      max: PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX,
-      standardHeaders: true,
-      legacyHeaders: false,
-      message: { error: 'Too many trackly plugin requests. Try again later.' },
-      ...azureRehearsalRateLimitOptions(),
-    });
-    const identityLimiter = rateLimit({
-      windowMs: 60_000,
-      max: 120,
-      standardHeaders: true,
-      legacyHeaders: false,
-      keyGenerator: (req) => {
-        const auth = (req as Request & { auth?: HostedOAuthAuthInfo }).auth;
-        return auth?.extra?.userId
-          ? \`\${auth.clientId}:\${auth.extra.userId}\`
-          : ipKeyGenerator(req.ip || '');
-      },
-      message: { error: 'trackly plugin rate limit exceeded. Try again later.' },
-    });
-    ${routeWrapperStart}
-    router.post(
-      '/',
-      ipLimiter,
-      requirePluginEnabled,
-      validateOrigin,
-      bearerAuth,
-      enforcePluginResource,
-      requireTracklyAccess,
-      enforceTracklyPluginScope,
-      identityLimiter,
-      async (req: Request, res: Response) => {
-        const authInfo = ${authInfoExpression};
-        const authToken = ${authTokenExpression};
-        ${handlerBody}
-      },
-    );
-    ${routeWrapperEnd}
-    export default router;
-  `;
-  const routerSource = routerFixture(`
-    const server = createTracklyPluginMcpServer(authToken);
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    try {
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-    } finally {
-      await server.close();
-    }
-  `);
-  assert.doesNotThrow(() => assertExportedFactoryUsedByPluginRouter(
-    routerSource,
-    'createTracklyPluginMcpServer',
-    'router fixture',
-  ));
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(
-      routerSource.replace('PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX = 6_000', 'PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX = 60_000'),
-      'createTracklyPluginMcpServer',
-      'widened shared egress limiter fixture',
-    ),
-    /PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX.*must preserve its locked executable definition/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(
-      routerSource.replace("import { Router } from 'express';", "import { Router } from './decoy-express.js';"),
-      'createTracklyPluginMcpServer',
-      'decoy Router import fixture',
-    ),
-    /must import Router as Router exactly once from express/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(
-      routerSource.replace('const router = Router();', 'const router = decoyRouter;'),
-      'createTracklyPluginMcpServer',
-      'decoy Router initializer fixture',
-    ),
-    /router in decoy Router initializer fixture must preserve its locked executable definition/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(
-      routerSource.replace(
-        'router.post(',
-        "const openRouter = router;\n    openRouter.post('/', openHandler);\n    router.post(",
-      ),
-      'createTracklyPluginMcpServer',
-      'aliased router fixture',
-    ),
-    /router.*must not be aliased, escaped, mutated, or referenced outside its locked route registrations and default export/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(
-      routerSource.replace('export default router;', 'export default decoyRouter;'),
-      'createTracklyPluginMcpServer',
-      'decoy default export fixture',
-    ),
-    /must default-export the exact canonical Express router receiving POST/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(
-      routerSource.replace(
-        "import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';",
-        "import { StreamableHTTPServerTransport } from './decoy-transport.js';",
-      ),
-      'createTracklyPluginMcpServer',
-      'decoy transport fixture',
-    ),
-    /must import StreamableHTTPServerTransport as StreamableHTTPServerTransport exactly once from @modelcontextprotocol\/sdk\/server\/streamableHttp\.js/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(
-      routerSource.replace(
-        'new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })',
-        "new StreamableHTTPServerTransport({ sessionIdGenerator: () => 'shared' })",
-      ),
-      'createTracklyPluginMcpServer',
-      'stateful transport fixture',
-    ),
-    /must preserve the canonical stateless StreamableHTTPServerTransport construction/,
-  );
-  for (const competingRoute of [
-    "router.all('/', (_req, res) => res.end());",
-    "router.use('/', (_req, res) => res.end());",
-    "router.route('/').post((_req, res) => res.end());",
-    "router.all('/{*splat}', (_req, res) => res.end());",
-    "router.use(/.*/, (_req, res) => res.end());",
-    "router.post(['/', '/shadow'], (_req, res) => res.end());",
-    "router.use(dynamicMount, (_req, res) => res.end());",
-    "router['post']('/', (_req, res) => res.end());",
-    "router[dynamicMethod]('/', (_req, res) => res.end());",
-    "router.route('/')['post']((_req, res) => res.end());",
-    "router.route('/').get(readHandler).post(writeHandler);",
-  ]) {
-    assert.throws(
-      () => assertExportedFactoryUsedByPluginRouter(
-        routerSource.replace('router.post(', `${competingRoute}\n    router.post(`),
-        'createTracklyPluginMcpServer',
-        'competing route fixture',
-      ),
-      /must not register an earlier router mount that could cover POST \/ ahead of the authenticated route/,
-    );
+  // close-ai 6be6d4d21 src/mcp/plugin-router.ts, verbatim: one router per
+  // curated surface from createTracklyPluginRouter (close-ai #2705, #2777,
+  // #2792, #3180).
+  const routerSource = `/** HTTP transport and authorization boundary for the public trackly plugin. */
+
+import { Router, type NextFunction, type Request, type Response } from 'express';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
+import { tracklyOAuthProvider } from './oauth-provider.js';
+import {
+  generateHostedOAuthInternalToken,
+  type HostedOAuthAuthInfo,
+} from './server.js';
+import {
+  enforceTracklyPluginScope, enforceTracklyOpenaiScope, enforceTracklyMuseScope, enforceTracklyClaudeScope,
+} from './plugin-scopes.js';
+import { createTracklyPluginMcpServer, apiRequest } from './plugin-server.js';
+import { createPluginResumeRouter } from './plugin-resume-router.js';
+import { pluginResumeDocuments } from './plugin-resume-store.js';
+import { requireTracklyAccess } from '../services/trackly-access.js';
+import { logger } from '../utils/logger.js';
+import { pool } from '../config/database.js';
+import { museConnectorTraceMethod, recordMuseConnectorTrace } from './connector-revocation.js';
+import { requireMuseConnectorSchema } from './muse-schema-readiness.js';
+import { azureRehearsalRateLimitOptions } from '../utils/azure-rehearsal-ip.js';
+import {
+  isAllowedMcpOrigin,
+  MCP_PLUGIN_RESOURCE_METADATA_URL,
+  MCP_PLUGIN_SURFACE, MCP_OPENAI_SURFACE, MCP_MUSE_SURFACE, MCP_CLAUDE_SURFACE, type CuratedMcpSurface,
+} from './mcp-config.js';
+
+export const RESOURCE_METADATA_URL = MCP_PLUGIN_RESOURCE_METADATA_URL;
+
+export function validateOrigin(req: Request, res: Response, next: NextFunction): void {
+  const origin = req.headers.origin;
+  if (!isAllowedMcpOrigin(origin)) {
+    res.status(403).json({ error: 'Forbidden origin' });
+    return;
   }
-  assert.doesNotThrow(() => assertExportedFactoryUsedByPluginRouter(
-    routerSource.replace('router.post(', "router.use('/health', healthRouter);\n    router.post("),
-    'createTracklyPluginMcpServer',
-    'statically disjoint route fixture',
-  ));
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(
-      routerSource.replace(
-        'const server = createTracklyPluginMcpServer(authToken);',
-        'if (disabled) return;\n        const server = createTracklyPluginMcpServer(authToken);',
-      ),
-      'createTracklyPluginMcpServer',
-      'early route exit fixture',
-    ),
-    /must reach factory creation and its live transport without an earlier exit, throw, branch, or side effect/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(
-      routerFixture(`
-        const server = createTracklyPluginMcpServer(authToken);
-        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-        try {
-          await server.connect(transport);
-          await transport.handleRequest(req, res, req.body);
-        } finally {
-          await server.close();
-        }
-      `, undefined, undefined, 'function registerLater() {', '}'),
-      'createTracklyPluginMcpServer',
-      'dead route fixture',
-    ),
-    /must execute exactly one POST \/ plugin route registration at module initialization/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(routerFixture(`
-      if (false) {
-        const server = createTracklyPluginMcpServer(authToken);
-      }
-    `), 'createTracklyPluginMcpServer', 'nested factory fixture'),
-    /must directly instantiate createTracklyPluginMcpServer exactly once/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(routerFixture(`
-      const server = createTracklyPluginMcpServer(authToken);
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-      try {
-        await decoyServer.connect(transport);
-      } finally {
-        await server.close();
-      }
-    `), 'createTracklyPluginMcpServer', 'wrong server fixture'),
-    /must directly connect its exact factory-result server to its live transport/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(routerFixture(`
-      const server = createTracklyPluginMcpServer(authToken);
+  next();
+}
+
+export const enforcePluginResource = enforceCuratedResource(MCP_PLUGIN_SURFACE);
+function enforceCuratedResource(surface: CuratedMcpSurface) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if ((req as Request & { auth?: HostedOAuthAuthInfo }).auth?.extra?.resource === surface.resource) {
+      next(); return;
+    }
+    const tokenError = surface === MCP_PLUGIN_SURFACE ? 'error="invalid_token", ' : '';
+    res.setHeader('WWW-Authenticate', \`Bearer \${tokenError}resource_metadata="\${surface.metadataUrl}"\`);
+    res.status(401).json({ error: 'Bearer token is not valid for the trackly plugin resource' });
+  };
+}
+
+export function requirePluginEnabled(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (process.env.MCP_SERVER_ENABLED === 'true') {
+    next();
+    return;
+  }
+  res.status(503).json({ error: 'trackly plugin is not enabled' });
+}
+
+export const PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX = 6_000;
+const ipLimiter = rateLimit({
+  windowMs: 60_000,
+  // ChatGPT and Codex can share a small egress pool. Keep this as a broad
+  // unauthenticated abuse ceiling; per-user fairness is enforced below.
+  max: PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many trackly plugin requests. Try again later.' },
+  ...azureRehearsalRateLimitOptions(),
+});
+const identityLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const auth = (req as Request & { auth?: HostedOAuthAuthInfo }).auth;
+    return auth?.extra?.userId
+      ? \`\${auth.clientId}:\${auth.extra.userId}\`
+      : ipKeyGenerator(req.ip || '');
+  },
+  message: { error: 'trackly plugin rate limit exceeded. Try again later.' },
+});
+const museIpLimiter = rateLimit({
+  windowMs: 60_000,
+  max: PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many trackly plugin requests. Try again later.' },
+  ...azureRehearsalRateLimitOptions(),
+});
+const museIdentityLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const auth = (req as Request & { auth?: HostedOAuthAuthInfo }).auth;
+    return auth?.extra?.userId
+      ? \`\${auth.clientId}:\${auth.extra.userId}\`
+      : ipKeyGenerator(req.ip || '');
+  },
+  message: { error: 'trackly plugin rate limit exceeded. Try again later.' },
+});
+
+// Claude tool traffic egresses from one Anthropic range, so this IP budget is
+// shared by every Claude user. Raise it first; never exempt the range.
+const claudeIpLimiter = rateLimit({
+  windowMs: 60_000,
+  max: PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many trackly plugin requests. Try again later.' },
+  ...azureRehearsalRateLimitOptions(),
+});
+const claudeIdentityLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const auth = (req as Request & { auth?: HostedOAuthAuthInfo }).auth;
+    return auth?.extra?.userId
+      ? \`\${auth.clientId}:\${auth.extra.userId}\`
+      : ipKeyGenerator(req.ip || '');
+  },
+  message: { error: 'trackly plugin rate limit exceeded. Try again later.' },
+});
+
+export function createTracklyPluginRouter(surface: CuratedMcpSurface = MCP_PLUGIN_SURFACE) {
+  if (surface !== MCP_PLUGIN_SURFACE && surface !== MCP_OPENAI_SURFACE && surface !== MCP_MUSE_SURFACE
+    && surface !== MCP_CLAUDE_SURFACE) {
+    throw new Error('Unknown curated MCP surface');
+  }
+  const muse = surface === MCP_MUSE_SURFACE;
+  const claude = surface === MCP_CLAUDE_SURFACE;
+  const requestIpLimiter = muse ? museIpLimiter : claude ? claudeIpLimiter : ipLimiter;
+  const requestIdentityLimiter = muse ? museIdentityLimiter : claude ? claudeIdentityLimiter : identityLimiter;
+  const router = Router();
+  const bearerAuth = requireBearerAuth({ verifier: tracklyOAuthProvider, resourceMetadataUrl: surface.metadataUrl });
+  router.post(
+    '/',
+    requestIpLimiter,
+    requirePluginEnabled,
+    validateOrigin,
+    ...(muse ? [requireMuseConnectorSchema] : []),
+    bearerAuth,
+    enforceCuratedResource(surface),
+    requireTracklyAccess,
+    surface === MCP_OPENAI_SURFACE ? enforceTracklyOpenaiScope
+      : muse ? enforceTracklyMuseScope
+      : claude ? enforceTracklyClaudeScope
+      : enforceTracklyPluginScope,
+    requestIdentityLimiter,
+    async (req: Request, res: Response) => {
+      const authInfo = (req as Request & { auth: HostedOAuthAuthInfo }).auth;
+      const authToken = generateHostedOAuthInternalToken(authInfo);
+      const server = surface === MCP_MUSE_SURFACE
+        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'muse' })
+        : claude
+        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'claude' })
+        : createTracklyPluginMcpServer(authToken, apiRequest, async () => {
+          const { capability, filenameSha256: _filenameHash, ...document } = await pluginResumeDocuments(surface.resource).prepare({
+            userId: authInfo.extra.userId, authEpoch: authInfo.extra.authEpoch,
+            clientId: authInfo.clientId, grantId: authInfo.extra.grantId,
+          });
+          return { ...document, openUrl: \`\${surface.resource}/resume#\${capability}\` };
+        }, surface === MCP_OPENAI_SURFACE ? MCP_OPENAI_SURFACE.resumePath : MCP_PLUGIN_SURFACE.resumePath, {
+          surface: surface === MCP_OPENAI_SURFACE ? 'openai' : 'legacy',
+        });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       try {
         await server.connect(transport);
-        await decoyTransport.handleRequest(req, res, req.body);
+        await transport.handleRequest(req, res, req.body);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'unknown';
+        logger.error('trackly-plugin-mcp', 'Error handling plugin MCP request', {
+          error: errorMessage,
+          userId: authInfo.extra.userId,
+        });
+        if (!res.headersSent) {
+          res.status(500).json({
+            jsonrpc: '2.0',
+            error: { code: -32603, message: 'Internal error' },
+            id: null,
+          });
+        }
       } finally {
-        await server.close();
+        if (surface === MCP_MUSE_SURFACE) {
+          await recordMuseConnectorTrace(pool, {
+            userId: authInfo.extra.userId,
+            clientId: authInfo.clientId,
+            method: museConnectorTraceMethod(req.body),
+          });
+        }
+        await server.close().catch(() => {});
       }
-    `), 'createTracklyPluginMcpServer', 'wrong dispatch fixture'),
-    /must directly dispatch req, res, and req\.body through its connected transport/,
+    },
   );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(routerSource.replace(
-      'await server.close();',
-      'await decoyServer.close();',
-    ), 'createTracklyPluginMcpServer', 'wrong close fixture'),
-    /must await closing the exact routed server after dispatch or error/,
+
+  if (!muse && !claude) router.use('/resume', requestIpLimiter, requirePluginEnabled, createPluginResumeRouter(surface.resource));
+
+  router.get('/', requestIpLimiter, (_req, res) => {
+    res.status(405).json({ error: 'Use POST for MCP JSON-RPC requests.' });
+  });
+  router.options('/', requestIpLimiter, (_req, res) => {
+    res.sendStatus(204);
+  });
+  router.delete('/', requestIpLimiter, (_req, res) => {
+    res.status(405).json({ error: 'Session termination is not supported.' });
+  });
+
+  return router;
+}
+export const openaiPluginMcpRouter = createTracklyPluginRouter(MCP_OPENAI_SURFACE);
+export const musePluginMcpRouter = createTracklyPluginRouter(MCP_MUSE_SURFACE);
+export const claudePluginMcpRouter = createTracklyPluginRouter(MCP_CLAUDE_SURFACE);
+export default createTracklyPluginRouter(MCP_PLUGIN_SURFACE);
+`;
+  const verify = (source, label) => () => assertExportedFactoryUsedByPluginRouter(
+    source,
+    'createTracklyPluginMcpServer',
+    label,
   );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(routerSource.replace(
-      'await server.close();',
-      'if (shouldClose) await server.close();',
-    ), 'createTracklyPluginMcpServer', 'conditional close fixture'),
-    /must await closing the exact routed server after dispatch or error/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(routerSource.replace(
-      '} finally {\n      await server.close();\n    }',
-      '} catch (error) { throw error; }',
-    ), 'createTracklyPluginMcpServer', 'missing finally fixture'),
-    /must unconditionally close its routed server in finally/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(routerFixture(`
-      const server = createTracklyPluginMcpServer(authToken);
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    `, '(req as Request & { auth: HostedOAuthAuthInfo }).auth', 'req.body.authToken'),
-    'createTracklyPluginMcpServer', 'shadow token fixture'),
-    /must mint authToken only from authenticated authInfo/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(routerFixture(`
-      const server = createTracklyPluginMcpServer(authToken);
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    `, 'req.body.auth'), 'createTracklyPluginMcpServer', 'raw auth context fixture'),
-    /must derive authInfo from the authenticated request context/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(
-      routerSource.replace("from './plugin-scopes.js'", "from './no-op.js'"),
-      'createTracklyPluginMcpServer',
-      'wrong middleware provenance fixture',
-    ),
-    /must import enforceTracklyPluginScope as enforceTracklyPluginScope exactly once from \.\/plugin-scopes\.js/,
-  );
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(
-      routerSource.replace(
-        'if (!isAllowedMcpOrigin(origin))',
-        'if (false)',
-      ),
-      'createTracklyPluginMcpServer',
-      'no-op origin middleware fixture',
-    ),
-    /validateOrigin.*must preserve its locked executable branch semantics/,
-  );
-  for (const [label, mutation] of [
-    ['aliased', 'const escapedOriginCheck = isAllowedMcpOrigin;'],
-    ['bypassed', 'const alwaysAllowed = isAllowedMcpOrigin(undefined);'],
+  assert.doesNotThrow(verify(routerSource, 'router fixture'));
+  for (const [label, from, to, expected] of [
+    ['dropped Trackly access gate', '    requireTracklyAccess,\n', '',
+      /createTracklyPluginRouter.*must preserve its locked executable branch semantics/],
+    ['legacy scope gate on the OpenAI surface',
+      'surface === MCP_OPENAI_SURFACE ? enforceTracklyOpenaiScope',
+      'surface === MCP_OPENAI_SURFACE ? enforceTracklyPluginScope',
+      /createTracklyPluginRouter.*must preserve its locked executable branch semantics/],
+    ['missing finally close', '        await server.close().catch(() => {});\n', '',
+      /createTracklyPluginRouter.*must preserve its locked executable branch semantics/],
+    ['widened shared egress limiter',
+      'PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX = 6_000', 'PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX = 60_000',
+      /PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX.*must preserve its locked executable definition/],
+    ['widened Muse identity limiter',
+      'const museIdentityLimiter = rateLimit({\n  windowMs: 60_000,\n  max: 120,',
+      'const museIdentityLimiter = rateLimit({\n  windowMs: 60_000,\n  max: 1200,',
+      /museIdentityLimiter.*must preserve its locked executable definition/],
+    ['decoy Router import',
+      "import { Router, type NextFunction, type Request, type Response } from 'express';",
+      "import { Router, type NextFunction, type Request, type Response } from './decoy-express.js';",
+      /must import Router as Router exactly once from express/],
+    ['extra surface export',
+      'export default createTracklyPluginRouter(MCP_PLUGIN_SURFACE);',
+      'export const decoyPluginMcpRouter = createTracklyPluginRouter(MCP_PLUGIN_SURFACE);\nexport default createTracklyPluginRouter(MCP_PLUGIN_SURFACE);',
+      /createTracklyPluginRouter.*must be used only by its four locked surface exports/],
+    ['module-level route ahead of the default export',
+      'export default createTracklyPluginRouter(MCP_PLUGIN_SURFACE);',
+      "const legacyRouter = createTracklyPluginRouter(MCP_PLUGIN_SURFACE);\nlegacyRouter.post('/', (_req, res) => res.sendStatus(204));\nexport default legacyRouter;",
+      /must execute its locked fail-closed top-level statement exactly once/],
+    ['decoy scope module', "} from './plugin-scopes.js';", "} from './no-op.js';",
+      /must import enforceTracklyPluginScope as enforceTracklyPluginScope exactly once from \.\/plugin-scopes\.js/],
+    ['any resource accepted',
+      'auth?.extra?.resource === surface.resource', 'auth?.extra?.resource !== undefined',
+      /enforceCuratedResource.*must preserve its locked executable branch semantics/],
+    ['origin check removed', 'if (!isAllowedMcpOrigin(origin)) {', 'if (false) {',
+      /validateOrigin.*must preserve its locked executable branch semantics/],
   ]) {
-    assert.throws(
-      () => assertExportedFactoryUsedByPluginRouter(
-        routerSource.replace('export function validateOrigin', `${mutation}\n    export function validateOrigin`),
-        'createTracklyPluginMcpServer',
-        `${label} isAllowedMcpOrigin fixture`,
-      ),
-      /isAllowedMcpOrigin.*must not be aliased, escaped, or referenced outside its locked origin check/,
-    );
+    assert.ok(routerSource.includes(from), `${label} mutation must apply`);
+    assert.throws(verify(routerSource.replace(from, to), `${label} fixture`), expected, label);
   }
-  assert.throws(
-    () => assertExportedFactoryUsedByPluginRouter(
-      routerSource.replace("} from './mcp-config.js';", "} from './decoy-mcp-config.js';"),
-      'createTracklyPluginMcpServer',
-      'redirected mcp-config import fixture',
-    ),
-    /must import isAllowedMcpOrigin as isAllowedMcpOrigin exactly once from \.\/mcp-config\.js/,
-  );
 });
 
 test('descriptor extraction binds active annotation and input-schema expressions instead of comments', () => {
@@ -4468,14 +4432,23 @@ export function createTracklyPluginMcpServer() {
 });
 
 test('resume parser carveout rejects widening, removal and fallback changes', () => {
- const source = `export function createApp() { app.use((req, res, next) => { const normalizedPath = (req.path.replace(/\\/+$/, '') || '/').toLowerCase(); if (req.method === 'POST' && normalizedPath === '/api/plugin/trackly/mcp/resume') return next(); return express.json({ limit: '10mb' })(req, res, next); }); app.use((req, res, next) => { const normalizedPath = (req.path.replace(/\\/+$/, '') || '/').toLowerCase(); if (req.method === 'POST' && normalizedPath === '/api/plugin/trackly/mcp/resume') return next(); return express.urlencoded({ extended: false })(req, res, next); }); }`;
+ // close-ai #2016/#2705: the carve-out names the six legacy and OpenAI resume document routes.
+ const paths = "const PLUGIN_RESUME_BODY_PATHS = new Set(['/api/plugin/trackly/mcp/resume', '/api/plugin/trackly/mcp/resume/download', '/api/plugin/trackly/mcp/resume/open', '/api/plugin/trackly/openai/mcp/resume', '/api/plugin/trackly/openai/mcp/resume/download', '/api/plugin/trackly/openai/mcp/resume/open']);";
+ const carveout = "if (req.method === 'POST' && PLUGIN_RESUME_BODY_PATHS.has(normalizedPath)) return next();";
+ const source = `${paths} export function createApp() { app.use((req, res, next) => { const normalizedPath = (req.path.replace(/\\/+$/, '') || '/').toLowerCase(); ${carveout} return express.json({ limit: '10mb' })(req, res, next); }); app.use((req, res, next) => { const normalizedPath = (req.path.replace(/\\/+$/, '') || '/').toLowerCase(); ${carveout} return express.urlencoded({ extended: false })(req, res, next); }); }`;
  assert.doesNotThrow(() => assertResumeGlobalParserCarveout(source, 'parser fixture'));
  const secondParserAt = source.lastIndexOf('app.use(');
  assert.throws(() => assertResumeGlobalParserCarveout(source.slice(0, secondParserAt) + '}', 'removed URL parser'), /reviewed JSON and URL-encoded parsers/);
  const prefix = source.slice(0, secondParserAt), secondParser = source.slice(secondParserAt);
- for (const changed of [secondParser.replace('.toLowerCase()', ''), secondParser.replace("'POST'", "'GET'"), secondParser.replace("normalizedPath === '/api/plugin/trackly/mcp/resume'", "normalizedPath.startsWith('/api/plugin')")]) {
-   assert.throws(() => assertResumeGlobalParserCarveout(prefix + changed, 'weakened URL parser'));
+ for (const changed of [secondParser.replace('.toLowerCase()', ''), secondParser.replace("'POST'", "'GET'"), secondParser.replace('PLUGIN_RESUME_BODY_PATHS.has(normalizedPath)', "normalizedPath.startsWith('/api/plugin')")]) {
+   assert.throws(() => assertResumeGlobalParserCarveout(prefix + changed, 'weakened URL parser'), /exact POST resume document routes|normalize trailing slash/);
  }
 
- for (const mutated of [source.replace("'POST'", "'GET'"), source.replace("normalizedPath === '/api/plugin/trackly/mcp/resume'", "normalizedPath.startsWith('/api/plugin')"), source.replace("if (req.method === 'POST' && normalizedPath === '/api/plugin/trackly/mcp/resume') return next();", ''), source.replace("'10mb'", "'100mb'"), source.replace("return express.urlencoded({ extended: false })", "return express.urlencoded({ extended: true })"), source.replace("return express.urlencoded({ extended: false })(req, res, next);", "return next();")]) assert.throws(() => assertResumeGlobalParserCarveout(mutated, 'mutated parser'));
+ for (const mutated of [source.replace("'POST'", "'GET'"), source.replace('PLUGIN_RESUME_BODY_PATHS.has(normalizedPath)', "normalizedPath.startsWith('/api/plugin')"), source.replace(carveout, ''), source.replace("'10mb'", "'100mb'"), source.replace("return express.urlencoded({ extended: false })", "return express.urlencoded({ extended: true })"), source.replace("return express.urlencoded({ extended: false })(req, res, next);", "return next();")]) assert.throws(() => assertResumeGlobalParserCarveout(mutated, 'mutated parser'));
+ for (const mutated of [
+   source.replace("'/api/plugin/trackly/openai/mcp/resume/open']", "'/api/plugin/trackly/openai/mcp/resume/open', '/api/plugin/trackly/mcp']"),
+   source.replace("'/api/plugin/trackly/mcp/resume/download', ", ''),
+   source.replace(paths, ''),
+   `${paths} ${source}`,
+ ]) assert.throws(() => assertResumeGlobalParserCarveout(mutated, 'mutated carve-out paths'), /PLUGIN_RESUME_BODY_PATHS/);
 });

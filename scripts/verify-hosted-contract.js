@@ -13,7 +13,7 @@ const { HOSTED_RESUME_SECURITY_SOURCE_SHA256, assertHostedResumeSecuritySourceSn
 const assertResumeGlobalParserCarveout = createResumeParserVerifier({ activeNamedDefinitionAst, staticMemberName, parseFullSource, canonicalSchemaAst });
 
 const sha256ExactBytes = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-const CHECKED_IN_HOSTED_FIXTURE_SHA256 = '8a4b659da5d93b549aac81e6c551333fb5fa03ac83ddb6cab7eab03211dda70a';
+const CHECKED_IN_HOSTED_FIXTURE_SHA256 = '3bd5de31bbe39eaa6da3ca9c0ed7bfeb3e59da09f7d827fcdce5a291e052a4ed';
 const HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256 = Object.freeze({
   applyCheckpointActionVariant: '6d83fd691e69b578f683c5e367cc1706a8f74b336e0ff435195f580c2350587c',
   applyCheckpointActionSchema: '6f0b0698b13997eda7100ec00720fff199d936270d232c7de5f55a8fcef2c2ab',
@@ -26,14 +26,167 @@ const HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256 = Object.freeze({
 const APPLY_392_CHECKPOINT_ACTION_SCHEMA_SHA256 = '604ccf2ef203d80f022fde2a10d3e471c64724a3c3473569629f05315953cb21';
 // Exact bytes of close-ai src/mcp/mcp-config.ts at aa74d3e5 (introduced by
 // close-ai #1750): issuer canonicalization, plugin/legacy resources, the MCP
-// browser origin allowlist, and the directory OAuth defaults.
-const HOSTED_MCP_CONFIG_SHA256 = '8deb9acd49bed57e7f154730d65404d4db73e1e248c7561b011ed96b092479b4';
+// browser origin allowlist, and the directory OAuth defaults. Recaptured at
+// close-ai 6be6d4d2: OpenAI, Muse and Claude curated resources and frozen
+// server-owned surface records (#2705, #2777, #3180), isCuratedMcpResource, and
+// https://agent.meta.ai added to the MCP browser origin allowlist (#2777, #2792).
+const HOSTED_MCP_CONFIG_SHA256 = 'fcbae1322bd505a282c415e51fb75b125b02b680a2545bcc3143ac77a5c5b77d';
 // Exact bytes of the two middleware modules that now run before the plugin
 // mount or the shared /api/ limiter at close-ai aa74d3e5: the retired Signals
 // containment (close-ai #1770) and collapseOnboardingTrailingSlashes plus the
 // general limiter's skip predicate (close-ai #1811, #1886).
 const HOSTED_LEGACY_SIGNALS_CONTAINMENT_SHA256 = 'd92c5b8a0b0089704e565e5a8fd0eaeb232a76176d048747ae29f938b4b63613';
-const HOSTED_GENERAL_RATE_LIMIT_SHA256 = 'ee0b9a8a92ae2b3a9ebe7c99916ca3f58e7d6448d360c7ca304eb955edf46359';
+// close-ai #2979 (scraper ingest, dormant until its token is set) and #3131 (public
+// company assets, GET/HEAD only) add exact-path exemptions whose routes own limiters.
+const HOSTED_GENERAL_RATE_LIMIT_SHA256 = 'd525887d4ed7ec24292a33007369e95a850d649eed6a5f46dcc85bf0edc423d3';
+// Reviewed at close-ai 6be6d4d21: #2705/#2711/#2777/#3180 serve the legacy,
+// OpenAI, Muse and Claude catalogs from one factory. Everything before the
+// first registration is locked as exact AST: the surface guard, the server,
+// the empty prompt handler, the shared search request, Claude's search wrapper
+// and the per-surface registerPluginTool helper. Scope enforcement stays in
+// plugin-scopes; this helper only shapes the published descriptors.
+const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `
+  if (options.surface !== 'legacy' && options.surface !== 'openai' && options.surface !== 'muse'
+    && options.surface !== 'claude') {
+    throw new Error('Unknown plugin tool surface');
+  }
+  const server = new McpServer({ name: 'trackly', version: PLUGIN_VERSION });
+  server.server.registerCapabilities({ prompts: {} });
+  server.server.setRequestHandler(ListPromptsRequestSchema, () => ({ prompts: [] }));
+
+  const searchJobsRequest = async (params: any) => {
+    const query = new URLSearchParams();
+    query.set('jobFunction', params.function || ALL_JOB_FUNCTIONS.join(','));
+    if (params.companyId !== undefined) query.set('companyId', String(params.companyId));
+    if (params.keywords) query.set('search', params.keywords);
+    if (params.remote) query.set('usStates', 'REMOTE');
+    if (params.locationFilter) query.set('locationFilter', params.locationFilter);
+    if (params.jobModality) query.set('jobModality', params.jobModality);
+    if (params.status) query.set('status', params.status);
+    if (params.sort) query.set('sort', params.sort);
+    if (params.limit) query.set('limit', String(params.limit));
+    if (params.offset !== undefined) query.set('offset', String(params.offset));
+    return requestApi('GET', \`/api/jobscout/jobs?\${query}\`, authToken);
+  };
+  const claudeSearchJobs = async (params: any) => {
+    try {
+      return claudeSearchToolResult(await searchJobsRequest({ ...params, limit: params.limit ?? CLAUDE_SEARCH_MAX_LIMIT }));
+    } catch (error) {
+      return errorContent(error, 'Failed to search jobs');
+    }
+  };
+
+  const registerPluginTool = (
+    name: string,
+    config: Record<string, any>,
+    handler: (params: any) => Promise<any>,
+  ) => {
+    const register = (toolName: string, toolConfig: Record<string, any>, toolHandler: typeof handler) => {
+      const securitySchemes = [{
+        type: 'oauth2',
+        scopes: requiredScopesForPluginTool(toolName, options.surface) || [],
+      }];
+      return server.registerTool(toolName, {
+        ...toolConfig,
+        _meta: { ...toolConfig._meta, securitySchemes },
+      } as any, toolHandler);
+    };
+    if (options.surface === 'legacy') {
+      const required = requiredScopesForPluginTool(name, 'legacy') ?? [];
+      if (required.some((scope) => scope.startsWith('apply:'))) {
+        config = {
+          ...config,
+          description: \`Requires trackly Apply (apply:* scopes). \${config.description ?? ''}\`.trim(),
+        };
+      }
+      // Same discovery fix Muse uses: a .strict().superRefine root publishes an
+      // empty object. Advertise the inner object and keep the refinement on the call.
+      const discovered = museDiscoveryRegistration(config.inputSchema, handler);
+      return register(name, { ...config, inputSchema: discovered.inputSchema }, discovered.handler);
+    }
+    if (options.surface === 'claude') {
+      if (!isClaudeToolName(name)) return;
+      const entry = CLAUDE_TOOLS[name];
+      const { _meta, ...rest } = config;
+      const meta = museRegistrationMeta(_meta);
+      const discovered = museDiscoveryRegistration(
+        rest.inputSchema,
+        name === 'trackly_search_jobs' ? claudeSearchJobs : handler,
+      );
+      return register(name, {
+        ...rest,
+        title: entry.title,
+        description: entry.description,
+        inputSchema: claudeInputSchema(name, discovered.inputSchema),
+        annotations: claudeToolAnnotations(name),
+        ...(meta ? { _meta: meta } : {}),
+      }, discovered.handler);
+    }
+    if (options.surface === 'muse') {
+      if (!isMuseToolName(name)) return;
+      const { _meta, ...rest } = config;
+      const meta = museRegistrationMeta(_meta);
+      const discovered = museDiscoveryRegistration(rest.inputSchema, handler);
+      return register(name, {
+        ...rest,
+        inputSchema: discovered.inputSchema,
+        annotations: museToolAnnotations(name),
+        ...(meta ? { _meta: meta } : {}),
+      }, discovered.handler);
+    }
+    for (const definition of openaiToolDefinitions(name, config.inputSchema)) {
+      register(definition.name, {
+        ...config,
+        inputSchema: definition.inputSchema,
+        ...(definition.title ? { title: definition.title } : {}),
+        ...(definition.description ? { description: definition.description } : {}),
+        ...(definition.progressOperation ? {
+          outputSchema: config.outputSchema.extend({ operation: z.literal(definition.progressOperation) }),
+          annotations: mutationAnnotations(false, true),
+        } : {}),
+      }, async (input) => {
+        // Discovery uses a serializable object; the original strict union or
+        // refinement still authorizes every call before even a capability GET.
+        const parsed = config.inputSchema.safeParse(definition.toLegacyInput(input));
+        if (!parsed.success) return errorContent(new Error('Invalid tool input'), 'Invalid tool input');
+        return handler(parsed.data);
+      });
+    }
+  };
+`;
+// close-ai #3089: job tools (jobIdKey) normalize closed or missing postings into a
+// non-retryable unavailable result and classify failures; other tools keep the
+// original resultContent/errorContent path. job-result.ts is whole-byte locked.
+const HOSTED_PLUGIN_WRAP_TOOL_SOURCE = `function wrapTool(
+  handler: (params: any) => Promise<unknown>,
+  fallback: string,
+  includeStructuredContent = false,
+  jobIdKey?: string,
+) {
+  return async (params: any) => {
+    try {
+      const result = await handler(params);
+      return resultContent(jobIdKey ? normalizeJobResult(result, params[jobIdKey]) : result, includeStructuredContent);
+    } catch (error: any) {
+      const unavailable = jobIdKey && unavailableJobFromError(
+        { ...error, ...error?.responseBody, status: error?.status }, params[jobIdKey],
+      );
+      if (unavailable) return resultContent(unavailable, true);
+      const response = errorContent(error, fallback);
+      if (!jobIdKey) return response;
+      const payload = JSON.parse(response.content[0].text);
+      return { ...response, ...resultContent(jobFailurePayload(error, payload), true) };
+    }
+  };
+}`;
+const HOSTED_JOB_RESULT_SHA256 = 'e337bad5f2ebcdb4ebfa3379498852fa6fe8f78758f9b54115365e6e69435d43';
+// close-ai #3184: readiness gains onboarding guidance built in plugin-onboarding.ts,
+// which now also owns profileFieldReferenceSchema (same bytes, moved). Questions
+// carry only key, label, input type, sensitivity class and option labels/values;
+// guidance points at https://usetrackly.app/profile and never submits.
+const HOSTED_PLUGIN_ONBOARDING_SHA256 = '5d4c4bd48dcc81f5230eb01e1e3269fa4ce4c9a2340eb232f6cb4104befd26ae';
+// close-ai #2105: rate-limit client IP resolution mounted in the global inventory.
+const HOSTED_CLIENT_IP_SHA256 = '9e09a30d819487315ea4e02d3c1ad1c3a584e65d36bd42882a0aad01610ee7ed';
 const HOSTED_APPLY_REPLAY_HELPER_AST_SHA256 = Object.freeze({
   actionCodeFromStoredCheckpoint: 'b23c10235645aa732c28073adfa2fd72dec0a8f7770b461df8bd5f408f896c6d',
   loadStoredApplyBatchCheckpoint: '598233925c66ca36c69ae3dfe75984ec1d7098f27b8356d51cd6a43a7947bfd6',
@@ -627,15 +780,30 @@ const HOSTED_DEPLOYABLE_PATHS = Object.freeze([
   'src/routes/auth.ts',
 ]);
 
-const REVIEWED_INHERITED_BASELINE = Object.freeze([Object.freeze({
-  sourceCommit: '07c3eb027eb615097c8c4d934bebadda4aec2da9',
-  mergeCommit: 'dded739620bcdee1e6863324c8f660e6b999d0cc',
-  firstParent: '355df4ddbd628d973aa00c619075089a59c8b3e8',
-  relativePath: 'src/services/application-profile/catalog.ts',
-  sourceSha256: 'f4b004c604e69fca5dcf261def0aa0a95709a802d731f85af5c6b8e923e352de',
-  inheritedSha256: '96aacbeeffaa1a80eb554ee7f31a5ffd91b3011130003666d59e8802fd7b9960',
-  originCommit: '1a02a9d81fb44cc7ca2ff0fde173280701695db3', // close-ai PR #1975
-})]);
+// close-ai #3186 (source 345277ec) predates #3158 on main, so the deployed merge 6be6d4d2
+// inherits these four paths from its first parent ccf9e059 (the #3158 merge).
+const REVIEWED_INHERITED_BASELINE = Object.freeze([
+  ['src/mcp/plugin-server.ts', '0667a7058a96f9f047e4420e9886dce69b6ab55510b95d8a5962dfbb0c5a227e',
+    '75c8e4341220950af16ac9708586420ee08a24db4627ef3a4e55f099f9c67bc0',
+    'ccf9e0590bfe6b7d29df8b3014800aa99d353a53'], // close-ai PR #3158 merge (combines #3180 and #3184)
+  ['src/mcp/__tests__/plugin-server.test.ts', '46f37e64626d56d602cacadc483e6c7213df6e13949c20a1af9b15c2f2cfb322',
+    '550ffdcb65c88849ee5327d028bf6e75d1d6cf61ae40d2c18fe8e6c0a95e8515',
+    'ccf9e0590bfe6b7d29df8b3014800aa99d353a53'], // close-ai PR #3158 merge (combines #3180 and #3184)
+  ['src/services/application-profile/catalog.ts', '233a964351b653020d8dc7dd193af958afa123a23da1e37d20abb4a6690c059c',
+    '469e4c149a84d0d16c6e88f309baab56325a2bcbf9306775b28555b21d793f6a',
+    '1c8f87057eaa66b17e729c87cf13098387ff56ad'], // close-ai PR #3158 head
+  ['src/services/application-profile/service.ts', '029446f02cfb83b747effb7fb4badeaa4771786392df644f393f9584a3637726',
+    '313e9a040cf2d0f4dc23affebf7b2c800d818023024cb11b299a76f3a3443352',
+    '1c8f87057eaa66b17e729c87cf13098387ff56ad'], // close-ai PR #3158 head
+].map(([relativePath, sourceSha256, inheritedSha256, originCommit]) => Object.freeze({
+  sourceCommit: '345277ec453c0591e055ec992e38cc3f757cd9c8',
+  mergeCommit: '6be6d4d2105f7de7f491c7b55bfdf00057d193f4',
+  firstParent: 'ccf9e0590bfe6b7d29df8b3014800aa99d353a53',
+  relativePath,
+  sourceSha256,
+  inheritedSha256,
+  originCommit,
+})));
 
 function assertMergeCommitPreservesPaths(repository, sourceCommit, mergeCommit, relativePaths, inheritedBaseline = []) {
   const unused = new Set(inheritedBaseline);
@@ -1066,6 +1234,12 @@ function directToolRegistrationsInExportedFunction(
   {
     requireUiResourceLoop = false,
     expectedParameters = 'authToken: string, requestApi: PluginApiRequest = apiRequest',
+    // When set, every statement before the first registration must match this
+    // exact source as canonical AST (helper body included); the generic
+    // four-statement prefix and helper-shape checks below then do not apply.
+    lockedPrefixSource = null,
+    expectedPrefixDeclarators = null,
+    uiResourceLoopSource = null,
   } = {},
 ) {
   assertImportBinding(
@@ -1118,6 +1292,14 @@ function directToolRegistrationsInExportedFunction(
   );
 
   const preRegistrationStatements = factory.body.body.slice(0, firstRegistrationIndex);
+  if (lockedPrefixSource !== null) {
+    assert.deepEqual(
+      preRegistrationStatements.map((statement) => canonicalSchemaAst(statement)),
+      parseFullSource(lockedPrefixSource, `${expectedFunction} locked pre-registration prefix`)
+        .program.body.map((statement) => canonicalSchemaAst(statement)),
+      `${expectedFunction} in ${sourcePath} must preserve the exact reviewed statements before tool registration`,
+    );
+  } else {
   assert.equal(
     preRegistrationStatements.length,
     4,
@@ -1138,13 +1320,14 @@ function directToolRegistrationsInExportedFunction(
     )),
     `${expectedFunction} in ${sourcePath} must preserve the exact prompt capability and empty prompt handler before tool registration`,
   );
+  }
   const directDeclarators = preRegistrationStatements.flatMap((statement) => (
     statement.type === 'VariableDeclaration' ? statement.declarations : []
   ));
   assert.deepEqual(
     directDeclarators.map((declarator) => declarator.id?.type === 'Identifier' && declarator.id.name),
-    ['server', expectedCallee],
-    `${expectedFunction} in ${sourcePath} must declare only server then ${expectedCallee} before registering tools`,
+    expectedPrefixDeclarators ?? ['server', expectedCallee],
+    `${expectedFunction} in ${sourcePath} must declare only ${(expectedPrefixDeclarators ?? ['server', expectedCallee]).join(', ')} before registering tools`,
   );
   const serverBindings = directDeclarators.filter((declarator) => (
     declarator.id?.type === 'Identifier'
@@ -1191,6 +1374,13 @@ function directToolRegistrationsInExportedFunction(
     ['name', 'config', 'handler'],
     `${expectedCallee} in ${sourcePath} must receive the exact name, config, and handler bindings`,
   );
+  // A locked prefix already pins the helper body as exact AST (stricter than
+  // the shape checks below, which describe only the original one-return helper).
+  // There the single server.registerTool call is the inner register helper's return.
+  let helperRegisterToolCallee = lockedPrefixSource === null
+    ? null
+    : registrationHelper.body.body[0].declarations[0].init.body.body.at(-1).argument.callee;
+  if (lockedPrefixSource === null) {
   const helperReturnStatements = registrationHelper.body.body.filter((statement) => (
     statement.type === 'ReturnStatement'
   ));
@@ -1221,6 +1411,8 @@ function directToolRegistrationsInExportedFunction(
     }`, { plugins: ['typescript'] }).body),
     `${expectedCallee} in ${sourcePath} must forward the exact name, config, and handler bindings through the locked security metadata augmentation`,
   );
+  helperRegisterToolCallee = helperReturnStatements[0].argument.callee;
+  }
 
   const factoryReturns = [];
   function visitFactoryReturns(node) {
@@ -1297,7 +1489,7 @@ function directToolRegistrationsInExportedFunction(
   );
   assert.deepEqual(
     lowLevelRegistrationReferences,
-    [helperReturnStatements[0].argument.callee],
+    [helperRegisterToolCallee],
     `${expectedFunction} in ${sourcePath} must register tools only through the verified ${expectedCallee} helper`,
   );
   assert.equal(
@@ -1327,7 +1519,7 @@ function directToolRegistrationsInExportedFunction(
   }
   visitServerReferences(factory);
   const expectedUiResourceLoop = parseFullSource(
-    [
+    uiResourceLoopSource ?? [
       'for (const view of Object.keys(TRACKLY_PLUGIN_UI) as Array<keyof typeof TRACKLY_PLUGIN_UI>) {',
       '  const uri = TRACKLY_PLUGIN_UI[view];',
       '  server.registerResource(`trackly-${view}-card`, uri, {',
@@ -1362,12 +1554,17 @@ function directToolRegistrationsInExportedFunction(
       `${expectedFunction} in ${sourcePath} may contain at most one exact locked plugin UI resource loop`,
     );
   }
-  const uiResourceReceiver = uiResourceLoops[0]?.body?.body?.[1]?.expression?.callee?.object;
+  // A reviewed surface guard may wrap the loop as `if (...) for (...) {...}`.
+  const uiResourceLoop = uiResourceLoops[0]?.type === 'IfStatement'
+    ? uiResourceLoops[0].consequent
+    : uiResourceLoops[0];
+  const uiResourceReceiver = uiResourceLoop?.body?.body?.[1]?.expression?.callee?.object;
   const allowedServerReferences = [
     serverBindings[0].id,
-    preRegistrationStatements[1].expression.callee.object.object,
-    preRegistrationStatements[2].expression.callee.object.object,
-    helperReturnStatements[0].argument.callee.object,
+    ...preRegistrationStatements
+      .filter((statement) => statement.type === 'ExpressionStatement')
+      .map((statement) => statement.expression.callee.object.object),
+    helperRegisterToolCallee.object,
     ...(uiResourceReceiver ? [uiResourceReceiver] : []),
     factoryReturns[0].argument,
   ];
@@ -1379,24 +1576,145 @@ function directToolRegistrationsInExportedFunction(
   return registrations;
 }
 
+const HOSTED_PLUGIN_ROUTER_FACTORY_SOURCE = `function createTracklyPluginRouter(surface: CuratedMcpSurface = MCP_PLUGIN_SURFACE) {
+  if (surface !== MCP_PLUGIN_SURFACE && surface !== MCP_OPENAI_SURFACE && surface !== MCP_MUSE_SURFACE
+    && surface !== MCP_CLAUDE_SURFACE) {
+    throw new Error('Unknown curated MCP surface');
+  }
+  const muse = surface === MCP_MUSE_SURFACE;
+  const claude = surface === MCP_CLAUDE_SURFACE;
+  const requestIpLimiter = muse ? museIpLimiter : claude ? claudeIpLimiter : ipLimiter;
+  const requestIdentityLimiter = muse ? museIdentityLimiter : claude ? claudeIdentityLimiter : identityLimiter;
+  const router = Router();
+  const bearerAuth = requireBearerAuth({ verifier: tracklyOAuthProvider, resourceMetadataUrl: surface.metadataUrl });
+  router.post(
+    '/',
+    requestIpLimiter,
+    requirePluginEnabled,
+    validateOrigin,
+    ...(muse ? [requireMuseConnectorSchema] : []),
+    bearerAuth,
+    enforceCuratedResource(surface),
+    requireTracklyAccess,
+    surface === MCP_OPENAI_SURFACE ? enforceTracklyOpenaiScope
+      : muse ? enforceTracklyMuseScope
+      : claude ? enforceTracklyClaudeScope
+      : enforceTracklyPluginScope,
+    requestIdentityLimiter,
+    async (req: Request, res: Response) => {
+      const authInfo = (req as Request & { auth: HostedOAuthAuthInfo }).auth;
+      const authToken = generateHostedOAuthInternalToken(authInfo);
+      const server = surface === MCP_MUSE_SURFACE
+        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'muse' })
+        : claude
+        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'claude' })
+        : createTracklyPluginMcpServer(authToken, apiRequest, async () => {
+          const { capability, filenameSha256: _filenameHash, ...document } = await pluginResumeDocuments(surface.resource).prepare({
+            userId: authInfo.extra.userId, authEpoch: authInfo.extra.authEpoch,
+            clientId: authInfo.clientId, grantId: authInfo.extra.grantId,
+          });
+          return { ...document, openUrl: \`\${surface.resource}/resume#\${capability}\` };
+        }, surface === MCP_OPENAI_SURFACE ? MCP_OPENAI_SURFACE.resumePath : MCP_PLUGIN_SURFACE.resumePath, {
+          surface: surface === MCP_OPENAI_SURFACE ? 'openai' : 'legacy',
+        });
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      try {
+        await server.connect(transport);
+        await transport.handleRequest(req, res, req.body);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'unknown';
+        logger.error('trackly-plugin-mcp', 'Error handling plugin MCP request', {
+          error: errorMessage,
+          userId: authInfo.extra.userId,
+        });
+        if (!res.headersSent) {
+          res.status(500).json({
+            jsonrpc: '2.0',
+            error: { code: -32603, message: 'Internal error' },
+            id: null,
+          });
+        }
+      } finally {
+        if (surface === MCP_MUSE_SURFACE) {
+          await recordMuseConnectorTrace(pool, {
+            userId: authInfo.extra.userId,
+            clientId: authInfo.clientId,
+            method: museConnectorTraceMethod(req.body),
+          });
+        }
+        await server.close().catch(() => {});
+      }
+    },
+  );
+
+  if (!muse && !claude) router.use('/resume', requestIpLimiter, requirePluginEnabled, createPluginResumeRouter(surface.resource));
+
+  router.get('/', requestIpLimiter, (_req, res) => {
+    res.status(405).json({ error: 'Use POST for MCP JSON-RPC requests.' });
+  });
+  router.options('/', requestIpLimiter, (_req, res) => {
+    res.sendStatus(204);
+  });
+  router.delete('/', requestIpLimiter, (_req, res) => {
+    res.status(405).json({ error: 'Session termination is not supported.' });
+  });
+
+  return router;
+}`;
+
 function assertExportedFactoryUsedByPluginRouter(
   source,
   expectedFactory,
   sourcePath,
-  expectedFactoryArguments = ['authToken'],
 ) {
   const ast = parseFullSource(source, sourcePath);
   assertImportBinding(source, 'Router', 'Router', 'express', sourcePath);
-  assertActiveVariableInitializerAst(source, 'router', 'Router()', sourcePath);
-  const exportedRouters = ast.program.body.filter((statement) => (
+  // close-ai #2705, #2777, #2792 and #3180 replaced the module-level router with
+  // createTracklyPluginRouter(surface), one router per curated surface. Its exact
+  // semantic AST locks the legacy POST / chain (ip limiter, enabled, origin,
+  // bearer, exact resource, Trackly access, legacy scope gate, identity limiter),
+  // the handler (authInfo -> internal token -> factory -> stateless transport,
+  // connect then dispatch, close in finally), the /resume mount, every other
+  // surface branch, and the confinement of each router to its factory.
+  assertActiveFunctionDefinitionAst(
+    source,
+    'createTracklyPluginRouter',
+    HOSTED_PLUGIN_ROUTER_FACTORY_SOURCE,
+    sourcePath,
+  );
+  const routerFactory = activeNamedDefinitionAst(source, 'createTracklyPluginRouter', sourcePath);
+  const exportedRouterStatements = [
+    'export const openaiPluginMcpRouter = createTracklyPluginRouter(MCP_OPENAI_SURFACE);',
+    'export const musePluginMcpRouter = createTracklyPluginRouter(MCP_MUSE_SURFACE);',
+    'export const claudePluginMcpRouter = createTracklyPluginRouter(MCP_CLAUDE_SURFACE);',
+    'export default createTracklyPluginRouter(MCP_PLUGIN_SURFACE);',
+  ].map((statement) => assertActiveTopLevelStatementAst(source, statement, sourcePath));
+  const routerFactoryCalls = exportedRouterStatements.map((statement) => (
     statement.type === 'ExportDefaultDeclaration'
-    && statement.declaration?.type === 'Identifier'
-    && statement.declaration.name === 'router'
+      ? statement.declaration.callee
+      : statement.declaration.declarations[0].init.callee
+  ));
+  assert.deepEqual(
+    collectBindingReferences(ast, 'createTracklyPluginRouter', () => false),
+    [routerFactory.id, ...routerFactoryCalls],
+    `createTracklyPluginRouter in ${sourcePath} must be used only by its four locked surface exports`,
+  );
+  const routerReferences = collectBindingReferences(ast, 'Router', () => false).filter((reference) => (
+    reference.start > routerFactory.start && reference.end < routerFactory.end
   ));
   assert.equal(
-    exportedRouters.length,
+    routerReferences.length,
     1,
-    `${sourcePath} must default-export the exact canonical Express router receiving POST /`,
+    `${sourcePath} must create its Express router only inside createTracklyPluginRouter`,
+  );
+  assert.equal(
+    collectBindingReferences(ast, 'Router', () => false).filter((reference) => (
+      !(reference.start > routerFactory.start && reference.end < routerFactory.end)
+    )).every((reference) => ast.program.body.some((statement) => (
+      statement.type === 'ImportDeclaration' && reference.start >= statement.start && reference.end <= statement.end
+    ))),
+    true,
+    `${sourcePath} must not reference Router outside its import and createTracklyPluginRouter`,
   );
   assertImportBinding(
     source,
@@ -1433,107 +1751,27 @@ function assertExportedFactoryUsedByPluginRouter(
     1,
     `${sourcePath} must import generateHostedOAuthInternalToken exactly once from ./server.js`,
   );
-  const postRoutes = ast.program.body.flatMap((statement) => {
-    const call = statement.type === 'ExpressionStatement' ? statement.expression : null;
-    return call?.type === 'CallExpression'
-      && babelCalleeName(call.callee) === 'router.post'
-      && call.arguments[0]?.type === 'StringLiteral'
-      && call.arguments[0].value === '/'
-      ? [call]
-      : [];
-  });
-  assert.equal(
-    postRoutes.length,
-    1,
-    `${sourcePath} must execute exactly one POST / plugin route registration at module initialization`,
-  );
-  const canonicalPostIndex = ast.program.body.findIndex((statement) => (
-    statement.type === 'ExpressionStatement' && statement.expression === postRoutes[0]
-  ));
-  const competingRoutes = ast.program.body.slice(0, canonicalPostIndex).filter((statement) => {
-    const call = statement.type === 'ExpressionStatement' ? statement.expression : null;
-    if (call?.type !== 'CallExpression') return false;
-    const callee = babelCalleeName(call.callee);
-    const chainedRoute = rootRouteChain(call);
-    if (chainedRoute) {
-      const mayHandlePost = chainedRoute.methods.some((method) => method === null || ['post', 'all'].includes(method));
-      return mayHandlePost && !isStaticallyDisjointFromRootPath(chainedRoute.path);
-    }
-    const directReceiver = call.callee?.type === 'MemberExpression'
-      ? unwrapTransparentExpression(call.callee.object)
-      : null;
-    if (directReceiver?.type === 'Identifier' && directReceiver.name === 'router' && call.callee.computed) {
-      const method = call.callee.property?.type === 'StringLiteral' ? call.callee.property.value : null;
-      if (method === null || ['post', 'all', 'use', 'route'].includes(method)) {
-        return !isStaticallyDisjointFromRootPath(call.arguments[0]);
-      }
-    }
-    if (!['router.post', 'router.all', 'router.use', 'router.route'].includes(callee)) return false;
-    return !isStaticallyDisjointFromRootPath(call.arguments[0]);
-  });
-  assert.equal(
-    competingRoutes.length,
-    0,
-    `${sourcePath} must not register an earlier router mount that could cover POST / ahead of the authenticated route`,
-  );
-  const routerDeclaration = ast.program.body.flatMap((statement) => (
-    statement.type === 'VariableDeclaration'
-      ? statement.declarations.filter((declaration) => (
-        declaration.id?.type === 'Identifier' && declaration.id.name === 'router'
-      ))
-      : []
-  ))[0];
-  const lockedRouteReceivers = ast.program.body.flatMap((statement) => {
-    const call = statement.type === 'ExpressionStatement' ? statement.expression : null;
-    const callee = unwrapTransparentExpression(call?.callee);
-    if (callee?.type !== 'MemberExpression') return [];
-    const receiver = unwrapTransparentExpression(callee.object);
-    const method = staticMemberName(callee);
-    return receiver?.type === 'Identifier'
-      && receiver.name === 'router'
-      && (method === 'route' || EXPRESS_ROUTE_CALL_METHODS.has(method))
-      ? [receiver]
-      : [];
-  });
-  assert.deepEqual(
-    collectBindingReferences(ast, 'router', () => false),
-    [routerDeclaration.id, ...lockedRouteReceivers, exportedRouters[0].declaration],
-    `router in ${sourcePath} must not be aliased, escaped, mutated, or referenced outside its locked route registrations and default export`,
-  );
-  const handler = postRoutes[0].arguments.at(-1);
-  assert.ok(
-    handler?.type === 'ArrowFunctionExpression' || handler?.type === 'FunctionExpression',
-    `POST / in ${sourcePath} must end with a function handler`,
-  );
-  assert.deepEqual(
-    handler.params.map((parameter) => parameter.type === 'Identifier' ? parameter.name : null),
-    ['req', 'res'],
-    `POST / handler in ${sourcePath} must bind its authenticated request and response directly`,
-  );
-  assert.equal(handler.body?.type, 'BlockStatement', `POST / handler in ${sourcePath} must use a block body`);
-  assert.deepEqual(
-    postRoutes[0].arguments.slice(1, -1).map((middleware) => (
-      middleware.type === 'Identifier' ? middleware.name : null
-    )),
-    [
-      'ipLimiter',
-      'requirePluginEnabled',
-      'validateOrigin',
-      'bearerAuth',
-      'enforcePluginResource',
-      'requireTracklyAccess',
-      'enforceTracklyPluginScope',
-      'identityLimiter',
-    ],
-    `POST / in ${sourcePath} must authenticate and authorize the request before its handler`,
-  );
+
   for (const [importedName, localName, moduleName] of [
     ['default', 'rateLimit', 'express-rate-limit'],
     ['ipKeyGenerator', 'ipKeyGenerator', 'express-rate-limit'],
     ['requireBearerAuth', 'requireBearerAuth', '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js'],
     ['tracklyOAuthProvider', 'tracklyOAuthProvider', './oauth-provider.js'],
-    ['MCP_PLUGIN_RESOURCE', 'MCP_PLUGIN_RESOURCE', './mcp-tokens.js'],
     ['enforceTracklyPluginScope', 'enforceTracklyPluginScope', './plugin-scopes.js'],
+    ['enforceTracklyOpenaiScope', 'enforceTracklyOpenaiScope', './plugin-scopes.js'],
+    ['enforceTracklyMuseScope', 'enforceTracklyMuseScope', './plugin-scopes.js'],
+    ['enforceTracklyClaudeScope', 'enforceTracklyClaudeScope', './plugin-scopes.js'],
+    ['apiRequest', 'apiRequest', './plugin-server.js'],
+    ['createPluginResumeRouter', 'createPluginResumeRouter', './plugin-resume-router.js'],
+    ['pluginResumeDocuments', 'pluginResumeDocuments', './plugin-resume-store.js'],
+    ['pool', 'pool', '../config/database.js'],
+    ['museConnectorTraceMethod', 'museConnectorTraceMethod', './connector-revocation.js'],
+    ['recordMuseConnectorTrace', 'recordMuseConnectorTrace', './connector-revocation.js'],
+    ['requireMuseConnectorSchema', 'requireMuseConnectorSchema', './muse-schema-readiness.js'],
+    ['MCP_PLUGIN_SURFACE', 'MCP_PLUGIN_SURFACE', './mcp-config.js'],
+    ['MCP_OPENAI_SURFACE', 'MCP_OPENAI_SURFACE', './mcp-config.js'],
+    ['MCP_MUSE_SURFACE', 'MCP_MUSE_SURFACE', './mcp-config.js'],
+    ['MCP_CLAUDE_SURFACE', 'MCP_CLAUDE_SURFACE', './mcp-config.js'],
     ['requireTracklyAccess', 'requireTracklyAccess', '../services/trackly-access.js'],
     ['azureRehearsalRateLimitOptions', 'azureRehearsalRateLimitOptions', '../utils/azure-rehearsal-ip.js'],
     // close-ai #1750 moved the plugin origin allowlist and resource metadata
@@ -1588,28 +1826,27 @@ function assertExportedFactoryUsedByPluginRouter(
     lockedAllowedOriginReferences,
     `isAllowedMcpOrigin in ${sourcePath} must not be aliased, escaped, or referenced outside its locked origin check`,
   );
-  assert.deepEqual(
-    canonicalSchemaAst(activeVariableDeclarator(source, 'bearerAuth', sourcePath).declarator.init),
-    canonicalSchemaAst(babelParser.parseExpression(
-      'requireBearerAuth({ verifier: tracklyOAuthProvider, resourceMetadataUrl: RESOURCE_METADATA_URL })',
-      { plugins: ['typescript'] },
-    )),
-    `bearerAuth in ${sourcePath} must be the SDK bearer authentication middleware`,
+  // bearerAuth is now built per surface inside the AST-locked factory from
+  // surface.metadataUrl. The resource gate is one exact factory per surface;
+  // the legacy 401 adds error="invalid_token" (close-ai #2705).
+  assertActiveVariableInitializerAst(
+    source,
+    'enforcePluginResource',
+    'enforceCuratedResource(MCP_PLUGIN_SURFACE)',
+    sourcePath,
   );
   assertActiveFunctionDefinitionAst(
     source,
-    'enforcePluginResource',
-    `function enforcePluginResource(
-      req: Request,
-      res: Response,
-      next: NextFunction,
-    ): void {
-      if ((req as Request & { auth?: HostedOAuthAuthInfo }).auth?.extra?.resource === MCP_PLUGIN_RESOURCE) {
-        next();
-        return;
-      }
-      res.setHeader('WWW-Authenticate', \`Bearer resource_metadata="\${RESOURCE_METADATA_URL}"\`);
-      res.status(401).json({ error: 'Bearer token is not valid for the trackly plugin resource' });
+    'enforceCuratedResource',
+    `function enforceCuratedResource(surface: CuratedMcpSurface) {
+      return (req: Request, res: Response, next: NextFunction): void => {
+        if ((req as Request & { auth?: HostedOAuthAuthInfo }).auth?.extra?.resource === surface.resource) {
+          next(); return;
+        }
+        const tokenError = surface === MCP_PLUGIN_SURFACE ? 'error="invalid_token", ' : '';
+        res.setHeader('WWW-Authenticate', \`Bearer \${tokenError}resource_metadata="\${surface.metadataUrl}"\`);
+        res.status(401).json({ error: 'Bearer token is not valid for the trackly plugin resource' });
+      };
     }`,
     sourcePath,
   );
@@ -1666,193 +1903,40 @@ function assertExportedFactoryUsedByPluginRouter(
     })`,
     sourcePath,
   );
-  const directHandlerDeclarators = handler.body.body.flatMap((statement) => (
-    statement.type === 'VariableDeclaration' ? statement.declarations : []
-  ));
-  const handlerInitializer = (name) => {
-    const matches = directHandlerDeclarators.filter((declarator) => (
-      declarator.id?.type === 'Identifier' && declarator.id.name === name
-    ));
-    assert.equal(matches.length, 1, `POST / handler in ${sourcePath} must directly bind ${name} exactly once`);
-    assert.ok(matches[0].init, `${name} in POST / handler in ${sourcePath} must have an initializer`);
-    return matches[0].init;
-  };
-  assert.deepEqual(
-    canonicalSchemaAst(handlerInitializer('authInfo')),
-    canonicalSchemaAst(babelParser.parseExpression(
-      '(req as Request & { auth: HostedOAuthAuthInfo }).auth',
-      { plugins: ['typescript'] },
-    )),
-    `POST / handler in ${sourcePath} must derive authInfo from the authenticated request context`,
-  );
-  assert.deepEqual(
-    canonicalSchemaAst(handlerInitializer('authToken')),
-    canonicalSchemaAst(babelParser.parseExpression(
-      'generateHostedOAuthInternalToken(authInfo)',
-      { plugins: ['typescript'] },
-    )),
-    `POST / handler in ${sourcePath} must mint authToken only from authenticated authInfo`,
-  );
-  const factoryCalls = handler.body.body.flatMap((statement) => {
-    if (statement.type !== 'VariableDeclaration') return [];
-    return statement.declarations.filter((declarator) => (
-      declarator.init?.type === 'CallExpression'
-      && babelCalleeName(declarator.init.callee) === expectedFactory
-    ));
-  });
-  assert.equal(
-    factoryCalls.length,
-    1,
-    `POST / handler in ${sourcePath} must directly instantiate ${expectedFactory} exactly once`,
-  );
-  assert.equal(factoryCalls[0].id?.type, 'Identifier');
-  assert.equal(factoryCalls[0].id.name, 'server');
-  assert.equal(factoryCalls[0].init.arguments.length, expectedFactoryArguments.length);
-  expectedFactoryArguments.forEach((expectedArgument, index) => {
-    assert.deepEqual(
-      canonicalSchemaAst(factoryCalls[0].init.arguments[index]),
-      canonicalSchemaAst(babelParser.parseExpression(expectedArgument, { plugins: ['typescript'] })),
-      `${expectedFactory} argument ${index + 1} in ${sourcePath} must preserve its locked provenance`,
+  // Muse and Claude keep their own shared-egress and per-identity budgets with
+  // the same shape as the legacy limiters (close-ai #2777, #3180).
+  for (const [limiterName, identity] of [
+    ['museIpLimiter', false], ['museIdentityLimiter', true],
+    ['claudeIpLimiter', false], ['claudeIdentityLimiter', true],
+  ]) {
+    assertActiveVariableInitializerAst(
+      source,
+      limiterName,
+      identity
+        ? `rateLimit({
+          windowMs: 60_000,
+          max: 120,
+          standardHeaders: true,
+          legacyHeaders: false,
+          keyGenerator: (req) => {
+            const auth = (req as Request & { auth?: HostedOAuthAuthInfo }).auth;
+            return auth?.extra?.userId
+              ? \`\${auth.clientId}:\${auth.extra.userId}\`
+              : ipKeyGenerator(req.ip || '');
+          },
+          message: { error: 'trackly plugin rate limit exceeded. Try again later.' },
+        })`
+        : `rateLimit({
+          windowMs: 60_000,
+          max: PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX,
+          standardHeaders: true,
+          legacyHeaders: false,
+          message: { error: 'Too many trackly plugin requests. Try again later.' },
+          ...azureRehearsalRateLimitOptions(),
+        })`,
+      sourcePath,
     );
-  });
-
-  const transportDeclarations = handler.body.body.flatMap((statement) => {
-    if (statement.type !== 'VariableDeclaration') return [];
-    return statement.declarations.filter((declarator) => (
-      declarator.id?.type === 'Identifier'
-      && declarator.id.name === 'transport'
-      && declarator.init?.type === 'NewExpression'
-      && babelCalleeName(declarator.init.callee) === 'StreamableHTTPServerTransport'
-    ));
-  });
-  assert.equal(
-    transportDeclarations.length,
-    1,
-    `POST / handler in ${sourcePath} must directly create exactly one StreamableHTTPServerTransport`,
-  );
-  assert.deepEqual(
-    canonicalSchemaAst(transportDeclarations[0].init),
-    canonicalSchemaAst(babelParser.parseExpression(
-      'new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })',
-    )),
-    `POST / handler in ${sourcePath} must preserve the canonical stateless StreamableHTTPServerTransport construction`,
-  );
-  const tryStatements = handler.body.body.filter((statement) => statement.type === 'TryStatement');
-  assert.equal(tryStatements.length, 1, `POST / handler in ${sourcePath} must execute exactly one live transport try block`);
-  const liveTry = tryStatements[0];
-  const liveTryIndex = handler.body.body.indexOf(liveTry);
-  assert.deepEqual(
-    handler.body.body.slice(0, liveTryIndex).map((statement) => (
-      statement.type === 'VariableDeclaration'
-        && statement.declarations.length === 1
-        && statement.declarations[0].id?.type === 'Identifier'
-        ? statement.declarations[0].id.name
-        : null
-    )),
-    ['authInfo', 'authToken', 'server', 'transport'],
-    `POST / handler in ${sourcePath} must reach factory creation and its live transport without an earlier exit, throw, branch, or side effect`,
-  );
-  const directConnects = handler.body.body.flatMap((statement) => {
-    if (statement.type !== 'TryStatement') return [];
-    return statement.block.body.filter((candidate) => (
-      candidate.type === 'ExpressionStatement'
-      && candidate.expression?.type === 'AwaitExpression'
-      && candidate.expression.argument?.type === 'CallExpression'
-      && babelCalleeName(candidate.expression.argument.callee) === 'server.connect'
-      && candidate.expression.argument.arguments.length === 1
-      && candidate.expression.argument.arguments[0]?.type === 'Identifier'
-      && candidate.expression.argument.arguments[0].name === 'transport'
-    ));
-  });
-  assert.equal(
-    directConnects.length,
-    1,
-    `POST / handler in ${sourcePath} must directly connect its exact factory-result server to its live transport`,
-  );
-  const requestDispatches = handler.body.body.flatMap((statement) => {
-    if (statement.type !== 'TryStatement') return [];
-    return statement.block.body.filter((candidate) => {
-      const expression = candidate.type === 'ExpressionStatement' ? candidate.expression : null;
-      const call = expression?.type === 'AwaitExpression' ? expression.argument : null;
-      return call?.type === 'CallExpression'
-        && babelCalleeName(call.callee) === 'transport.handleRequest'
-        && call.arguments.length === 3
-        && call.arguments[0]?.type === 'Identifier'
-        && call.arguments[0].name === 'req'
-        && call.arguments[1]?.type === 'Identifier'
-        && call.arguments[1].name === 'res'
-        && call.arguments[2]?.type === 'MemberExpression'
-        && !call.arguments[2].computed
-        && call.arguments[2].object?.type === 'Identifier'
-        && call.arguments[2].object.name === 'req'
-        && call.arguments[2].property?.type === 'Identifier'
-        && call.arguments[2].property.name === 'body';
-    });
-  });
-  assert.equal(
-    requestDispatches.length,
-    1,
-    `POST / handler in ${sourcePath} must directly dispatch req, res, and req.body through its connected transport`,
-  );
-  assert.ok(
-    directConnects[0].start < requestDispatches[0].start,
-    `POST / handler in ${sourcePath} must connect the server before dispatching the live request`,
-  );
-  assert.deepEqual(
-    liveTry.block.body.slice(0, 2),
-    [directConnects[0], requestDispatches[0]],
-    `POST / handler in ${sourcePath} must reach connect and request dispatch without an intervening exit or throw`,
-  );
-  assert.equal(
-    liveTry.finalizer?.type,
-    'BlockStatement',
-    `POST / handler in ${sourcePath} must unconditionally close its routed server in finally`,
-  );
-  assert.equal(
-    liveTry.finalizer.body.length,
-    1,
-    `POST / handler in ${sourcePath} must close its routed server as the sole finally operation`,
-  );
-  const closeStatement = liveTry.finalizer.body[0];
-  assert.equal(
-    closeStatement?.type,
-    'ExpressionStatement',
-    `POST / handler in ${sourcePath} must await closing the exact routed server after dispatch or error`,
-  );
-  assert.equal(
-    closeStatement.expression?.type,
-    'AwaitExpression',
-    `POST / handler in ${sourcePath} must await closing the exact routed server after dispatch or error`,
-  );
-  const awaitedClose = closeStatement.expression.argument;
-  assert.equal(
-    awaitedClose?.type,
-    'CallExpression',
-    `POST / handler in ${sourcePath} must await closing the exact routed server after dispatch or error`,
-  );
-  let closeCall = awaitedClose;
-  if (awaitedClose.callee?.type === 'MemberExpression'
-    && !awaitedClose.callee.computed
-    && awaitedClose.callee.property?.type === 'Identifier'
-    && awaitedClose.callee.property.name === 'catch') {
-    assert.deepEqual(
-      canonicalSchemaAst(awaitedClose.arguments),
-      canonicalSchemaAst(babelParser.parseExpression('[() => {}]', { plugins: ['typescript'] }).elements),
-      `POST / handler in ${sourcePath} may only suppress close failure with the locked empty catch`,
-    );
-    closeCall = awaitedClose.callee.object;
   }
-  assert.equal(
-    closeCall?.type,
-    'CallExpression',
-    `POST / handler in ${sourcePath} must await closing the exact routed server after dispatch or error`,
-  );
-  assert.equal(
-    babelCalleeName(closeCall.callee),
-    'server.close',
-    `POST / handler in ${sourcePath} must await closing the exact routed server after dispatch or error`,
-  );
-  assert.equal(closeCall.arguments.length, 0);
 }
 
 function staticExpressPathCovers(candidatePath, mountPath, method) {
@@ -1906,13 +1990,19 @@ function canonicalPluginMount(factory, routerBinding, mountPath, sourcePath) {
 // path unchanged), URL-encoded parser (PR #2014 now bypasses only the normalized
 // POST resume route; assertResumeGlobalParserCarveout independently locks both
 // parser bodies and fallbacks), request id, UI redirect, helmet, maintenance.
+// Recaptured at close-ai 6be6d4d2: app-wide CORS adds only the OpenAI, Muse and
+// Claude MCP transport and discovery paths to preflightContinue (#2705, #2777,
+// #3180); clientIpResolutionMiddleware (#2105, whole-byte locked below) resolves
+// the rate-limit client IP and strips the TracklyWeb edge headers; both parsers
+// now skip exactly PLUGIN_RESUME_BODY_PATHS (#2705, #2715).
 const REVIEWED_GLOBAL_MIDDLEWARE_CALL_DIGESTS = Object.freeze([
   'c1f2b00a4434fb372ed514e7297aac7280a529c9d87aa826b2cf570d3a13eedc',
-  '2e71ae5a0b1e7738e25284ac0b4573dd6274e49dc48b086df0e2ae37f210aa55',
+  '412a970417254546f46915483a6f68357c947958c12ec946166d620d936736b7',
+  '68ab5f59fcc970a04166bace9b7ac9252afc883380352a7a090c9b003b516a90',
   '81d41aba94334a95d3a6002fd6ced8069b9739cd52c6679c6293e01c3f547f75',
   '1eac0496bd02d2dadc4227b753c0ca2d04169bf3c43bec0f5d1eaa0c4bd4bf96',
-  '70e0515d24b30ada7ecb6cd17ed81b261f43ac221957f3fbbaca09dfd3c00993',
-  '06822e230ea036dfb409fd343eedc11f7eed113c985dc436a72b6202c95aa3e9',
+  'a7aad1d443d688a264a6cd63c38b84ece95c928338af3013c929337180da6140',
+  '7098acdf616310f2659bde4ff1f9b2725fd7682841d44372eacf932cb6c269fe',
   'bc0d7d12f97ab6e9e79b00fa3701899806387b16353d9575628545a06644b2e9',
   'd63cf7bbc1fae45f475807325f4178283bfea854bf4aeecaf7754f66e509e0a5',
   'e8f6d712ad1044aa865b0cec6ddd51e860ed59ecda3f13f9427f8a84ffa78438',
@@ -1927,6 +2017,15 @@ const REVIEWED_GLOBAL_MIDDLEWARE_CALL_DIGESTS = Object.freeze([
 const REVIEWED_PLUGIN_SCOPED_MIDDLEWARE_CALL_DIGESTS = Object.freeze([
   '0692cd9043104953b52d4965db818921a7769dc138c563a0c1f5f945112e2900',
 ]);
+// Canonical-AST digests of the only reviewed earlier routers whose mount path
+// covers the plugin path but whose routes are disjoint from it: close-ai #2979's
+// app.use('/api', scraperIngestRoutes). The router registers only exact
+// GET /internal/scraper/work and POST /internal/scraper/results with no
+// router-level middleware; scraper-ingest.ts is whole-byte locked below.
+const REVIEWED_DISJOINT_ROUTER_MOUNT_DIGESTS = Object.freeze([
+  'af0e9832cf832adb32e96a69b8395c5d7c8a6fa99d8cfe9a04c0cf8f0be6c478',
+]);
+const HOSTED_SCRAPER_INGEST_SHA256 = '9addb9942f89979de3514fe51bc7e9225bc5de785a417ea27a8ef118414af7b5';
 const EXPRESS_ROUTE_CALL_METHODS = new Set([
   'use', 'all',
   'acl', 'bind', 'checkout', 'connect', 'copy', 'delete', 'get', 'head', 'link', 'lock',
@@ -1941,13 +2040,53 @@ const EXPRESS_APPLICATION_CALL_METHODS = new Set([...EXPRESS_ROUTE_CALL_METHODS,
 // shape is a reviewed application reference: the Route must be consumed by an
 // immediate verb call, so it can never be stored, passed, or used out of sight
 // of assertPluginRoutePrecedence, which treats every earlier chain as covering.
+// close-ai #2705/#2777/#3180 serve one protected-resource document per curated
+// resource from a for...of over exactly these four resources. The route path is
+// computed, but always under /.well-known/oauth-protected-resource, so only this
+// exact loop head and path expression are accepted.
+const REVIEWED_PROTECTED_RESOURCE_LOOP_RIGHT = '[MCP_PLUGIN_RESOURCE, MCP_OPENAI_RESOURCE, MCP_MUSE_RESOURCE, MCP_CLAUDE_RESOURCE]';
+const REVIEWED_PROTECTED_RESOURCE_ROUTE_PATH = "'/.well-known/oauth-protected-resource' + new URL(resource).pathname";
 function reviewedChainedAppRouteReferences(factory) {
   const references = new Set();
+  const expressionAst = (expression) => JSON.stringify(canonicalSchemaAst(
+    parseFullSource(`const reviewed = ${expression};`, 'reviewed protected-resource route').program.body[0].declarations[0].init,
+  ));
+  const reviewedLoopRight = expressionAst(REVIEWED_PROTECTED_RESOURCE_LOOP_RIGHT);
+  const reviewedRoutePath = expressionAst(REVIEWED_PROTECTED_RESOURCE_ROUTE_PATH);
+  let reviewedResourceLoop = null;
   function visit(node) {
     if (node === null || typeof node !== 'object') return;
     if (Array.isArray(node)) {
       for (const child of node) visit(child);
       return;
+    }
+    if (node.type === 'ForOfStatement' && reviewedResourceLoop === null
+        && node.left?.type === 'VariableDeclaration' && node.left.kind === 'const'
+        && node.left.declarations.length === 1 && node.left.declarations[0].id?.name === 'resource'
+        && JSON.stringify(canonicalSchemaAst(node.right)) === reviewedLoopRight) {
+      reviewedResourceLoop = node;
+      visit(node.body);
+      reviewedResourceLoop = null;
+      return;
+    }
+    if (reviewedResourceLoop !== null
+        && node.type === 'CallExpression'
+        && node.callee?.type === 'MemberExpression'
+        && !node.callee.computed
+        && EXPRESS_ROUTE_CALL_METHODS.has(staticMemberName(node.callee))) {
+      let routeCall = node.callee.object;
+      while (routeCall?.type === 'CallExpression' && staticMemberName(routeCall.callee) !== 'route') {
+        routeCall = routeCall.callee?.object;
+      }
+      if (routeCall?.type === 'CallExpression'
+          && routeCall.callee?.type === 'MemberExpression'
+          && !routeCall.callee.computed
+          && routeCall.callee.object?.type === 'Identifier'
+          && routeCall.callee.object.name === 'app'
+          && routeCall.arguments.length === 1
+          && JSON.stringify(canonicalSchemaAst(routeCall.arguments[0])) === reviewedRoutePath) {
+        references.add(routeCall.callee.object);
+      }
     }
     if (node.type === 'CallExpression'
         && node.callee?.type === 'MemberExpression'
@@ -1990,6 +2129,7 @@ function assertPluginRoutePrecedence(
     resolvedFactory = null,
     reviewedGlobalMiddlewareCallDigests = REVIEWED_GLOBAL_MIDDLEWARE_CALL_DIGESTS,
     reviewedPluginScopedMiddlewareCallDigests = REVIEWED_PLUGIN_SCOPED_MIDDLEWARE_CALL_DIGESTS,
+    reviewedDisjointRouterMountDigests = REVIEWED_DISJOINT_ROUTER_MOUNT_DIGESTS,
   } = {},
 ) {
   const factory = resolvedFactory || activeNamedDefinitionAst(source, 'createApp', sourcePath);
@@ -2013,6 +2153,8 @@ function assertPluginRoutePrecedence(
   const encounteredReviewedGlobalMiddlewareDigests = [];
   const reviewedPluginScopedMiddlewareCallDigestSet = new Set(reviewedPluginScopedMiddlewareCallDigests);
   const encounteredReviewedPluginScopedMiddlewareDigests = [];
+  const reviewedDisjointRouterMountDigestSet = new Set(reviewedDisjointRouterMountDigests);
+  const encounteredReviewedDisjointRouterMountDigests = [];
   const earlierCoveringHandlers = [];
   function chainedRoutePath(receiver) {
     const candidate = unwrapTransparentExpression(receiver);
@@ -2106,7 +2248,14 @@ function assertPluginRoutePrecedence(
         if (reviewedPluginScopedMiddleware) {
           encounteredReviewedPluginScopedMiddlewareDigests.push(pluginScopedMiddlewareDigest);
         }
-        const covers = reviewedPluginScopedMiddleware
+        const disjointRouterMountDigest = directAppCall && method === 'use' && node.arguments.length === 2
+          ? sha256ExactBytes(JSON.stringify(canonicalSchemaAst(node)))
+          : null;
+        const reviewedDisjointRouterMount = disjointRouterMountDigest !== null
+          && reviewedDisjointRouterMountDigestSet.has(disjointRouterMountDigest)
+          && directCreateAppCalls.has(node);
+        if (reviewedDisjointRouterMount) encounteredReviewedDisjointRouterMountDigests.push(disjointRouterMountDigest);
+        const covers = reviewedPluginScopedMiddleware || reviewedDisjointRouterMount
           ? false
           : pathArgument?.type === 'StringLiteral'
             ? staticExpressPathCovers(pathArgument.value, mountPath, method)
@@ -2129,6 +2278,11 @@ function assertPluginRoutePrecedence(
     encounteredReviewedPluginScopedMiddlewareDigests,
     reviewedPluginScopedMiddlewareCallDigests,
     `createApp in ${sourcePath} must preserve the complete reviewed plugin-scoped middleware inventory before ${mountPath}`,
+  );
+  assert.deepEqual(
+    encounteredReviewedDisjointRouterMountDigests,
+    reviewedDisjointRouterMountDigests,
+    `createApp in ${sourcePath} must preserve the complete reviewed disjoint router inventory before ${mountPath}`,
   );
   assert.equal(
     earlierCoveringHandlers.length,
@@ -2399,15 +2553,24 @@ function assertLivePluginRouterMount(
   ));
   assert.equal(liveListens.length, 1, `startServer in ${sourcePath} must listen on the exact createApp result`);
   const liveListenIndex = startServer.body.body.indexOf(liveListens[0]);
+  // close-ai #2792 (refresh grace sweep) and #2802 (Muse trace retention)
+  // add exactly one guarded background-maintenance block after the guards.
+  const lockedStartServerPrelude = parseFullSource(`installProcessGuards();
+  if (shouldRunStartupDbWrites()) {
+    startRefreshGraceSweep();
+    startMuseTraceRetention(pool, (postgresCode) => {
+      logger.warn('muse-retention', 'Muse diagnostic cleanup failed; retrying next minute', { postgresCode });
+    });
+  }`, 'locked startServer prelude').program.body;
   assert.equal(
     startServer.body.body.indexOf(liveAppStatements[0]),
-    1,
+    lockedStartServerPrelude.length,
     `startServer in ${sourcePath} must create the live application immediately after its locked process-guard prelude`,
   );
   assert.deepEqual(
-    canonicalSchemaAst(startServer.body.body[0]),
-    canonicalSchemaAst(parseFullSource('installProcessGuards();', 'locked startServer prelude').program.body[0]),
-    `startServer in ${sourcePath} must execute only installProcessGuards before creating the live application`,
+    canonicalSchemaAst(startServer.body.body.slice(0, lockedStartServerPrelude.length)),
+    canonicalSchemaAst(lockedStartServerPrelude),
+    `startServer in ${sourcePath} must execute only installProcessGuards and its locked maintenance prelude before creating the live application`,
   );
   assert.equal(
     liveListenIndex,
@@ -2464,6 +2627,14 @@ function assertRateLimitBindingSemantics(source, sourcePath) {
     generalLimiter: [['collapseOnboardingTrailingSlashes']],
     authLimiter: [[], []],
   };
+  // Reviewed middleware that may follow a limiter in the same app.use call.
+  // close-ai #2105/#2106 split OAuth legs into oauthStartLimiter and
+  // authFlowLimiter, imported from the whole-byte-locked auth-rate-limit.ts;
+  // authLimiter still runs first and skips only those exact OAuth legs.
+  const reviewedPostLimiterMiddleware = {
+    generalLimiter: [[]],
+    authLimiter: [['oauthStartLimiter', 'authFlowLimiter'], []],
+  };
   for (const [name, expectedMountPaths, importedBindings] of [
     ['generalLimiter', ['/api/'], null],
     ['authLimiter', ['/auth/', '/api/admin/login'], [authLimiterImport.imported, authLimiterImport.local]],
@@ -2506,11 +2677,13 @@ function assertRateLimitBindingSemantics(source, sourcePath) {
         argument?.type === 'Identifier' && argument.name === name
           ? [{
             path: index >= 1
-              && index === call.arguments.length - 1
               && call.arguments[0]?.type === 'StringLiteral'
               ? call.arguments[0].value
               : null,
             preceding: call.arguments.slice(1, index).map((middleware) => (
+              middleware?.type === 'Identifier' ? middleware.name : null
+            )),
+            following: call.arguments.slice(index + 1).map((middleware) => (
               middleware?.type === 'Identifier' ? middleware.name : null
             )),
             reference: argument,
@@ -2527,6 +2700,11 @@ function assertRateLimitBindingSemantics(source, sourcePath) {
       appUseMounts.map((mount) => mount.preceding),
       reviewedPreLimiterMiddleware[name],
       `${name} in ${sourcePath} must run after only the reviewed middleware on each mount`,
+    );
+    assert.deepEqual(
+      appUseMounts.map((mount) => mount.following),
+      reviewedPostLimiterMiddleware[name],
+      `${name} in ${sourcePath} may be followed only by the reviewed middleware on each mount`,
     );
     assert.deepEqual(
       collectBindingReferences(ast, name, () => false),
@@ -2721,30 +2899,58 @@ function assertImmutablePluginToolScopesSemantics(source, sourcePath) {
     lockedFunctionReferences.length > 0,
     `requiredScopesForPluginTool in ${sourcePath} must read ${name}`,
   );
+  // close-ai #2711: diagnostics name a tool only when the legacy or OpenAI
+  // catalog knows it (both via the locked requiredScopesForPluginTool).
   assertActiveFunctionDefinitionAst(
     source,
     'diagnosticToolName',
     `function diagnosticToolName(value: unknown): string {
-      return typeof value === 'string' && Object.hasOwn(TRACKLY_PLUGIN_TOOL_SCOPES, value)
+      return typeof value === 'string' && (requiredScopesForPluginTool(value) !== null || requiredScopesForPluginTool(value, 'openai') !== null)
         ? value
         : '[redacted]';
     }`,
     sourcePath,
   );
-  const diagnosticFunction = activeNamedDefinitionAst(
+  // close-ai #2711: the OpenAI catalog is the legacy map minus the two apply
+  // work tools, plus apply:write progress actions and two read tools that
+  // reuse trackly_get_apply_work's scopes. Both readers of the legacy map are
+  // locked exactly here.
+  const sharedScopesStatements = ast.program.body.filter((statement) => (
+    statement.type === 'VariableDeclaration'
+    && statement.declarations.some((declarator) => (
+      declarator.id?.type === 'ObjectPattern'
+      && declarator.init?.type === 'Identifier' && declarator.init.name === name
+    ))
+  ));
+  assert.equal(
+    sharedScopesStatements.length,
+    1,
+    `${sourcePath} must derive the shared OpenAI scope rows from ${name} exactly once`,
+  );
+  assert.deepEqual(
+    canonicalSchemaAst(sharedScopesStatements[0]),
+    canonicalSchemaAst(parseFullSource(
+      `const { trackly_report_apply_progress: _progress, trackly_get_apply_work: _work, ...sharedToolScopes } = ${name};`,
+      'locked shared OpenAI scope rows',
+    ).program.body[0]),
+    `${sourcePath} must remove exactly the two legacy apply work tools from the shared OpenAI scope rows`,
+  );
+  const openaiScopesBinding = 'TRACKLY_OPENAI_TOOL_SCOPES';
+  assertActiveVariableInitializerAst(
     source,
-    'diagnosticToolName',
+    openaiScopesBinding,
+    `Object.freeze({
+      ...sharedToolScopes,
+      ...Object.fromEntries(Object.values(OPENAI_PROGRESS_ACTIONS).map(({ name }) => [name, ['apply:write'] as const])),
+      trackly_get_apply_progress: TRACKLY_PLUGIN_TOOL_SCOPES.trackly_get_apply_work,
+      trackly_get_apply_snapshot: TRACKLY_PLUGIN_TOOL_SCOPES.trackly_get_apply_work,
+    })`,
     sourcePath,
   );
-  const diagnosticFunctionReferences = collectBindingReferences(
-    diagnosticFunction,
+  const openaiScopesReferences = collectBindingReferences(
+    activeVariableDeclarator(source, openaiScopesBinding, sourcePath).declarator.init,
     name,
     () => false,
-  );
-  assert.equal(
-    diagnosticFunctionReferences.length,
-    1,
-    `diagnosticToolName in ${sourcePath} must validate names against ${name} exactly once`,
   );
   const references = collectBindingReferences(ast, name, () => false);
   assert.deepEqual(
@@ -2752,10 +2958,11 @@ function assertImmutablePluginToolScopesSemantics(source, sourcePath) {
     [
       declaration.id,
       ...namesReferences,
-      ...diagnosticFunctionReferences,
+      sharedScopesStatements[0].declarations[0].init,
+      ...openaiScopesReferences,
       ...lockedFunctionReferences,
     ],
-    `${name} in ${sourcePath} must not be reassigned, mutated, aliased, escaped, or referenced outside its locked names catalog, diagnostic redaction, and requiredScopesForPluginTool`,
+    `${name} in ${sourcePath} must not be reassigned, mutated, aliased, escaped, or referenced outside its locked names catalog, OpenAI catalog derivation, and requiredScopesForPluginTool`,
   );
 }
 
@@ -3045,7 +3252,9 @@ function assertActiveFunctionAstSha256(source, name, expectedSha256, sourcePath)
 function assertPluginUiContractSemantics(
   source,
   sourcePath,
-  { htmlAstSha256 = '1d2f1eaa9ae730b67a6216ceb82a7304ea7231d5e40567c7d53481ac6a2e7bd4' } = {},
+  // close-ai #2705: the card accepts only the legacy or OpenAI resume path and
+  // now also rejects an open URL with a query string; copy drops the accent.
+  { htmlAstSha256 = '5bc8eb4b8c7a741136cfbc8286c28b754cf0e49dbcc1d9ed4153fc741dbb9233' } = {},
 ) {
   assertActiveVariableInitializerAst(
     source,
@@ -4199,10 +4408,21 @@ function wrappedHandlerFunction(registration, sourcePath) {
     'wrapTool',
     `${registration.name} handler in ${sourcePath} must use the canonical wrapTool binding`,
   );
+  // close-ai #3089: only the two job tools pass a fourth jobIdKey argument,
+  // naming their own job id input, so wrapTool can classify unavailable jobs.
+  const reviewedJobIdKey = { trackly_get_job: 'id', trackly_get_job_brief: 'jobId' }[registration.name];
   assert.ok(
-    wrapper.arguments.length === 2 || wrapper.arguments.length === 3,
+    wrapper.arguments.length === 2 || wrapper.arguments.length === 3
+      || (wrapper.arguments.length === 4 && reviewedJobIdKey !== undefined),
     `${registration.name} wrapTool call in ${sourcePath} must provide exactly a handler, fallback message, and optional structured-content flag`,
   );
+  if (wrapper.arguments.length === 4) {
+    assert.ok(
+      wrapper.arguments[2]?.type === 'BooleanLiteral' && wrapper.arguments[2].value === true
+        && wrapper.arguments[3]?.type === 'StringLiteral' && wrapper.arguments[3].value === reviewedJobIdKey,
+      `${registration.name} wrapTool call in ${sourcePath} may pass only structured content true and its reviewed '${reviewedJobIdKey}' job id key`,
+    );
+  }
   const handler = wrapper.arguments[0];
   assert.ok(
     handler?.type === 'ArrowFunctionExpression' || handler?.type === 'FunctionExpression',
@@ -6669,19 +6889,7 @@ function verifyCoordinatedBackendCore({
   assertActiveFunctionDefinitionAst(
     hostedPluginSource,
     'wrapTool',
-    expectedPluginWrapperSource || `function wrapTool(
-      handler: (params: any) => Promise<unknown>,
-      fallback: string,
-      includeStructuredContent = false,
-    ) {
-      return async (params: any) => {
-        try {
-          return resultContent(await handler(params), includeStructuredContent);
-        } catch (error) {
-          return errorContent(error, fallback);
-        }
-      };
-    }`,
+    expectedPluginWrapperSource || HOSTED_PLUGIN_WRAP_TOOL_SOURCE,
     hostedPluginPath,
   );
   assert.deepEqual(
@@ -7037,7 +7245,8 @@ assertImportedFunctionCallInventory(
   hostedAuthRateLimitSource,
   'azureRehearsalRateLimitOptions',
   '../utils/azure-rehearsal-ip.js',
-  ['authLimiter'],
+  // close-ai #2105: the OAuth start and continuation limiters key on the same resolved client IP.
+  ['authLimiter', 'oauthStartLimiter', 'authFlowLimiter'],
   hostedAuthRateLimitPath,
 );
 assertExactHostedSourceSha256(
@@ -7052,12 +7261,16 @@ for (const [importedName, localName, moduleName] of [
   ['legacySignalsContainment', 'legacySignalsContainment', './middleware/legacy-signals-containment'],
   ['collapseOnboardingTrailingSlashes', 'collapseOnboardingTrailingSlashes', './middleware/general-rate-limit'],
   ['shouldSkipGeneralRateLimit', 'shouldSkipGeneralRateLimit', './middleware/general-rate-limit'],
+  ['clientIpResolutionMiddleware', 'clientIpResolutionMiddleware', './utils/client-ip.js'],
+  ['default', 'scraperIngestRoutes', './routes/scraper-ingest'],
 ]) {
   assertImportedBindingNeverRedeclared(hostedApplicationSource, importedName, localName, moduleName, hostedApplicationPath);
 }
 for (const [relativePath, expectedSha256] of [
   [['src', 'middleware', 'legacy-signals-containment.ts'], HOSTED_LEGACY_SIGNALS_CONTAINMENT_SHA256],
   [['src', 'middleware', 'general-rate-limit.ts'], HOSTED_GENERAL_RATE_LIMIT_SHA256],
+  [['src', 'utils', 'client-ip.ts'], HOSTED_CLIENT_IP_SHA256],
+  [['src', 'routes', 'scraper-ingest.ts'], HOSTED_SCRAPER_INGEST_SHA256],
 ]) {
   const absolutePath = path.join(backendRoot, ...relativePath);
   assertExactHostedSourceSha256(fs.readFileSync(absolutePath, 'utf8'), expectedSha256, absolutePath);
@@ -7180,17 +7393,6 @@ assertExportedFactoryUsedByPluginRouter(
   hostedPluginRouterSource,
   'createTracklyPluginMcpServer',
   hostedPluginRouterPath,
-  [
-    'authToken',
-    'apiRequest',
-    `async () => {
-      const { capability, filenameSha256: _filenameHash, ...document } = await pluginResumeDocuments().prepare({
-        userId: authInfo.extra.userId, authEpoch: authInfo.extra.authEpoch,
-        clientId: authInfo.clientId, grantId: authInfo.extra.grantId,
-      });
-      return { ...document, openUrl: \`\${MCP_PLUGIN_RESOURCE}/resume#\${capability}\` };
-    }`,
-  ],
 );
 assertActiveFunctionDefinitionAst(
   hostedTracklyAccessSource,
@@ -7446,6 +7648,9 @@ assertActiveVariableInitializerAst(hostedMcpTokensSource, 'MCP_JWT_SECRET', "BAS
 for (const importedName of [
   'MCP_LEGACY_RESOURCE',
   'MCP_PLUGIN_RESOURCE',
+  'MCP_OPENAI_RESOURCE',
+  'MCP_MUSE_RESOURCE',
+  'MCP_CLAUDE_RESOURCE',
   'configuredMcpPluginDefaultRedirectUris',
 ]) {
   assertImportBinding(hostedMcpTokensSource, importedName, importedName, './mcp-config.js', hostedMcpTokensPath);
@@ -7458,10 +7663,15 @@ assertExactHostedSourceSha256(
 assertActiveVariableInitializerAst(
   hostedMcpTokensSource,
   'MCP_ALLOWED_RESOURCES',
+  // close-ai #2705, #2777, #3180: tokens may name exactly the legacy resource or
+  // one of the four curated plugin surfaces.
   `Object.freeze([
     MCP_LEGACY_RESOURCE,
     MCP_PLUGIN_RESOURCE,
-  ] as [string, string])`,
+    MCP_OPENAI_RESOURCE,
+    MCP_MUSE_RESOURCE,
+    MCP_CLAUDE_RESOURCE,
+  ] as [string, string, string, string, string])`,
   hostedMcpTokensPath,
 );
 assertActiveVariableInitializerAst(hostedMcpTokensSource, 'MCP_ACCESS_IDENTITY_VERSION', '1 as const', hostedMcpTokensPath);
@@ -7696,7 +7906,9 @@ assertActiveClassMethodAstSha256(
   hostedOAuthProviderSource,
   'TracklyOAuthProvider',
   'verifyAccessToken',
-  '62835448113ca2c33089a25b3d10c9f7aaee697591ea6a407dc67fe94e992e0c',
+  // close-ai #2777/#3180: MCP review tokens may name any curated plugin resource
+  // (isCuratedMcpResource) instead of only the legacy plugin resource.
+  '09290c55fc99c002776f3852d3c18cd2effe19dafb625e2022bb0f6fcfb6d53d',
   hostedOAuthProviderPath,
 );
 // authorize() is the only consumer of the locked resource and default-scope
@@ -7707,7 +7919,9 @@ assertActiveClassMethodAstSha256(
   hostedOAuthProviderSource,
   'TracklyOAuthProvider',
   'authorize',
-  '955fa3dbe040a8d36448f92c54bbb4cf95c6022b69b938f4b6854467f898295c',
+  // close-ai #2792: an unsupported resource now fails with RFC 8707
+  // InvalidTargetError (was InvalidGrantError); resolution order unchanged.
+  'b3b37dae48d6d5f73dea6350cb3d2cc93885a9a6b15b7224f4d86344243200f8',
   hostedOAuthProviderPath,
 );
 assertImportBinding(
@@ -7736,20 +7950,26 @@ assertActiveVariableInitializerAst(
 assertActiveFunctionDefinitionAst(
   hostedPluginSource,
   'wrapTool',
-  `function wrapTool(
-    handler: (params: any) => Promise<unknown>,
-    fallback: string,
-    includeStructuredContent = false,
-  ) {
-    return async (params: any) => {
-      try {
-        return resultContent(await handler(params), includeStructuredContent);
-      } catch (error) {
-        return errorContent(error, fallback);
-      }
-    };
-  }`,
+  HOSTED_PLUGIN_WRAP_TOOL_SOURCE,
   hostedPluginSourcePath,
+);
+for (const importedName of ['normalizeJobResult', 'unavailableJobFromError', 'jobFailurePayload']) {
+  assertImportBinding(hostedPluginSource, importedName, importedName, './job-result.js', hostedPluginSourcePath);
+}
+assertExactHostedSourceSha256(
+  fs.readFileSync(path.join(backendRoot, 'src', 'mcp', 'job-result.ts'), 'utf8'),
+  HOSTED_JOB_RESULT_SHA256,
+  path.join(backendRoot, 'src', 'mcp', 'job-result.ts'),
+);
+const hostedPluginOnboardingPath = path.join(backendRoot, 'src', 'mcp', 'plugin-onboarding.ts');
+const hostedPluginOnboardingSource = fs.readFileSync(hostedPluginOnboardingPath, 'utf8');
+for (const importedName of ['applyOnboardingSchema', 'buildApplyOnboarding', 'profileFieldReferenceSchema']) {
+  assertImportBinding(hostedPluginSource, importedName, importedName, './plugin-onboarding.js', hostedPluginSourcePath);
+}
+assertExactHostedSourceSha256(
+  hostedPluginOnboardingSource,
+  HOSTED_PLUGIN_ONBOARDING_SHA256,
+  hostedPluginOnboardingPath,
 );
 assertActiveVariableInitializerAst(
   hostedPluginSource,
@@ -7837,8 +8057,9 @@ assertActiveFunctionDefinitionAst(
           if (statusCode < 200 || statusCode >= 300) {
             const error = new Error(
               typeof parsed?.error === 'string' ? parsed.error : \`trackly request failed (\${statusCode})\`,
-            ) as Error & { status?: number; code?: string; responseBody?: any };
+            ) as Error & { status?: number; code?: string; responseBody?: any; retryAfterHeader?: string | string[] };
             error.status = statusCode;
+            error.retryAfterHeader = response.headers?.['retry-after'];
             error.code = typeof parsed?.code === 'string'
               ? parsed.code
               : (typeof parsed?.error === 'string' ? parsed.error : undefined);
@@ -7962,7 +8183,30 @@ const executablePluginRegistrations = directToolRegistrationsInExportedFunction(
   hostedPluginSourcePath,
   {
     requireUiResourceLoop: true,
-    expectedParameters: 'authToken: string, requestApi: PluginApiRequest = apiRequest, prepareResume?: () => Promise<PluginResumePreview>',
+    expectedParameters: `authToken: string, requestApi: PluginApiRequest = apiRequest, prepareResume?: () => Promise<PluginResumePreview>,
+      resumePath = '/api/plugin/trackly/mcp/resume',
+      options: { surface: 'legacy' | 'openai' | 'muse' | 'claude' } = { surface: 'legacy' }`,
+    lockedPrefixSource: HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE,
+    expectedPrefixDeclarators: ['server', 'searchJobsRequest', 'claudeSearchJobs', 'registerPluginTool'],
+    // close-ai #2777/#3180: Muse and Claude publish no Apply UI cards; #2705
+    // renders each card with the surface's own resume path.
+    uiResourceLoopSource: [
+      "if (options.surface !== 'muse' && options.surface !== 'claude') for (const view of Object.keys(TRACKLY_PLUGIN_UI) as Array<keyof typeof TRACKLY_PLUGIN_UI>) {",
+      '  const uri = TRACKLY_PLUGIN_UI[view];',
+      '  server.registerResource(`trackly-${view}-card`, uri, {',
+      '    title: `trackly ${view} card`,',
+      "    description: 'Private trackly Apply status UI. The user always submits manually.',",
+      '    mimeType: TRACKLY_PLUGIN_UI_MIME_TYPE,',
+      '  }, async () => ({',
+      '    contents: [{',
+      '      uri,',
+      '      mimeType: TRACKLY_PLUGIN_UI_MIME_TYPE,',
+      '      text: tracklyPluginUiHtml(view, resumePath),',
+      '      _meta: TRACKLY_PLUGIN_UI_RESOURCE_META,',
+      '    }],',
+      '  }));',
+      '}',
+    ].join('\n'),
   },
 );
 const executablePluginTools = executablePluginRegistrations.map((registration) => registration.name);
@@ -8018,7 +8262,12 @@ assert.equal(
   // sponsorship by country, active clearance, foreign-government family ties
   // and application notes as restricted. PR #1975 adds only restricted
   // eeo.military_service; every preexisting key keeps its classification.
-  '3464ba5b11d15958be49ce309e08957a7fa8c710d8755f1832f00793bb4438bd',
+  // Reviewed at close-ai 6be6d4d21: #2141 adds 32 keys and removes or
+  // reclassifies none (order kept). Citizenship, permanent residence, permit
+  // type, H-1B cap history, address unit and the new EEO keys are restricted;
+  // current compensation, government-entity history, restrictive covenants and
+  // marketing consent are sensitive; the rest are standard work facts.
+  '0bbbc2236e406eb5d079758ff25b8e0976f95f246475f8e7ddbba158233354be',
   'Application profile field keys and sensitivity classifications drifted from the reviewed conditional-scope catalog',
 );
 assert.deepEqual(
@@ -8034,189 +8283,280 @@ assert.equal(
 assertActiveFunctionDefinitionAst(
   hostedPluginScopesSource,
   'requiredScopesForPluginTool',
-  `function requiredScopesForPluginTool(toolName: string): McpScope[] | null {
-    if (!Object.hasOwn(TRACKLY_PLUGIN_TOOL_SCOPES, toolName)) return null;
-    return [
-      ...TRACKLY_PLUGIN_TOOL_SCOPES[
-        toolName as keyof typeof TRACKLY_PLUGIN_TOOL_SCOPES
-      ],
-    ];
-  }`,
+  `function requiredScopesForPluginTool(toolName: string, surface: PluginToolSurface = 'legacy'): McpScope[] | null {
+  // Muse and Claude serve their own catalogs on the legacy scope rows; neither
+  // may fall through to the OpenAI map.
+  if (surface === 'muse') {
+    if (!isMuseToolName(toolName)) return null;
+    return requiredScopesForPluginTool(toolName, 'legacy');
+  }
+  if (surface === 'claude') {
+    if (!isClaudeToolName(toolName)) return null;
+    return requiredScopesForPluginTool(toolName, 'legacy');
+  }
+  const catalog = surface === 'legacy' ? TRACKLY_PLUGIN_TOOL_SCOPES : TRACKLY_OPENAI_TOOL_SCOPES;
+  if (!Object.hasOwn(catalog, toolName)) return null;
+  return [...(catalog as Record<string, readonly McpScope[]>)[toolName]];
+}`,
   hostedPluginScopesPath,
 );
 assertActiveFunctionDefinitionAst(
   hostedPluginScopesSource,
   'requiredScopesForPluginToolCall',
   `function requiredScopesForPluginToolCall(
-    toolName: string,
-    args: unknown,
-  ): McpScope[] | null {
-    const required = requiredScopesForPluginTool(toolName);
-    if (required === null) return null;
-    if (!args || typeof args !== 'object' || Array.isArray(args)) return required;
-    const input = args as Record<string, unknown>;
-    if (toolName === 'trackly_prepare_resume_artifact' && input.operation === 'preview') {
-      required.push('profile:read', 'sensitive:read');
-    }
-    if (toolName === 'trackly_update_status' && input.action === 'applied') {
-      required.push('apply:write');
-    }
-    if (toolName === 'trackly_save_application_answers' && Array.isArray(input.changes)) {
-      const requestsSensitiveWrite = input.changes.some((candidate) => {
+  toolName: string,
+  args: unknown,
+  surface: PluginToolSurface = 'legacy',
+): McpScope[] | null {
+  const required = requiredScopesForPluginTool(toolName, surface);
+  if (required === null) return null;
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return required;
+  const input = args as Record<string, unknown>;
+  if (toolName === 'trackly_prepare_resume_artifact' && input.operation === 'preview') {
+    required.push('profile:read', 'sensitive:read');
+  }
+  if (toolName === 'trackly_update_status' && input.action === 'applied' && surface !== 'muse') {
+    required.push('apply:write');
+  }
+  if (toolName === 'trackly_save_application_answers' && Array.isArray(input.changes)) {
+    const requestsSensitiveWrite = input.changes.some((candidate) => {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false;
+      const key = (candidate as Record<string, unknown>).key;
+      return typeof key === 'string'
+        && APPLICATION_FIELD_BY_KEY.get(key)?.sensitivity !== 'standard';
+    });
+    if (requestsSensitiveWrite) required.push('sensitive:write');
+    const readsPersistedSensitiveValues = input.confirmProfile === true
+      || input.changes.some((candidate) => {
         if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false;
         const key = (candidate as Record<string, unknown>).key;
-        return typeof key === 'string'
-          && APPLICATION_FIELD_BY_KEY.get(key)?.sensitivity !== 'standard';
+        return typeof key === 'string' && APPLICATION_PROFILE_CONSISTENCY_FIELDS.has(key);
       });
-      if (requestsSensitiveWrite) required.push('sensitive:write');
-      const readsPersistedSensitiveValues = input.confirmProfile === true
-        || input.changes.some((candidate) => {
-          if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false;
-          const key = (candidate as Record<string, unknown>).key;
-          return typeof key === 'string' && APPLICATION_PROFILE_CONSISTENCY_FIELDS.has(key);
-        });
-      if (readsPersistedSensitiveValues) required.push('sensitive:read');
-    } else if (toolName === 'trackly_save_application_answers' && input.confirmProfile === true) {
-      required.push('sensitive:read');
+    if (readsPersistedSensitiveValues) required.push('sensitive:read');
+  } else if (toolName === 'trackly_save_application_answers' && input.confirmProfile === true) {
+    required.push('sensitive:read');
+  }
+  if (toolName === 'trackly_get_apply_work' || toolName === 'trackly_get_apply_snapshot') {
+    const snapshot = toolName === 'trackly_get_apply_snapshot' ? input : input.snapshot;
+    if (snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)) {
+      const profileKeys = (snapshot as Record<string, unknown>).profileKeys;
+      const officeProjections = (snapshot as Record<string, unknown>).officeProjections;
+      const officeProfileKeys = Array.isArray(officeProjections) ? officeProjections.flatMap((candidate) => (
+        candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+          && Array.isArray((candidate as Record<string, unknown>).profileKeys)
+          ? (candidate as Record<string, unknown>).profileKeys as unknown[]
+          : []
+      )) : [];
+      const requestsSensitiveRead = [...(Array.isArray(profileKeys) ? profileKeys : []), ...officeProfileKeys]
+        .some((key) => (
+        typeof key === 'string'
+        && APPLICATION_FIELD_BY_KEY.get(key)?.sensitivity !== 'standard'
+        ));
+      if (requestsSensitiveRead) required.push('sensitive:read');
     }
-    if (toolName === 'trackly_get_apply_work') {
-      const snapshot = input.snapshot;
-      if (snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)) {
-        const profileKeys = (snapshot as Record<string, unknown>).profileKeys;
-        const officeProjections = (snapshot as Record<string, unknown>).officeProjections;
-        const officeProfileKeys = Array.isArray(officeProjections) ? officeProjections.flatMap((candidate) => (
-          candidate && typeof candidate === 'object' && !Array.isArray(candidate)
-            && Array.isArray((candidate as Record<string, unknown>).profileKeys)
-            ? (candidate as Record<string, unknown>).profileKeys as unknown[]
-            : []
-        )) : [];
-        const requestsSensitiveRead = [...(Array.isArray(profileKeys) ? profileKeys : []), ...officeProfileKeys]
-          .some((key) => (
-          typeof key === 'string'
-          && APPLICATION_FIELD_BY_KEY.get(key)?.sensitivity !== 'standard'
-          ));
-        if (requestsSensitiveRead) required.push('sensitive:read');
-      }
-    }
-    return required;
-  }`,
+  }
+  return required;
+}`,
   hostedPluginScopesPath,
 );
 assertActiveFunctionDefinitionAst(
   hostedPluginScopesSource,
   'enforceTracklyPluginScope',
   `function enforceTracklyPluginScope(
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ): void {
-    type JsonRpcMessage = {
-      id?: unknown;
-      method?: unknown;
-      params?: { name?: unknown; arguments?: unknown };
-    };
-    if (Array.isArray(req.body)) {
-      res.status(400).json(req.body.map((candidate: unknown) => ({
-        jsonrpc: '2.0',
-        error: { code: -32600, message: 'JSON-RPC batches are not supported' },
-        id: candidate && typeof candidate === 'object' && !Array.isArray(candidate)
-          ? (candidate as JsonRpcMessage).id ?? null
-          : null,
-      })));
-      return;
-    }
-    const messages: unknown[] = Array.isArray(req.body) ? req.body : [req.body];
-    const granted = Array.isArray((req as any).auth?.scopes)
-      ? (req as any).auth.scopes as string[]
-      : [];
-    const grantedSet = new Set(granted);
-    let denied: { message: JsonRpcMessage; required: McpScope[] | null } | undefined;
-    for (const candidate of messages) {
-      if (candidate === null || typeof candidate !== 'object') continue;
-      const message = candidate as JsonRpcMessage;
-      if (isJsonRpcResponse(candidate as Record<string, unknown>)) continue;
-      if (typeof message.method === 'string'
-        && TRACKLY_PLUGIN_SCOPE_FREE_METHODS.has(message.method)) continue;
-      if (message.method !== 'tools/call') {
-        denied = { message, required: null };
-        break;
-      }
-      const name = message.params?.name;
-      const required = typeof name === 'string'
-        ? requiredScopesForPluginToolCall(name, message.params?.arguments)
-        : null;
-      if (required === null || required.some((scope) => !grantedSet.has(scope))) {
-        denied = { message, required };
-        break;
-      }
-    }
-
-    if (!denied) {
-      next();
-      return;
-    }
-
-    const required = denied.required || [];
-    const messageShape = typeof denied.message.method === 'string'
-      ? 'method-present'
-      : 'method-free';
-    const method = diagnosticMethod(denied.message.method);
-    const tool = method === 'tools/call'
-      ? diagnosticToolName(denied.message.params?.name)
-      : '[redacted]';
-    const missingSignature = required
-      .filter((scope) => !grantedSet.has(scope))
-      .sort()
-      .join(',') || '[none]';
-    const diagnosticKey = \`\${messageShape}:\${method}:\${tool}:\${missingSignature}\`;
-    const diagnostic = scopeDenialDiagnostics.get(diagnosticKey) || {
-      nextAt: 0,
-      suppressed: 0,
-    };
-    const now = Date.now();
-    if (now >= diagnostic.nextAt) {
-      scopeDenialDiagnostics.set(diagnosticKey, {
-        nextAt: now + SCOPE_DENIAL_DIAGNOSTIC_INTERVAL_MS,
-        suppressed: 0,
-      });
-      try {
-        logger.warn('trackly-plugin-mcp', 'OAuth scope enforcement denied request', {
-          messageShape,
-          method,
-          tool,
-          requiredScopes: required.slice(0, 16),
-          grantedScopes: granted
-            .filter((scope): scope is McpScope => (
-              typeof scope === 'string' && MCP_SUPPORTED_SCOPES.includes(scope as McpScope)
-            ))
-            .slice(0, 16),
-          suppressedSinceLast: diagnostic.suppressed,
-        });
-      } catch {
-        // Diagnostics must never change the authorization response.
-      }
-    } else {
-      diagnostic.suppressed += 1;
-      scopeDenialDiagnostics.set(diagnosticKey, diagnostic);
-    }
-    res.setHeader(
-      'WWW-Authenticate',
-      \`Bearer error="insufficient_scope", scope="\${required.join(' ')}"\`,
-    );
-    res.status(403).json({
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  enforcePluginScope(req, res, next, 'legacy');
+}`,
+  hostedPluginScopesPath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedPluginScopesSource,
+  'enforceTracklyOpenaiScope',
+  `function enforceTracklyOpenaiScope(req: Request, res: Response, next: NextFunction): void {
+  enforcePluginScope(req, res, next, 'openai');
+}`,
+  hostedPluginScopesPath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedPluginScopesSource,
+  'enforceTracklyMuseScope',
+  `function enforceTracklyMuseScope(req: Request, res: Response, next: NextFunction): void {
+  enforcePluginScope(req, res, next, 'muse');
+}`,
+  hostedPluginScopesPath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedPluginScopesSource,
+  'enforceTracklyClaudeScope',
+  `function enforceTracklyClaudeScope(req: Request, res: Response, next: NextFunction): void {
+  enforcePluginScope(req, res, next, 'claude');
+}`,
+  hostedPluginScopesPath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedPluginScopesSource,
+  'jsonRpcId',
+  `function jsonRpcId(id: unknown): string | number | null {
+  return typeof id === 'string' || typeof id === 'number' || id === null ? id : null;
+}`,
+  hostedPluginScopesPath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedPluginScopesSource,
+  'rejectClassicJsonRpc',
+  `function rejectClassicJsonRpc(
+  res: Response,
+  id: unknown,
+  code: number,
+  message: string,
+): void {
+  if (id === undefined) {
+    res.status(202).end();
+    return;
+  }
+  res.status(200).json({
+    jsonrpc: '2.0',
+    error: { code, message },
+    id: jsonRpcId(id),
+  });
+}`,
+  hostedPluginScopesPath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedPluginScopesSource,
+  'enforcePluginScope',
+  `function enforcePluginScope(req: Request, res: Response, next: NextFunction, surface: PluginToolSurface): void {
+  type JsonRpcMessage = {
+    id?: unknown;
+    method?: unknown;
+    params?: { name?: unknown; arguments?: unknown };
+  };
+  if (Array.isArray(req.body)) {
+    res.status(400).json(req.body.map((candidate: unknown) => ({
       jsonrpc: '2.0',
-      error: {
-        code: -32001,
-        message: 'Insufficient OAuth scope',
-        data: {
-          error: 'insufficient_scope',
-          required_scopes: required,
-          granted_scopes: granted,
-        },
-      },
-      id: denied.message.id ?? null,
+      error: { code: -32600, message: 'JSON-RPC batches are not supported' },
+      id: candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+        ? (candidate as JsonRpcMessage).id ?? null
+        : null,
+    })));
+    return;
+  }
+  const messages: unknown[] = Array.isArray(req.body) ? req.body : [req.body];
+  const granted = Array.isArray((req as any).auth?.scopes)
+    ? (req as any).auth.scopes as string[]
+    : [];
+  const grantedSet = new Set(granted);
+  let denied: { message: JsonRpcMessage; required: McpScope[] | null } | undefined;
+  let classicRpc: { message: JsonRpcMessage; code: number; messageText: string } | undefined;
+  for (const candidate of messages) {
+    if (candidate === null || typeof candidate !== 'object') continue;
+    const message = candidate as JsonRpcMessage;
+    if (isJsonRpcResponse(candidate as Record<string, unknown>)) continue;
+    if (typeof message.method === 'string'
+      && TRACKLY_PLUGIN_SCOPE_FREE_METHODS.has(message.method)) continue;
+    if (message.method !== 'tools/call') {
+      if (surface === 'legacy' && typeof message.method === 'string') {
+        classicRpc = { message, code: -32601, messageText: 'Method not found' };
+        break;
+      }
+      denied = { message, required: null };
+      break;
+    }
+    const name = message.params?.name;
+    const required = typeof name === 'string'
+      ? requiredScopesForPluginToolCall(name, message.params?.arguments, surface)
+      : null;
+    if (required === null && surface === 'legacy') {
+      classicRpc = { message, code: -32602, messageText: 'Unknown tool' };
+      break;
+    }
+    if (required === null || required.some((scope) => !grantedSet.has(scope))) {
+      denied = { message, required };
+      break;
+    }
+  }
+
+  if (!classicRpc && !denied) {
+    next();
+    return;
+  }
+  const logged = classicRpc
+    ? { message: classicRpc.message, required: null as McpScope[] | null }
+    : denied!;
+
+  const required = logged.required || [];
+  const messageShape = typeof logged.message.method === 'string'
+    ? 'method-present'
+    : 'method-free';
+  const method = diagnosticMethod(logged.message.method);
+  const tool = method === 'tools/call'
+    ? diagnosticToolName(logged.message.params?.name)
+    : '[redacted]';
+  const missingSignature = required
+    .filter((scope) => !grantedSet.has(scope))
+    .sort()
+    .join(',') || '[none]';
+  const diagnosticKey = \`\${messageShape}:\${method}:\${tool}:\${missingSignature}\`;
+  const diagnostic = scopeDenialDiagnostics.get(diagnosticKey) || {
+    nextAt: 0,
+    suppressed: 0,
+  };
+  const now = Date.now();
+  if (now >= diagnostic.nextAt) {
+    scopeDenialDiagnostics.set(diagnosticKey, {
+      nextAt: now + SCOPE_DENIAL_DIAGNOSTIC_INTERVAL_MS,
+      suppressed: 0,
     });
-  }`,
+    try {
+      logger.warn('trackly-plugin-mcp', 'OAuth scope enforcement denied request', {
+        messageShape,
+        method,
+        tool,
+        requiredScopes: required.slice(0, 16),
+        grantedScopes: granted
+          .filter((scope): scope is McpScope => (
+            typeof scope === 'string' && MCP_SUPPORTED_SCOPES.includes(scope as McpScope)
+          ))
+          .slice(0, 16),
+        suppressedSinceLast: diagnostic.suppressed,
+      });
+    } catch {
+      // Diagnostics must never change the authorization response.
+    }
+  } else {
+    diagnostic.suppressed += 1;
+    scopeDenialDiagnostics.set(diagnosticKey, diagnostic);
+  }
+  if (classicRpc) {
+    rejectClassicJsonRpc(res, classicRpc.message.id, classicRpc.code, classicRpc.messageText);
+    return;
+  }
+  // Reauthorization creates a new grant; it does not union the scopes from
+  // the previous token. Advertise the complete tool requirement on every surface.
+  const challengeScopes = required;
+  const resourceMetadata = surface === 'legacy'
+    ? \`, resource_metadata="\${MCP_PLUGIN_RESOURCE_METADATA_URL}"\`
+    : '';
+  res.setHeader(
+    'WWW-Authenticate',
+    \`Bearer error="insufficient_scope", scope="\${challengeScopes.join(' ')}"\${resourceMetadata}\`,
+  );
+  res.status(403).json({
+    jsonrpc: '2.0',
+    error: {
+      code: -32001,
+      message: 'Insufficient OAuth scope',
+      data: {
+        error: 'insufficient_scope',
+        required_scopes: required,
+        granted_scopes: granted,
+      },
+    },
+    id: logged.message.id ?? null,
+  });
+}`,
   hostedPluginScopesPath,
 );
 assert.deepEqual(
@@ -8394,7 +8734,11 @@ assert.equal(
 const executableSchemaDigests = Object.fromEntries(
   Object.keys(pluginLock.publicExecutableContract.schemaSha256).map((schemaName) => [
     schemaName,
-    sha256ExactBytes(schemaDefinition(hostedPluginSource, schemaName, hostedPluginSourcePath)),
+    // close-ai #3184 moved this one schema, byte-identical, into the byte-locked
+    // plugin-onboarding.ts; plugin-server imports it (import binding locked above).
+    schemaName === 'profileFieldReferenceSchema'
+      ? sha256ExactBytes(schemaDefinition(hostedPluginOnboardingSource, schemaName, hostedPluginOnboardingPath))
+      : sha256ExactBytes(schemaDefinition(hostedPluginSource, schemaName, hostedPluginSourcePath)),
   ]),
 );
 assert.deepEqual(
@@ -8807,11 +9151,13 @@ const jobBriefOutputProperties = wrappedHandlerReturnProperties(
 );
 assert.deepEqual(
   Object.keys(jobBriefOutputProperties),
-  ['jobId', 'companyName', 'companySignal'],
+  // close-ai #3089 adds only the posting's boolean isActive flag.
+  ['jobId', 'isActive', 'companyName', 'companySignal'],
   'trackly_get_job_brief output must exclude contacts, employees, referrals, actions, and raw backend fields',
 );
 for (const [field, expression] of Object.entries({
   jobId: 'brief.jobId',
+  isActive: "typeof brief.isActive === 'boolean' ? brief.isActive : null",
   companyName: 'brief.companyName',
 })) {
   assertBabelPropertyExpression(
@@ -8880,10 +9226,11 @@ const readinessProperties = namedProperties(
   objectSchemaProperties(readinessRootProperties.profile, 'readinessOutputSchema.profile'),
   'readinessOutputSchema.profile',
 );
+// Moved by close-ai #3184 into plugin-onboarding.ts (byte-locked, import locked).
 const profileFieldReferenceProperties = schemaObjectPropertyAsts(
-  hostedPluginSource,
+  hostedPluginOnboardingSource,
   'profileFieldReferenceSchema',
-  hostedPluginSourcePath,
+  hostedPluginOnboardingPath,
 );
 const readinessProfileContract = {
   revision: 'nullableCountSchema',
@@ -8952,6 +9299,13 @@ assertActiveFunctionDefinitionAst(
   }`,
   hostedPluginSourcePath,
 );
+// close-ai #3158: exactly two collection-level missing keys, with fixed labels.
+assertActiveVariableInitializerAst(
+  hostedPluginSource,
+  'PROFILE_COLLECTION_LABELS',
+  "new Map([['workHistory.entries', 'Work history'], ['education.entries', 'Education']])",
+  hostedPluginSourcePath,
+);
 assertActiveFunctionDefinitionAst(
   hostedPluginSource,
   'readinessProfileAvailable',
@@ -8997,7 +9351,7 @@ for (const statement of [
   `const rawProfile = profileResponse?.profile;`,
   `const profileBodyAvailable = availability.profile && readinessProfileAvailable(rawProfile);`,
   `const profile: any = profileBodyAvailable ? rawProfile : undefined;`,
-  `const fieldLabels = new Map(
+  `const fieldLabels = new Map<string, string>(
     (Array.isArray(safeSchema?.fields) ? safeSchema.fields : []).flatMap((field: unknown) => {
       if (!field || typeof field !== 'object' || Array.isArray(field)) return [];
       const value = field as Record<string, unknown>;
@@ -9006,6 +9360,9 @@ for (const statement of [
         : [];
     }),
   );`,
+  // close-ai #3158: the two whole-collection requirements get fixed labels from
+  // the locked PROFILE_COLLECTION_LABELS constant.
+  `for (const [key, label] of PROFILE_COLLECTION_LABELS) fieldLabels.set(key, label);`,
   `for (const field of Array.isArray(safeSchema?.educationFields) ? safeSchema.educationFields : []) {
     if (!field || typeof field !== 'object' || Array.isArray(field)) continue;
     const value = field as Record<string, unknown>;
@@ -9831,6 +10188,7 @@ module.exports = {
   HOSTED_DEPLOYABLE_PATHS,
   HOSTED_RESUME_SECURITY_SOURCE_SHA256,
   HOSTED_GIT_MAX_BUFFER,
+  REVIEWED_DISJOINT_ROUTER_MOUNT_DIGESTS,
   REVIEWED_GLOBAL_MIDDLEWARE_CALL_DIGESTS,
   REVIEWED_PLUGIN_SCOPED_MIDDLEWARE_CALL_DIGESTS,
   activeNamedDefinitionAst,
