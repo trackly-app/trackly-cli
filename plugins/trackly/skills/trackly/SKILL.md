@@ -7,6 +7,14 @@ description: Search trackly for current jobs and companies, inspect job briefs a
 
 Use trackly as the source of truth for current openings, monitored companies, saved jobs, and discovery preferences.
 
+## Connection and account
+
+An installed skill does not prove its authenticated tools are connected. If the needed trackly tools are missing, inspect the host's plugin connection and use its supported Connect or Sign in action before asking the user to supply jobs or open another app. Let the user complete sign-in and consent. Select a Google or Trackly identity only when the user identified that account; a matching name, default, preselected, or recently used account is not enough.
+
+For an established connector, a successful authenticated read-only call is sufficient connection evidence; do not require an old login receipt or reconnect it. For a newly initiated or pending sign-in, verify host-reported completion, fresh tool discovery, and a successful read-only call. An Allow click or OAuth callback alone does not prove the host saved authorization. When connection fails or an account switch still returns old state, follow [connection readiness](../trackly-apply/references/connection-readiness.md) for supported browser recovery, bounded retries, and host discovery refresh. Keep credentials and callback parameters out of output and configuration edits.
+
+Use a non-secret authenticated account label when the host or tools expose one. If saved preferences or jobs contradict the user's current account, compare available identity evidence before claiming their queue is empty. If identity cannot be verified, state only that the connected account returned those results and ask one targeted account question when needed; do not infer identity from a name or profile revision. No native Trackly app is required for this hosted connector.
+
 ## Search workflow
 
 1. If the request depends on saved preferences, call `trackly_get_preferences` before searching. Do not invent a preference that is missing.
