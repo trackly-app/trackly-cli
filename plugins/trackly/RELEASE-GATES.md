@@ -171,6 +171,8 @@ The backend helper's signature is
 non-destructive, which matches the Destructive column above, and idempotent (retries replay by idempotency key; the table does not list idempotency). The helper
 `readOnlyAnnotations` emits read-only, non-destructive and idempotent.
 
+Accepted backend rule (Alan, 2026-10-24): in `audit` and `enforce` modes, verified machine credentials skip the invite and Berkeley gates (close-ai #2789). These credentials are hosted MCP OAuth, MCP bearer tokens, non-extension API keys and `client_platform: 'trackly-cli'` JWTs. `client_platform` is a signed claim that the server sets when it mints the token; no header or User-Agent counts as proof. `assertMachineAccessSemantics` in `scripts/verify-hosted-contract.js` pins this exactly, so any change to it fails the coordinated gate.
+
 ## Product verification
 
 - Require an unauthenticated HTTP 200 response from `https://usetrackly.app/plugins/trackly` and verify its logo, support, privacy, and terms links before submission.
