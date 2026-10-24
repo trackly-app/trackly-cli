@@ -35,6 +35,9 @@ const {
   gitOutput,
   parseSchemaExpression,
   sha256ExactBytes,
+  assertMachineAccessSemantics,
+  HOSTED_MACHINE_ACCESS_SOURCES,
+  HOSTED_REQUIRE_MCP_ENTITLEMENT_SOURCE,
   REVIEWED_DISJOINT_ROUTER_MOUNT_DIGESTS,
   REVIEWED_PLUGIN_SCOPED_MIDDLEWARE_CALL_DIGESTS,
   verifyHostedContract,
@@ -1452,6 +1455,47 @@ test('hosted process guards lock active semantics, invocation inventory, and nor
       options,
     ),
     /must be referenced only by its active definition and locked startServer invocation/,
+  );
+});
+
+test('machine-credential access pins reject new proofs, widened modes and moved gates (close-ai #2789)', () => {
+  const accessSource = [
+    "import { EXTENSION_KEY_PROVENANCE } from '../utils/extension-google-auth-protocol.js';",
+    ...Object.values(HOSTED_MACHINE_ACCESS_SOURCES),
+  ].join('\n');
+  const verify = (access, oauth = HOSTED_REQUIRE_MCP_ENTITLEMENT_SOURCE) => () => assertMachineAccessSemantics(
+    access,
+    'machine access fixture',
+    oauth,
+    'oauth provider fixture',
+  );
+  assert.doesNotThrow(verify(accessSource));
+  for (const [label, from, to, expected] of [
+    ['User-Agent as proof',
+      "if (rawTracklyCliPlatform(input.clientPlatform)) return 'trackly-cli';",
+      "if (rawTracklyCliPlatform(input.clientPlatform) || rawTracklyCliPlatform(input.userAgent)) return 'trackly-cli';",
+      /classifyMachineAccess.*locked executable branch semantics/],
+    ['extension keys as proof', 'if (input.apiKeyProvenance === EXTENSION_KEY_PROVENANCE) return null;', '',
+      /classifyMachineAccess.*locked executable branch semantics/],
+    ['native surface exemption', 'if (input.nativeSurface) return null;', '',
+      /classifyMachineAccess.*locked executable branch semantics/],
+    ['off mode exempt', "return mode === 'audit' || mode === 'enforce';", "return mode !== 'disabled';",
+      /machineSurfaceIsExempt.*locked executable branch semantics/],
+    ['prefix platform match', "value.trim().toLowerCase() === 'trackly-cli'", "value.trim().toLowerCase().startsWith('trackly')",
+      /rawTracklyCliPlatform.*locked executable branch semantics/],
+    ['allow without a mode check', 'if (!machineSurfaceIsExempt(mode)) return false;', '',
+      /allowVerifiedMachineSurface.*locked executable branch semantics/],
+    ['allow without a proof', 'if (machineProof && allowVerifiedMachineSurface(mode, {', 'if (machineProof || allowVerifiedMachineSurface(mode, {',
+      /requireTracklyAccessForSurface.*locked executable branch semantics/],
+    ['decoy provenance module', "from '../utils/extension-google-auth-protocol.js';", "from './decoy-provenance.js';",
+      /must import EXTENSION_KEY_PROVENANCE as EXTENSION_KEY_PROVENANCE exactly once from \.\.\/utils\/extension-google-auth-protocol\.js/],
+  ]) {
+    assert.ok(accessSource.includes(from), `${label} mutation must apply`);
+    assert.throws(verify(accessSource.replace(from, to)), expected, label);
+  }
+  assert.throws(
+    verify(accessSource, HOSTED_REQUIRE_MCP_ENTITLEMENT_SOURCE.replace('getTracklyAccessMode()', "'enforce'")),
+    /requireMcpEntitlement.*locked executable branch semantics/,
   );
 });
 

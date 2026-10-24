@@ -1576,6 +1576,206 @@ function directToolRegistrationsInExportedFunction(
   return registrations;
 }
 
+// close-ai #2789 (accepted by Alan, 2026-10-24): in audit and enforce modes a
+// verified machine credential skips the invite and Berkeley gates, and MCP
+// OAuth legs only log that allow (requireMcpEntitlement). Proof comes only from
+// server-verified facts (signed hosted-MCP claim, SDK bearer auth, DB-resolved
+// non-extension API key, or the server-set signed `client_platform` claim);
+// these exact pins keep a header or User-Agent from becoming proof.
+const HOSTED_MACHINE_ACCESS_SOURCES = Object.freeze({
+  requireTracklyAccessForSurface: `async function requireTracklyAccessForSurface(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  requiredSurface?: 'native',
+): Promise<void> {
+  const mode = getTracklyAccessMode();
+  // Express strips the mount prefix while running path-scoped middleware.
+  // Entitlement discovery and privacy lifecycle operations remain available
+  // to any authenticated account, including revoked or not-yet-enabled users.
+  const lifecycleExemptPaths = new Set(['/me', '/account', '/voice/history']);
+  if (mode === 'off' || req.path === '/jobscout/me' || lifecycleExemptPaths.has(req.path)) {
+    next();
+    return;
+  }
+
+  const passportSessionAlreadyAudited = mode === 'audit'
+    && requiredSurface !== 'native'
+    && req.isAuthenticated?.() === true
+    && Boolean((req.session as { passport?: { user?: unknown } } | undefined)?.passport?.user);
+  if (passportSessionAlreadyAudited && webAccessDecisionCompleted(req.user)) {
+    next();
+    return;
+  }
+
+  const authenticatedRequest = req as Request & {
+    apiKeyId?: number;
+    apiKeyUserId?: number;
+    apiKeyProvenance?: string | null;
+    verifiedHostedMcpOAuth?: unknown;
+    auth?: { extra?: { userId?: number } };
+  };
+  const authenticatedUser = req.user as { id?: number; client_platform?: string } | undefined;
+  const machineProof = classifyMachineAccess({
+    nativeSurface: requiredSurface === 'native',
+    verifiedHostedMcpOAuth: authenticatedRequest.verifiedHostedMcpOAuth,
+    auth: authenticatedRequest.auth,
+    apiKeyId: authenticatedRequest.apiKeyId,
+    apiKeyUserId: authenticatedRequest.apiKeyUserId,
+    apiKeyProvenance: authenticatedRequest.apiKeyProvenance,
+    clientPlatform: authenticatedUser?.client_platform,
+  });
+  const userId = Number(authenticatedUser?.id ?? authenticatedRequest.auth?.extra?.userId);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    if (mode === 'audit') {
+      logger.warn('trackly-access', 'identity unavailable during audit', { path: req.path });
+      next();
+      return;
+    }
+    res.status(401).json({
+      success: false,
+      code: 'AUTHENTICATION_REQUIRED',
+      error: 'Authentication is required.',
+    });
+    return;
+  }
+  if (machineProof && allowVerifiedMachineSurface(mode, {
+    userId,
+    path: req.path,
+    proof: machineProof,
+  })) {
+    next();
+    return;
+  }
+
+  try {
+    const access = await getTracklyEntitlements(userId);
+    if (!access.schemaReady) {
+      if (mode === 'audit') {
+        logger.warn('trackly-access', 'schema unavailable during audit', { userId, path: req.path });
+        next();
+        return;
+      }
+      res.status(503).json({
+        success: false,
+        code: 'ACCESS_CHECK_UNAVAILABLE',
+        error: 'Trackly access could not be verified. Please try again.',
+      });
+      return;
+    }
+    const apiKeyId = Number(authenticatedRequest.apiKeyId);
+    const apiKeyUserId = Number(authenticatedRequest.apiKeyUserId);
+    const isApiKeyRequest = (Number.isInteger(apiKeyId) && apiKeyId > 0)
+      || (Number.isInteger(apiKeyUserId) && apiKeyUserId > 0);
+    const isWebSurface = requiredSurface !== 'native' && !isApiKeyRequest && (
+      req.isAuthenticated?.() === true
+      || authenticatedUser?.client_platform === 'web'
+    );
+    const accessEnabled = isWebSurface
+      ? access.webAccessEnabled
+      : access.tracklyAccessEnabled;
+    if (accessEnabled) {
+      next();
+      return;
+    }
+    if (mode === 'audit') {
+      logger.warn('trackly-access', 'would deny Trackly request', { userId, path: req.path });
+      next();
+      return;
+    }
+    res.status(403).json({
+      success: false,
+      code: isWebSurface ? 'WEB_ACCESS_REQUIRED' : 'INVITATION_REQUIRED',
+      error: isWebSurface
+        ? 'Trackly Web is currently available to existing members.'
+        : 'Trackly is currently available through a limited invitation rollout.',
+      accessUrl: isWebSurface
+        ? 'https://usetrackly.app/early-access?reason=web-access'
+        : 'https://usetrackly.app/early-access',
+    });
+  } catch (error) {
+    logger.error('trackly-access', 'access lookup failed', new Error('database lookup failed'), {
+      userId,
+      path: req.path,
+    });
+    if (mode === 'audit') {
+      next();
+      return;
+    }
+    res.status(503).json({
+      success: false,
+      code: 'ACCESS_CHECK_UNAVAILABLE',
+      error: 'Trackly access could not be verified. Please try again.',
+    });
+  }
+}`,
+  machineSurfaceIsExempt: `function machineSurfaceIsExempt(mode: TracklyAccessMode): boolean {
+  return mode === 'audit' || mode === 'enforce';
+}`,
+  rawTracklyCliPlatform: `function rawTracklyCliPlatform(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().toLowerCase() === 'trackly-cli';
+}`,
+  classifyMachineAccess: `function classifyMachineAccess(input: {
+  nativeSurface?: boolean;
+  verifiedHostedMcpOAuth?: unknown;
+  auth?: { extra?: { userId?: unknown } } | null;
+  apiKeyId?: unknown;
+  apiKeyUserId?: unknown;
+  apiKeyProvenance?: unknown;
+  clientPlatform?: unknown;
+}): MachineAccessProof | null {
+  if (input.nativeSurface) return null;
+  const hosted = input.verifiedHostedMcpOAuth;
+  if (
+    hosted
+    && typeof hosted === 'object'
+    && (hosted as { kind?: unknown }).kind === 'hosted_mcp_oauth'
+  ) {
+    return 'hosted-mcp';
+  }
+  const oauthUserId = Number(input.auth?.extra?.userId);
+  if (input.auth && Number.isInteger(oauthUserId) && oauthUserId > 0) {
+    return 'mcp-bearer';
+  }
+  const apiKeyId = Number(input.apiKeyId);
+  const apiKeyUserId = Number(input.apiKeyUserId);
+  const isApiKey = (Number.isInteger(apiKeyId) && apiKeyId > 0)
+    || (Number.isInteger(apiKeyUserId) && apiKeyUserId > 0);
+  if (isApiKey) {
+    if (input.apiKeyProvenance === EXTENSION_KEY_PROVENANCE) return null;
+    return 'api-key';
+  }
+  if (rawTracklyCliPlatform(input.clientPlatform)) return 'trackly-cli';
+  return null;
+}`,
+  allowVerifiedMachineSurface: `function allowVerifiedMachineSurface(
+  mode: TracklyAccessMode,
+  details: {
+    userId: number;
+    path?: string;
+    proof: MachineAccessProof;
+  },
+): boolean {
+  if (!machineSurfaceIsExempt(mode)) return false;
+  logMachineAccessExemption(details);
+  return true;
+}`,
+});
+const HOSTED_REQUIRE_MCP_ENTITLEMENT_SOURCE = `async function requireMcpEntitlement(
+  userId: number,
+  _database: NonNullable<Parameters<typeof getTracklyEntitlements>[1]> = pool,
+): Promise<void> {
+  // Code exchange, refresh, access-token verification, and plugin resume.
+  allowVerifiedMachineSurface(getTracklyAccessMode(), { userId, proof: 'mcp-oauth' });
+}`;
+function assertMachineAccessSemantics(accessSource, accessPath, oauthSource, oauthPath) {
+  assertImportBinding(accessSource, 'EXTENSION_KEY_PROVENANCE', 'EXTENSION_KEY_PROVENANCE', '../utils/extension-google-auth-protocol.js', accessPath);
+  for (const [name, expected] of Object.entries(HOSTED_MACHINE_ACCESS_SOURCES)) {
+    assertActiveFunctionDefinitionAst(accessSource, name, expected, accessPath);
+  }
+  assertActiveFunctionDefinitionAst(oauthSource, 'requireMcpEntitlement', HOSTED_REQUIRE_MCP_ENTITLEMENT_SOURCE, oauthPath);
+}
+
 const HOSTED_PLUGIN_ROUTER_FACTORY_SOURCE = `function createTracklyPluginRouter(surface: CuratedMcpSurface = MCP_PLUGIN_SURFACE) {
   if (surface !== MCP_PLUGIN_SURFACE && surface !== MCP_OPENAI_SURFACE && surface !== MCP_MUSE_SURFACE
     && surface !== MCP_CLAUDE_SURFACE) {
@@ -7406,113 +7606,13 @@ assertActiveFunctionDefinitionAst(
   }`,
   hostedTracklyAccessPath,
 );
-assertActiveFunctionDefinitionAst(
+// requireTracklyAccessForSurface, its machine-proof helpers and
+// requireMcpEntitlement, pinned exactly at close-ai 6be6d4d21 (#2789 accepted).
+assertMachineAccessSemantics(
   hostedTracklyAccessSource,
-  'requireTracklyAccessForSurface',
-  `async function requireTracklyAccessForSurface(
-    req: Request,
-    res: Response,
-    next: NextFunction,
-    requiredSurface?: 'native',
-  ): Promise<void> {
-    const mode = getTracklyAccessMode();
-    const lifecycleExemptPaths = new Set(['/me', '/account', '/voice/history']);
-    if (mode === 'off' || req.path === '/jobscout/me' || lifecycleExemptPaths.has(req.path)) {
-      next();
-      return;
-    }
-
-    const passportSessionAlreadyAudited = mode === 'audit'
-      && requiredSurface !== 'native'
-      && req.isAuthenticated?.() === true
-      && Boolean((req.session as { passport?: { user?: unknown } } | undefined)?.passport?.user);
-    if (passportSessionAlreadyAudited && webAccessDecisionCompleted(req.user)) {
-      next();
-      return;
-    }
-
-    const userId = Number(
-      (req.user as { id?: number } | undefined)?.id
-      ?? (req as Request & { auth?: { extra?: { userId?: number } } }).auth?.extra?.userId,
-    );
-    if (!Number.isInteger(userId) || userId <= 0) {
-      if (mode === 'audit') {
-        logger.warn('trackly-access', 'identity unavailable during audit', { path: req.path });
-        next();
-        return;
-      }
-      res.status(401).json({
-        success: false,
-        code: 'AUTHENTICATION_REQUIRED',
-        error: 'Authentication is required.',
-      });
-      return;
-    }
-
-    try {
-      const access = await getTracklyEntitlements(userId);
-      if (!access.schemaReady) {
-        if (mode === 'audit') {
-          logger.warn('trackly-access', 'schema unavailable during audit', { userId, path: req.path });
-          next();
-          return;
-        }
-        res.status(503).json({
-          success: false,
-          code: 'ACCESS_CHECK_UNAVAILABLE',
-          error: 'Trackly access could not be verified. Please try again.',
-        });
-        return;
-      }
-      const authenticatedRequest = req as Request & { apiKeyId?: number; apiKeyUserId?: number };
-      const authenticatedUser = req.user as { client_platform?: string } | undefined;
-      const apiKeyId = Number(authenticatedRequest.apiKeyId);
-      const apiKeyUserId = Number(authenticatedRequest.apiKeyUserId);
-      const isApiKeyRequest = (Number.isInteger(apiKeyId) && apiKeyId > 0)
-        || (Number.isInteger(apiKeyUserId) && apiKeyUserId > 0);
-      const isWebSurface = requiredSurface !== 'native' && !isApiKeyRequest && (
-        req.isAuthenticated?.() === true
-        || authenticatedUser?.client_platform === 'web'
-      );
-      const accessEnabled = isWebSurface
-        ? access.webAccessEnabled
-        : access.tracklyAccessEnabled;
-      if (accessEnabled) {
-        next();
-        return;
-      }
-      if (mode === 'audit') {
-        logger.warn('trackly-access', 'would deny Trackly request', { userId, path: req.path });
-        next();
-        return;
-      }
-      res.status(403).json({
-        success: false,
-        code: isWebSurface ? 'WEB_ACCESS_REQUIRED' : 'INVITATION_REQUIRED',
-        error: isWebSurface
-          ? 'Trackly Web is currently available to existing members.'
-          : 'Trackly is currently available through a limited invitation rollout.',
-        accessUrl: isWebSurface
-          ? 'https://usetrackly.app/early-access?reason=web-access'
-          : 'https://usetrackly.app/early-access',
-      });
-    } catch (error) {
-      logger.error('trackly-access', 'access lookup failed', new Error('database lookup failed'), {
-        userId,
-        path: req.path,
-      });
-      if (mode === 'audit') {
-        next();
-        return;
-      }
-      res.status(503).json({
-        success: false,
-        code: 'ACCESS_CHECK_UNAVAILABLE',
-        error: 'Trackly access could not be verified. Please try again.',
-      });
-    }
-  }`,
   hostedTracklyAccessPath,
+  hostedOAuthProviderSource,
+  hostedOAuthProviderPath,
 );
 assertImportBinding(hostedTracklyAccessSource, 'pool', 'pool', '../config/database.js', hostedTracklyAccessPath);
 assertActiveFunctionDefinitionAst(
@@ -7870,30 +7970,96 @@ assertActiveFunctionDefinitionAst(
 assertImportBinding(hostedOAuthProviderSource, 'pool', 'pool', '../config/database.js', hostedOAuthProviderPath);
 assertActiveFunctionDefinitionAst(
   hostedOAuthProviderSource,
-  'requireMcpEntitlement',
-  `async function requireMcpEntitlement(
-    userId: number,
-    database: NonNullable<Parameters<typeof getTracklyEntitlements>[1]> = pool,
-  ): Promise<void> {
-    const mode = getTracklyAccessMode();
-    if (mode === 'off') return;
-    let entitlement;
-    try {
-      entitlement = await getTracklyEntitlements(userId, database);
-    } catch (error) {
-      if (mode === 'audit') {
-        logger.warn('trackly-access', 'MCP entitlement lookup failed during audit', { userId });
-        return;
-      }
-      throw error;
-    }
-    if (entitlement.schemaReady && entitlement.tracklyAccessEnabled) return;
-    if (mode === 'audit') {
-      logger.warn('trackly-access', 'would deny MCP credential operation', { userId });
-      return;
-    }
-    throw new InvalidGrantError('Trackly access requires an invitation. Visit https://usetrackly.app/early-access');
-  }`,
+  'refreshGraceReplay',
+  `function refreshGraceReplay(
+  row: RefreshGraceRow | undefined,
+  decoded: { userId: number; client_id: string; grant_id: string; resource: string },
+  requestedScopes: readonly string[],
+  predecessorHash: string,
+): RefreshGraceDecision | null {
+  if (!row?.revoked || !row.grace_access_token || !row.grace_refresh_token || !row.rotation_grace_until) {
+    return null;
+  }
+  if (row.user_id !== decoded.userId || row.client_id !== decoded.client_id || row.grant_id !== decoded.grant_id) {
+    return null;
+  }
+  let resource: string;
+  try {
+    resource = storedMcpResource(row.resource);
+  } catch {
+    return null;
+  }
+  if (resource !== decoded.resource) return null;
+  const until = new Date(row.rotation_grace_until).getTime();
+  if (!Number.isFinite(until) || until <= Date.now()) return null;
+  const accessToken = decryptMcpRefreshGraceToken(row.grace_access_token, predecessorHash, 'access');
+  const refreshToken = decryptMcpRefreshGraceToken(row.grace_refresh_token, predecessorHash, 'refresh');
+  if (!accessToken || !refreshToken) return null;
+  const access = verifyMcpAccessToken(accessToken, decoded.resource);
+  if (!access || access.userId !== decoded.userId || access.client_id !== decoded.client_id) return null;
+  const expiresIn = typeof access.exp === 'number'
+    ? Math.max(0, access.exp - Math.floor(Date.now() / 1000))
+    : 3600;
+  const issuedScopes = issuedGraceScopes(row.grace_scope, access.scopes);
+  if (!sameScopes(issuedScopes, requestedScopes)) return { kind: 'scope_mismatch' };
+  return {
+    kind: 'replay',
+    tokens: {
+      access_token: accessToken,
+      token_type: 'bearer',
+      expires_in: expiresIn,
+      refresh_token: refreshToken,
+      scope: issuedScopes.join(' '),
+    },
+  };
+}`,
+  hostedOAuthProviderPath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedOAuthProviderSource,
+  'clientUsesMetaHatchRedirect',
+  `function clientUsesMetaHatchRedirect(redirectUris: readonly string[] | undefined): boolean {
+  return Array.isArray(redirectUris)
+    && redirectUris.length > 0
+    && redirectUris.every((uri) => uri === MCP_MUSE_HATCH_REDIRECT_URI);
+}`,
+  hostedOAuthProviderPath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedOAuthProviderSource,
+  'clientUsesClaudeHostedRedirect',
+  `function clientUsesClaudeHostedRedirect(redirectUris: readonly string[] | undefined): boolean {
+  return Array.isArray(redirectUris)
+    && redirectUris.length === 1
+    && redirectUris[0] === CLAUDE_HOSTED_REDIRECT_URI;
+}`,
+  hostedOAuthProviderPath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedOAuthProviderSource,
+  'withDurableClientSecret',
+  `function withDurableClientSecret<T extends OAuthClientInformationFull>(client: T): T {
+  if (!client.client_secret) return client;
+  if (!clientUsesMetaHatchRedirect(client.redirect_uris)
+    && !clientUsesClaudeHostedRedirect(client.redirect_uris)) return client;
+  return { ...client, client_secret_expires_at: 0 };
+}`,
+  hostedOAuthProviderPath,
+);
+// close-ai #2792/#3180 (reviewed on trackly-cli#186): the refresh-reuse grace
+// window and the redirect set that earns a durable DCR secret must not grow.
+assertActiveVariableInitializerAst(hostedOAuthProviderSource, 'REFRESH_REUSE_GRACE_SECONDS', '45', hostedOAuthProviderPath);
+assertActiveVariableInitializerAst(
+  hostedOAuthProviderSource,
+  'CLAUDE_HOSTED_REDIRECT_URI',
+  "'https://claude.ai/api/mcp/auth_callback'",
+  hostedOAuthProviderPath,
+);
+assertImportBinding(
+  hostedOAuthProviderSource,
+  'MCP_MUSE_HATCH_REDIRECT_URI',
+  'MCP_MUSE_HATCH_REDIRECT_URI',
+  './mcp-config.js',
   hostedOAuthProviderPath,
 );
 assertActiveVariableInitializerAst(
@@ -10181,6 +10347,9 @@ function verifyHostedResumeToolContract(source, sourcePath) {
 }
 
 module.exports = {
+  assertMachineAccessSemantics,
+  HOSTED_MACHINE_ACCESS_SOURCES,
+  HOSTED_REQUIRE_MCP_ENTITLEMENT_SOURCE,
   verifyHostedResumeToolContract,
   CHECKED_IN_HOSTED_FIXTURE_SHA256,
   APPLY_392_CHECKPOINT_ACTION_SCHEMA_SHA256,
