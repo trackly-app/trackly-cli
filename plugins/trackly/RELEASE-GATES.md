@@ -160,8 +160,9 @@ the host's own browser tool, and only the user clicks Submit.
 
 The fixture-pinned `mutationAnnotationContract` in
 `scripts/verify-hosted-contract.js` mirrors the runtime pinned in
-`hosted-contract-fixture.json`. trackly-app/trackly-cli#154 recaptures that
-fixture from the deployed close-ai merge `dded739620bcdee1e6863324c8f660e6b999d0cc` (close-ai #2014), retaining
+`hosted-contract-fixture.json`. The fixture is recaptured from the deployed
+close-ai merge `6be6d4d2105f7de7f491c7b55bfdf00057d193f4` (close-ai #3186; it
+was `dded739620bcdee1e6863324c8f660e6b999d0cc` from trackly-app/trackly-cli#154), retaining
 `trackly_defer_apply_access` and `trackly_clear_apply_access_deferment` to
 `mutationAnnotations(false, true)`, matching the table above.
 The backend helper's signature is
