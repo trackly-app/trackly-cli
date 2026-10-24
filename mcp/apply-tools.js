@@ -440,14 +440,15 @@ const applyExecutionSchema = z.object({
   currentWave: executionWaveSchema.nullable(),
   unresolvedWaves: z.array(executionWaveSchema).max(APPLY_EXECUTION_MAX_TARGET),
 }).strict();
-const getExecutionAccessReviewResponseSchema = z.object({
+const getExecutionAccessReviewResponseObjectSchema = z.object({
   success: z.literal(true),
   execution: applyExecutionSchema,
   progress: executionProgressSchema,
   proposedWave: z.array(proposedWaveMemberSchema).max(APPLY_EXECUTION_MAX_TARGET),
   accessProposal: accessProposalSchema,
-}).strict().superRefine(validateMatchingProposal);
-const activeExecutionAccessReviewResponseSchema = getExecutionAccessReviewResponseSchema.innerType().extend({
+}).strict();
+const getExecutionAccessReviewResponseSchema = getExecutionAccessReviewResponseObjectSchema.superRefine(validateMatchingProposal);
+const activeExecutionAccessReviewResponseSchema = getExecutionAccessReviewResponseObjectSchema.extend({
   enabled: z.boolean().optional(),
   active: z.boolean().optional(),
   preserved: z.boolean().optional(),

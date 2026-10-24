@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.2] - 2026-10-24
+
+### Security
+
+- Update fast-uri to 3.1.9, body-parser to 2.4.0 and Zod to 4.6.7 after newly reported advisories blocked the zero-exception release audit. Preserve Apply response refinements through an explicit base schema compatible with Zod 4.
+
+### Fixed
+
+- Ship Apply skill 4.9.2 and plugin 1.1.2 with guided setup: ask only for missing answers, explain how to upload and select a default resume with the connected account, verify each save, and request explicit profile confirmation. Distinguish incomplete setup from disabled or unavailable Apply capability and preserve existing answers.
+
 ## [0.22.1] - 2026-10-20
 
 ### Fixed
