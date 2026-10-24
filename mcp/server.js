@@ -448,7 +448,7 @@ function createServer() {
     'trackly_update_experience_limits',
     'Atomically replace the complete role-specific experience-limit map. Each value is the highest stated minimum years requirement the user wants for that job function. When Trackly enforcement is active, a job is included when its stated minimum is less than or equal to the limit. Jobs with no stated minimum remain visible. An empty object clears the saved limits. experienceFilterV2Available reports edit capability, not enforcement state. Read discoveryPreferenceRevision with trackly_get_preferences first. If the backend returns a revision conflict, refetch and reconcile with the user; never retry blindly with the newer revision.',
     {
-      experienceLimitsByJobFunction: z.record(z.enum(JOB_FUNCTIONS), z.number().int().min(0).max(60)).describe(
+      experienceLimitsByJobFunction: z.partialRecord(z.enum(JOB_FUNCTIONS), z.number().int().min(0).max(60)).describe(
         'Complete replacement map from canonical job-function slug to maximum acceptable stated minimum years. Use {} to turn role-specific experience filtering off.'
       ),
       expectedPreferenceRevision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).describe(

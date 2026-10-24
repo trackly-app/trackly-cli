@@ -283,7 +283,7 @@ test('local MCP preference tools use the authoritative V2 and revision contracts
   assert.match(getRegion, /apiRequest\(\s*['"]GET['"]\s*,\s*['"]\/api\/jobscout\/me['"]/);
   assert.match(
     updateRegion,
-    /experienceLimitsByJobFunction:\s*z\.record\(z\.enum\(JOB_FUNCTIONS\),\s*z\.number\(\)\.int\(\)\.min\(0\)\.max\(60\)\)/,
+    /experienceLimitsByJobFunction:\s*z\.partialRecord\(z\.enum\(JOB_FUNCTIONS\),\s*z\.number\(\)\.int\(\)\.min\(0\)\.max\(60\)\)/,
   );
   assert.match(
     updateRegion,
@@ -320,7 +320,7 @@ test('local MCP projects preference reads and refuses unavailable V2 updates bef
         res.end(JSON.stringify({
           success: true,
           preferences: {
-            experienceLimitsByJobFunction: { product: 2 },
+            experienceLimitsByJobFunction: JSON.parse(body).experienceLimitsByJobFunction,
             discoveryPreferenceRevision: 4,
           },
           discoveryPreferenceRevision: 4,
@@ -436,6 +436,18 @@ test('local MCP projects preference reads and refuses unavailable V2 updates bef
   ]);
   assert.deepEqual(JSON.parse(requests[4].body), {
     experienceLimitsByJobFunction: { product: 2 },
+    experienceFilterVersion: 2,
+    expectedPreferenceRevision: 3,
+  });
+
+  const clearResult = await client.callTool({
+    name: 'trackly_update_experience_limits',
+    arguments: { experienceLimitsByJobFunction: {}, expectedPreferenceRevision: 3 },
+  });
+  assert.notEqual(clearResult.isError, true);
+  assert.deepEqual(JSON.parse(clearResult.content[0].text).preferences.experienceLimitsByJobFunction, {});
+  assert.deepEqual(JSON.parse(requests.at(-1).body), {
+    experienceLimitsByJobFunction: {},
     experienceFilterVersion: 2,
     expectedPreferenceRevision: 3,
   });
