@@ -351,15 +351,12 @@ job-search and application set plus `get_more_tools`, which lets agents report
 a missing capability. Run `trackly mcp` or use
 `trackly agent setup --client claude`.
 
-MCP usage analytics are on by default and relay through Trackly so the free
-service can be debugged and improved. They exclude résumé text, profile answers,
-demographic or work-authorization answers, and application notes. Client attribution
-uses a fixed family label; errors use categories, and search text is retained only
-as length. Raw queries and conversation text are excluded. Turn off future
-collection with **Share usage analytics** in Account Settings. Operators may also
-disable local MCP instrumentation with `TRACKLY_MCP_ANALYTICS_DISABLED=1` (or
-`TRACKLY_MCP_ANALYTICS_ENABLED=0`); the account setting remains authoritative
-for authenticated backend capture.
+MCP usage analytics are part of the free Trackly service and relay through
+Trackly so it can be debugged and improved; there is no account-level opt-out.
+They exclude résumé text, profile answers, demographic or work-authorization
+answers, and application notes. Client attribution uses a fixed family label;
+errors use categories, and search text is retained only as length. Raw queries
+and conversation text are excluded.
 
 **How do I use Claude Code for job hunting?**
 
