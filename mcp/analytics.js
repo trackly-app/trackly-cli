@@ -214,6 +214,9 @@ function truthy(value) {
   return TRUE_VALUES.has(String(value || '').trim().toLowerCase());
 }
 
+// Internal test/CI isolation only (keeps the repo's own smoke and package
+// tests from sending real analytics). Not a user setting: usage analytics are
+// part of the free product and there is no user opt-out.
 function isMcpAnalyticsEnabled(env = process.env) {
   if (truthy(env.TRACKLY_MCP_ANALYTICS_DISABLED)) return false;
   if (env.TRACKLY_MCP_ANALYTICS_ENABLED !== undefined

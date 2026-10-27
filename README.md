@@ -356,9 +356,7 @@ Trackly so it can be debugged and improved; there is no account-level opt-out.
 They exclude résumé text, profile answers, demographic or work-authorization
 answers, and application notes. Client attribution uses a fixed family label;
 errors use categories, and search text is retained only as length. Raw queries
-and conversation text are excluded. Operators may disable local MCP
-instrumentation with `TRACKLY_MCP_ANALYTICS_DISABLED=1` (or
-`TRACKLY_MCP_ANALYTICS_ENABLED=0`).
+and conversation text are excluded.
 
 **How do I use Claude Code for job hunting?**
 
