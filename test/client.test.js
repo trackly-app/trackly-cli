@@ -422,8 +422,11 @@ test('refreshAccessToken clears tokens on 401 even when body has status:string (
     assert.equal(out, null);
     assert.equal(client.getRefreshToken(), null, 'tokens must clear even when body.status overrides');
     assert.equal(client.loadConfig().baseUrl, 'https://k.com');
+    // Read the raw file: loadConfig() strips the retired key, so it cannot prove absence.
+    const { file } = client.getConfigPaths();
     assert.equal(
-      Object.hasOwn(client.loadConfig(), 'mcpAnalyticsOptOut'),
+      fs.existsSync(file)
+        && Object.hasOwn(JSON.parse(fs.readFileSync(file, 'utf8')), 'mcpAnalyticsOptOut'),
       false,
       'an invalid final OAuth session must not write an analytics opt-out',
     );
