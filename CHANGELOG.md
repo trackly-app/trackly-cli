@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Usage analytics are part of the free product and can no longer be turned off from the account. The CLI no longer stores or honors the local `mcpAnalyticsOptOut` marker: an existing marker is ignored when config is read and dropped the next time config is saved, so installs that were opted out resume anonymous MCP lifecycle analytics. Logout and credential removal clear credentials exactly as before but no longer contact the analytics-preference endpoint or treat an unreachable server as an opt-out. What is captured, the content-free projection and the backend relay are unchanged.
+
 ## [0.22.2] - 2026-10-24
 
 ### Security

@@ -423,9 +423,9 @@ test('refreshAccessToken clears tokens on 401 even when body has status:string (
     assert.equal(client.getRefreshToken(), null, 'tokens must clear even when body.status overrides');
     assert.equal(client.loadConfig().baseUrl, 'https://k.com');
     assert.equal(
-      client.loadConfig().mcpAnalyticsOptOut,
-      true,
-      'an invalid final OAuth session must fail closed for anonymous analytics',
+      Object.hasOwn(client.loadConfig(), 'mcpAnalyticsOptOut'),
+      false,
+      'an invalid final OAuth session must not write an analytics opt-out',
     );
   });
 });
@@ -466,7 +466,7 @@ test('refreshAccessToken clears tokens on 401 but preserves baseUrl', async (t) 
   });
 });
 
-test('refresh invalidation removes OAuth and fails analytics closed without recursive auth', async (t) => {
+test('refresh invalidation removes OAuth and a retired opt-out without contacting analytics', async (t) => {
   const requests = [];
   const { configDir, port } = await setupRefreshTestHarness(t, (req, res) => {
     requests.push(req.url);
@@ -486,19 +486,20 @@ test('refresh invalidation removes OAuth and fails analytics closed without recu
     TRACKLY_BASE_URL: `http://127.0.0.1:${port}`,
     TRACKLY_HTTP_TIMEOUT_MS: '1000',
   }, async () => {
-    client.saveConfig({
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(client.getConfigPaths().file, JSON.stringify({
       token: 'jwt_expired',
       refreshToken: 'rt_invalid',
       baseUrl: 'https://custom.usetrackly.app',
       mcpAnalyticsOptOut: true,
-    });
+    }), { mode: 0o600 });
 
     assert.equal(await client.refreshAccessToken(), null);
     assert.deepEqual(requests, ['/api/auth/refresh']);
-    assert.deepEqual(client.loadConfig(), {
-      baseUrl: 'https://custom.usetrackly.app',
-      mcpAnalyticsOptOut: true,
-    });
+    assert.deepEqual(
+      JSON.parse(fs.readFileSync(client.getConfigPaths().file, 'utf8')),
+      { baseUrl: 'https://custom.usetrackly.app' },
+    );
   });
 });
 
@@ -557,221 +558,7 @@ test('clearOAuthTokens removes file when no non-auth keys remain', async (t) => 
   });
 });
 
-test('logout clearing preserves only the anonymous analytics opt-out', async (t) => {
-  const configDir = createTempConfigDir();
-  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
-
-  await withEnv({
-    TRACKLY_CONFIG_DIR: configDir,
-    TRACKLY_API_KEY: undefined,
-    TRACKLY_BASE_URL: undefined,
-  }, async () => {
-    client.saveConfig({
-      token: 'jwt',
-      refreshToken: 'rt',
-      apiKey: 'trk_secret',
-      baseUrl: 'https://custom.usetrackly.app',
-      mcpAnalyticsOptOut: true,
-    });
-
-    client.clearConfig();
-
-    assert.deepEqual(client.loadConfig(), { mcpAnalyticsOptOut: true });
-    assert.equal(client.getToken(), null);
-    assert.equal(client.getRefreshToken(), null);
-    assert.equal(client.getApiKey(), null);
-  });
-});
-
-test('credential removal still unlinks the old credential file when opt-out preservation cannot write', async (t) => {
-  const configDir = createTempConfigDir();
-  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
-
-  await withEnv({
-    TRACKLY_CONFIG_DIR: configDir,
-    TRACKLY_API_KEY: undefined,
-    TRACKLY_BASE_URL: undefined,
-  }, async () => {
-    client.saveConfig({ token: 'jwt', refreshToken: 'rt', mcpAnalyticsOptOut: true });
-    const configFile = client.getConfigPaths().file;
-    const originalWriteFileSync = fs.writeFileSync;
-    fs.writeFileSync = (file, ...args) => {
-      if (String(file).includes('.tmp.')) throw new Error('disk full');
-      return originalWriteFileSync(file, ...args);
-    };
-    try {
-      await assert.doesNotReject(client.removeCredentials({
-        scope: 'all',
-        request: async () => ({ shareUsageAnalytics: false }),
-        timeoutMs: 20,
-      }));
-    } finally {
-      fs.writeFileSync = originalWriteFileSync;
-    }
-
-    assert.equal(fs.existsSync(configFile), false, 'credential-bearing file must be removed');
-  });
-});
-
-test('final credential removal times out, aborts preference sync, and ignores late completion', async (t) => {
-  const configDir = createTempConfigDir();
-  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
-
-  await withEnv({
-    TRACKLY_CONFIG_DIR: configDir,
-    TRACKLY_API_KEY: undefined,
-    TRACKLY_BASE_URL: undefined,
-  }, async () => {
-    client.saveConfig({ token: 'jwt', refreshToken: 'rt' });
-    let requestSignal;
-    let finishRequest;
-    const request = (...args) => {
-      requestSignal = args[7].signal;
-      return new Promise((resolve) => { finishRequest = resolve; });
-    };
-
-    const startedAt = Date.now();
-    await client.removeCredentials({ scope: 'all', request, timeoutMs: 20 });
-    assert.ok(Date.now() - startedAt < 500, 'logout must not wait for a hung preference request');
-    assert.equal(requestSignal.aborted, true, 'timeout must abort the underlying request');
-    assert.deepEqual(client.loadConfig(), { mcpAnalyticsOptOut: true });
-
-    finishRequest({ shareUsageAnalytics: true });
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.deepEqual(
-      client.loadConfig(),
-      { mcpAnalyticsOptOut: true },
-      'late success must not rewrite post-logout config',
-    );
-  });
-});
-
-test('all-scope logout preserves opt-out when authentication is environment-only', async (t) => {
-  const configDir = createTempConfigDir();
-  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
-
-  await withEnv({
-    TRACKLY_CONFIG_DIR: configDir,
-    TRACKLY_API_KEY: 'trk_ephemeral_logout_key',
-    TRACKLY_BASE_URL: undefined,
-  }, async () => {
-    let requestCalls = 0;
-    await client.removeCredentials({
-      scope: 'all',
-      request: async () => {
-        requestCalls += 1;
-        return { shareUsageAnalytics: false };
-      },
-      timeoutMs: 20,
-    });
-
-    assert.equal(requestCalls, 1);
-    assert.deepEqual(client.loadConfig(), { mcpAnalyticsOptOut: true });
-  });
-});
-
-test('failed final-credential sync keeps anonymous analytics off until authenticated opt-in sync', async (t) => {
-  const configDir = createTempConfigDir();
-  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
-
-  await withEnv({
-    TRACKLY_CONFIG_DIR: configDir,
-    TRACKLY_API_KEY: undefined,
-    TRACKLY_BASE_URL: undefined,
-  }, async () => {
-    client.saveConfig({ apiKey: 'trk_last_credential' });
-    await client.removeCredentials({
-      scope: 'apiKey',
-      request: async () => { throw new Error('offline'); },
-      timeoutMs: 20,
-    });
-    assert.deepEqual(client.loadConfig(), { mcpAnalyticsOptOut: true });
-
-    await client.synchronizeAnalyticsPreferenceBeforeLogout(
-      async () => ({ shareUsageAnalytics: true }),
-      { timeoutMs: 20 },
-    );
-    assert.deepEqual(
-      client.loadConfig(),
-      { mcpAnalyticsOptOut: true },
-      'unauthenticated sync must not re-enable capture',
-    );
-
-    client.saveConfig({ ...client.loadConfig(), token: 'jwt_authenticated' });
-    await client.synchronizeAnalyticsPreferenceBeforeLogout(
-      async () => ({ shareUsageAnalytics: true }),
-      { timeoutMs: 20 },
-    );
-    assert.deepEqual(client.loadConfig(), { token: 'jwt_authenticated' });
-  });
-});
-
-test('known-invalid OAuth cleanup fails closed without recursively requesting preference', async (t) => {
-  const configDir = createTempConfigDir();
-  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
-
-  await withEnv({
-    TRACKLY_CONFIG_DIR: configDir,
-    TRACKLY_API_KEY: undefined,
-    TRACKLY_BASE_URL: undefined,
-  }, async () => {
-    client.saveConfig({ token: 'dead_jwt', refreshToken: 'dead_rt' });
-    let requestCalls = 0;
-
-    await client.removeCredentials({
-      scope: 'oauth',
-      preferenceUnavailable: true,
-      request: async () => {
-        requestCalls += 1;
-        throw new Error('must not request with known-invalid credentials');
-      },
-    });
-
-    assert.equal(requestCalls, 0);
-    assert.deepEqual(client.loadConfig(), { mcpAnalyticsOptOut: true });
-  });
-});
-
-test('logout sync preserves the authoritative analytics opt-out before credentials clear', async (t) => {
-  const configDir = createTempConfigDir();
-  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
-
-  await withEnv({
-    TRACKLY_CONFIG_DIR: configDir,
-    TRACKLY_API_KEY: undefined,
-    TRACKLY_BASE_URL: undefined,
-  }, async () => {
-    client.saveConfig({ token: 'jwt', refreshToken: 'rt' });
-    const request = async () => ({ success: true, shareUsageAnalytics: false });
-
-    await client.synchronizeAnalyticsPreferenceBeforeLogout(request);
-    client.clearConfig();
-
-    assert.deepEqual(client.loadConfig(), { mcpAnalyticsOptOut: true });
-  });
-});
-
-test('logout sync fails closed when the authoritative preference is unavailable', async (t) => {
-  const configDir = createTempConfigDir();
-  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
-
-  await withEnv({
-    TRACKLY_CONFIG_DIR: configDir,
-    TRACKLY_API_KEY: undefined,
-    TRACKLY_BASE_URL: undefined,
-  }, async () => {
-    client.saveConfig({ token: 'jwt', refreshToken: 'rt' });
-
-    await client.synchronizeAnalyticsPreferenceBeforeLogout(async () => {
-      throw new Error('network unavailable');
-    });
-    client.clearConfig();
-
-    assert.deepEqual(client.loadConfig(), { mcpAnalyticsOptOut: true });
-  });
-});
-
-test('logout sync never blocks malformed or unreadable config cleanup', async (t) => {
+test('loadConfig ignores and saveConfig drops a retired analytics opt-out', async (t) => {
   const configDir = createTempConfigDir();
   t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
 
@@ -782,12 +569,141 @@ test('logout sync never blocks malformed or unreadable config cleanup', async (t
   }, async () => {
     fs.mkdirSync(configDir, { recursive: true });
     const configFile = path.join(configDir, 'config.json');
-    for (const raw of ['{invalid', 'null']) {
-      fs.writeFileSync(configFile, raw);
-      await assert.doesNotReject(client.synchronizeAnalyticsPreferenceBeforeLogout);
-      assert.doesNotThrow(() => client.clearConfig());
-      assert.equal(fs.existsSync(configFile), false);
+    fs.writeFileSync(
+      configFile,
+      JSON.stringify({ token: 'jwt', baseUrl: 'https://custom.usetrackly.app', mcpAnalyticsOptOut: true }),
+      { mode: 0o600 },
+    );
+
+    assert.deepEqual(client.loadConfig(), {
+      token: 'jwt',
+      baseUrl: 'https://custom.usetrackly.app',
+    });
+
+    client.saveConfig({ ...client.loadConfig(), timeoutMs: 5000 });
+    assert.deepEqual(JSON.parse(fs.readFileSync(configFile, 'utf8')), {
+      token: 'jwt',
+      baseUrl: 'https://custom.usetrackly.app',
+      timeoutMs: 5000,
+    });
+
+    client.saveConfig({ token: 'jwt', mcpAnalyticsOptOut: true });
+    assert.deepEqual(
+      JSON.parse(fs.readFileSync(configFile, 'utf8')),
+      { token: 'jwt' },
+      'saveConfig must never write the retired opt-out key',
+    );
+  });
+});
+
+test('logout clearing removes the whole config, including a retired opt-out', async (t) => {
+  const configDir = createTempConfigDir();
+  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: undefined,
+    TRACKLY_BASE_URL: undefined,
+  }, async () => {
+    fs.mkdirSync(configDir, { recursive: true });
+    const configFile = path.join(configDir, 'config.json');
+    const seeded = JSON.stringify({
+      token: 'jwt',
+      refreshToken: 'rt',
+      apiKey: 'trk_secret',
+      baseUrl: 'https://custom.usetrackly.app',
+      mcpAnalyticsOptOut: true,
+    });
+
+    fs.writeFileSync(configFile, seeded, { mode: 0o600 });
+    client.clearConfig();
+    assert.equal(fs.existsSync(configFile), false);
+
+    fs.writeFileSync(configFile, seeded, { mode: 0o600 });
+    await client.removeCredentials({ scope: 'all' });
+    assert.equal(fs.existsSync(configFile), false);
+    assert.equal(client.getToken(), null);
+    assert.equal(client.getRefreshToken(), null);
+    assert.equal(client.getApiKey(), null);
+  });
+});
+
+test('credential removal with an unreachable server never writes an opt-out', async (t) => {
+  const configDir = createTempConfigDir();
+  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
+  const deadPort = await (async () => {
+    const probe = http.createServer(() => {});
+    await new Promise((resolve) => probe.listen(0, '127.0.0.1', resolve));
+    const port = probe.address().port;
+    await new Promise((resolve) => probe.close(resolve));
+    return port;
+  })();
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: undefined,
+    TRACKLY_BASE_URL: `http://127.0.0.1:${deadPort}`,
+    TRACKLY_HTTP_TIMEOUT_MS: '500',
+  }, async () => {
+    const configFile = client.getConfigPaths().file;
+
+    client.saveConfig({ token: 'jwt', refreshToken: 'rt' });
+    await client.removeCredentials({ scope: 'all' });
+    assert.equal(fs.existsSync(configFile), false, 'logout must leave no config behind');
+
+    client.saveConfig({ apiKey: 'trk_last_credential' });
+    await client.removeCredentials({ scope: 'apiKey' });
+    assert.equal(fs.existsSync(configFile), false, 'final API-key removal must leave no config');
+
+    client.saveConfig({ token: 'dead_jwt', refreshToken: 'dead_rt' });
+    await client.removeCredentials({ scope: 'oauth' });
+    assert.equal(fs.existsSync(configFile), false, 'final OAuth removal must leave no config');
+
+    client.saveConfig({ apiKey: 'trk_kept', token: 'jwt', baseUrl: 'https://custom.usetrackly.app' });
+    await client.removeCredentials({ scope: 'oauth' });
+    assert.deepEqual(JSON.parse(fs.readFileSync(configFile, 'utf8')), {
+      apiKey: 'trk_kept',
+      baseUrl: 'https://custom.usetrackly.app',
+    });
+  });
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: 'trk_ephemeral_logout_key',
+    TRACKLY_BASE_URL: `http://127.0.0.1:${deadPort}`,
+  }, async () => {
+    await client.removeCredentials({ scope: 'all' });
+    assert.equal(
+      fs.existsSync(client.getConfigPaths().file),
+      false,
+      'environment-only logout must not write an opt-out marker',
+    );
+  });
+});
+
+test('credential rewrite failure still removes the old credential file', async (t) => {
+  const configDir = createTempConfigDir();
+  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
+
+  await withEnv({
+    TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_API_KEY: undefined,
+    TRACKLY_BASE_URL: undefined,
+  }, async () => {
+    client.saveConfig({ token: 'jwt', refreshToken: 'rt', apiKey: 'trk_other' });
+    const configFile = client.getConfigPaths().file;
+    const originalWriteFileSync = fs.writeFileSync;
+    fs.writeFileSync = (file, ...args) => {
+      if (String(file).includes('.tmp.')) throw new Error('disk full');
+      return originalWriteFileSync(file, ...args);
+    };
+    try {
+      await assert.rejects(client.removeCredentials({ scope: 'oauth' }), /disk full/);
+    } finally {
+      fs.writeFileSync = originalWriteFileSync;
     }
+
+    assert.equal(fs.existsSync(configFile), false, 'credential-bearing file must be removed');
   });
 });
 

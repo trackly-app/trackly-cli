@@ -7,9 +7,7 @@ const {
   ensureSecureUrl,
   getRequestHeaders,
   hasAuth,
-  loadConfig,
   normalizeEndpoint,
-  saveConfig,
 } = require('../lib/client');
 
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 2_000;
@@ -23,7 +21,6 @@ const MAX_SANITIZE_STRING_LENGTH = 4_096;
 const AUTHENTICATED_RELAY_PATH = '/api/jobscout/mcp-analytics';
 const ANONYMOUS_RELAY_PATH = '/api/jobscout/mcp-analytics/anonymous';
 const ANALYTICS_PREFERENCE_PATH = '/api/jobscout/analytics-preference';
-const ANALYTICS_OPT_OUT_CONFIG_KEY = 'mcpAnalyticsOptOut';
 const MCP_ANALYTICS_USER_AGENT = `trackly-mcp-analytics/${PACKAGE_VERSION}`;
 const REDACTED = '[redacted]';
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'enabled']);
@@ -713,40 +710,12 @@ function runtimeEventProperties(env = process.env) {
 
 function createBackendRelay(options = {}) {
   const fetchImpl = options.fetch || globalThis.fetch;
-  const loadConfigImpl = options.loadConfig || loadConfig;
-  const saveConfigImpl = options.saveConfig || saveConfig;
   const pending = new Set();
   const maxPendingDeliveries = Number.isSafeInteger(options.maxPendingDeliveries)
     && options.maxPendingDeliveries > 0
     ? options.maxPendingDeliveries
     : DEFAULT_MAX_PENDING_DELIVERIES;
-  let cachedOptOut = readCachedAnalyticsOptOut();
   let preferenceLookup = null;
-
-  function readCachedAnalyticsOptOut() {
-    try {
-      return loadConfigImpl()[ANALYTICS_OPT_OUT_CONFIG_KEY] === true;
-    } catch {
-      return true;
-    }
-  }
-
-  function persistCachedAnalyticsOptOut(optedOut) {
-    cachedOptOut = optedOut;
-    try {
-      const config = loadConfigImpl();
-      if (optedOut && config[ANALYTICS_OPT_OUT_CONFIG_KEY] === true) return;
-      if (optedOut) config[ANALYTICS_OPT_OUT_CONFIG_KEY] = true;
-      else if (Object.hasOwn(config, ANALYTICS_OPT_OUT_CONFIG_KEY)) {
-        delete config[ANALYTICS_OPT_OUT_CONFIG_KEY];
-      } else {
-        return;
-      }
-      saveConfigImpl(config);
-    } catch {
-      // The in-memory privacy gate remains authoritative for this process.
-    }
-  }
 
   function authenticatedRequestContext() {
     const headers = getRequestHeaders(false, MCP_ANALYTICS_USER_AGENT);
@@ -789,7 +758,6 @@ function createBackendRelay(options = {}) {
         throw new Error('analytics_preference_invalid');
       }
       if (!isCurrentAuthenticatedContext(authContext.key)) return false;
-      persistCachedAnalyticsOptOut(!preference.shareUsageAnalytics);
       return preference.shareUsageAnalytics;
     })().catch(() => false).finally(() => {
       if (preferenceLookup === lookup) preferenceLookup = null;
@@ -805,12 +773,6 @@ function createBackendRelay(options = {}) {
       const authContext = authenticated ? authenticatedRequestContext() : null;
       if (authenticated && !authContext) return;
       if (!authenticated && !ANONYMOUS_RELAY_EVENTS.has(event.event)) return;
-      // Another MCP process can persist an opt-out before this process loses
-      // authentication. Refresh the anonymous gate from disk before every
-      // unauthenticated delivery, while preserving a known in-memory opt-out
-      // if its earlier persistence attempt failed.
-      if (!authenticated) cachedOptOut ||= readCachedAnalyticsOptOut();
-      if (!authenticated && cachedOptOut) return;
       if (pending.size >= maxPendingDeliveries) return;
 
       const endpoint = authenticated ? AUTHENTICATED_RELAY_PATH : ANONYMOUS_RELAY_PATH;

@@ -532,20 +532,20 @@ test('config rejects --api-key together with --clear-api-key', async (t) => {
   assert.match(result.stderr, /Cannot use --api-key and --clear-api-key together/);
 });
 
-test('config --clear-api-key synchronizes opt-out before removing the final credential', async (t) => {
+test('config --clear-api-key removes the final credential without writing an opt-out', async (t) => {
   const dir = createTempConfigDir();
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.writeFileSync(
     path.join(dir, 'config.json'),
-    JSON.stringify({ apiKey: 'trk_last_credential' }),
+    JSON.stringify({ apiKey: 'trk_last_credential', mcpAnalyticsOptOut: true }),
     { mode: 0o600 },
   );
 
   const requests = [];
   const { server, port } = await startMockServer((req, res) => {
-    requests.push({ method: req.method, url: req.url, authorization: req.headers.authorization });
+    requests.push({ method: req.method, url: req.url });
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ shareUsageAnalytics: false }));
+    res.end(JSON.stringify({ shareUsageAnalytics: true, optOutAvailable: false }));
   });
   t.after(() => server.close());
 
@@ -555,19 +555,14 @@ test('config --clear-api-key synchronizes opt-out before removing the final cred
   });
 
   assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(requests, [{
-    method: 'GET',
-    url: '/api/jobscout/analytics-preference',
-    authorization: 'Bearer trk_last_credential',
-  }]);
-  assert.deepEqual(
-    JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')),
-    { mcpAnalyticsOptOut: true },
-  );
+  assert.deepEqual(requests, [], 'credential removal must not consult the analytics preference');
+  // `config` persists its remaining settings after clearing the key; nothing
+  // about analytics may survive in that rewrite.
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')), {});
   assert.match(result.stdout, /Stored API key cleared/);
 });
 
-test('logout synchronizes the preference and clears credentials without leaving config', async (t) => {
+test('logout clears credentials without leaving config, even when the server is unreachable', async (t) => {
   const dir = createTempConfigDir();
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.writeFileSync(
@@ -576,11 +571,8 @@ test('logout synchronizes the preference and clears credentials without leaving 
     { mode: 0o600 },
   );
 
-  const { server, port } = await startMockServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ shareUsageAnalytics: true }));
-  });
-  t.after(() => server.close());
+  const { server, port } = await startMockServer(() => {});
+  await new Promise((resolve) => server.close(resolve));
 
   const result = await runCli(['logout'], {
     TRACKLY_CONFIG_DIR: dir,
