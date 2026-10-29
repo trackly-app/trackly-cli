@@ -62,7 +62,7 @@ async function withTempAgentHomeAsync(run) {
 test('agent setup installs one canonical skill and links both clients', () => {
   withTempAgentHome(() => {
     const result = agent.setupAgent('both');
-    assert.equal(result.skillVersion, '4.9.2');
+    assert.equal(result.skillVersion, '4.9.3');
     assert.ok(fs.existsSync(path.join(result.canonical, 'SKILL.md')));
     assert.ok(fs.existsSync(path.join(result.canonical, 'references', 'inbox-receipt-preflight.md')));
     for (const reference of ['operational-checkpoints.md', 'access-probe.md', 'performance-telemetry.md']) {
@@ -147,8 +147,8 @@ for (const flag of ['--skills-only', '--skills-only=true']) {
       ], { encoding: 'utf8', env: process.env });
       assert.equal(child.status, 0, child.stderr || child.stdout);
       const result = JSON.parse(child.stdout);
-      assert.equal(result.skillVersion, '4.9.2');
-      assert.equal(result.skillPolicyRevision, '4.9.2');
+      assert.equal(result.skillVersion, '4.9.3');
+      assert.equal(result.skillPolicyRevision, '4.9.3');
       assert.equal(fs.existsSync(marker), false);
       for (const [file, content] of configs) assert.equal(fs.readFileSync(file, 'utf8'), content);
       for (const client of result.clients) {
@@ -156,7 +156,7 @@ for (const flag of ['--skills-only', '--skills-only=true']) {
         assert.ok(fs.existsSync(path.join(client.target, 'references', 'handoff-compatibility.md')));
       }
       const metadata = JSON.parse(fs.readFileSync(path.join(result.canonical, '.trackly-managed.json'), 'utf8'));
-      assert.equal(metadata.skillPolicyRevision, '4.9.2');
+      assert.equal(metadata.skillPolicyRevision, '4.9.3');
       assert.equal(agent.inspectClient('codex').skillIntegrity, 'verified');
       assert.equal(agent.inspectClient('claude').skillIntegrity, 'verified');
     });
@@ -221,7 +221,7 @@ test('agent doctor inspection fails closed on modified, missing, or extra manage
       }
 
       const inspection = agent.inspectClient('codex');
-      assert.equal(inspection.installedSkillVersion, '4.9.2', mutation);
+      assert.equal(inspection.installedSkillVersion, '4.9.3', mutation);
       assert.equal(inspection.installed, false, mutation);
       assert.equal(inspection.skillIntegrity, 'content_mismatch', mutation);
     });
@@ -234,7 +234,7 @@ test('agent doctor reports managed skill integrity failures even when metadata v
     fs.appendFileSync(path.join(setup.clients[0].target, 'SKILL.md'), '\nfixture mutation\n');
 
     const report = await agent.doctorAgent();
-    assert.equal(report.skillPolicyRevision, '4.9.2');
+    assert.equal(report.skillPolicyRevision, '4.9.3');
     assert.equal(report.skillPackIntegrity.ok, false);
     assert.match(report.skillPackIntegrity.expectedDigest, /^[a-f0-9]{64}$/);
     assert.deepEqual(
@@ -258,7 +258,7 @@ test('clean temporary homes install Codex, Claude, and both client targets', () 
   }
 });
 
-test('Apply execution mode makes managed skill 4.0.0 stale and setup installs 4.9.2', () => {
+test('Apply execution mode makes managed skill 4.0.0 stale and setup installs 4.9.3', () => {
   withTempAgentHome(() => {
     const target = agent.clientSkillDir('codex');
     fs.mkdirSync(target, { recursive: true });
@@ -274,10 +274,10 @@ test('Apply execution mode makes managed skill 4.0.0 stale and setup installs 4.
     assert.equal(before.installedSkillVersion, '4.0.0');
 
     const setup = agent.setupAgent('codex');
-    assert.equal(setup.skillVersion, '4.9.2');
+    assert.equal(setup.skillVersion, '4.9.3');
     const after = agent.inspectClient('codex');
     assert.equal(after.installed, true);
-    assert.equal(after.installedSkillVersion, '4.9.2');
+    assert.equal(after.installedSkillVersion, '4.9.3');
     const installedSkill = fs.readFileSync(path.join(target, 'SKILL.md'), 'utf8');
     assert.match(installedSkill, /Resume after maintenance/);
     assert.match(installedSkill, /sanctioned idempotent lookup/);
@@ -541,11 +541,11 @@ test('agent doctor compatibility enforces the protocol minimum installed skill v
   const installed = [{
     client: 'codex',
     installed: true,
-    installedSkillVersion: '4.9.2',
+    installedSkillVersion: '4.9.3',
   }];
   const current = agent.evaluateApplyCompatibility({
     version: '3.7.0',
-    mcpContractVersion: '3.9.2',
+    mcpContractVersion: '3.9.3',
     compatibleCliMinimumVersion: '0.8.2',
     compatibleSkillMajor: 4,
     compatibleSkillMinimumVersion: '4.4.0',
@@ -558,7 +558,7 @@ test('agent doctor compatibility enforces the protocol minimum installed skill v
 
   const future = agent.evaluateApplyCompatibility({
     version: '3.7.0',
-    mcpContractVersion: '3.9.2',
+    mcpContractVersion: '3.9.3',
     compatibleCliMinimumVersion: '0.8.2',
     compatibleSkillMajor: 4,
     compatibleSkillMinimumVersion: '4.10.0',
@@ -581,11 +581,11 @@ test('agent doctor compatibility rejects stale CLI and MCP contract versions', (
   const clients = [{
     client: 'codex',
     installed: true,
-    installedSkillVersion: '4.9.2',
+    installedSkillVersion: '4.9.3',
   }];
   const base = {
     version: '3.7.0',
-    mcpContractVersion: '3.9.2',
+    mcpContractVersion: '3.9.3',
     compatibleCliMinimumVersion: '0.8.2',
     compatibleSkillMajor: 4,
     compatibleSkillMinimumVersion: '4.4.0',
@@ -622,13 +622,13 @@ test('agent doctor accepts the local MCP contract during an explicit overlap win
   const clients = [{
     client: 'codex',
     installed: true,
-    installedSkillVersion: '4.9.2',
+    installedSkillVersion: '4.9.3',
   }];
   const result = agent.evaluateApplyCompatibility({
     version: '3.7.0',
     mcpContractVersion: '3.6.0',
     preferredMcpContractVersion: '3.8.1',
-    compatibleMcpContractVersions: ['3.9.2', '3.9.1', '3.9.0', '3.8.1', '3.7.6', '3.7.5', '3.7.4'],
+    compatibleMcpContractVersions: ['3.9.3', '3.9.2', '3.9.1', '3.9.0', '3.8.1', '3.7.6', '3.7.5', '3.7.4'],
     compatibleCliMinimumVersion: '0.13.1',
     compatibleSkillMajor: 4,
     compatibleSkillMinimumVersion: '4.4.1',
@@ -637,7 +637,7 @@ test('agent doctor accepts the local MCP contract during an explicit overlap win
 
   assert.equal(result.mcpContractCompatible, true);
   assert.equal(result.preferredMcpContractVersion, '3.8.1');
-  assert.deepEqual(result.compatibleMcpContractVersions, ['3.9.2', '3.9.1', '3.9.0', '3.8.1', '3.7.6', '3.7.5', '3.7.4']);
+  assert.deepEqual(result.compatibleMcpContractVersions, ['3.9.3', '3.9.2', '3.9.1', '3.9.0', '3.8.1', '3.7.6', '3.7.5', '3.7.4']);
 });
 
 test('agent doctor treats an explicit MCP compatibility window as authoritative', () => {
@@ -653,7 +653,7 @@ test('agent doctor treats an explicit MCP compatibility window as authoritative'
   }, [{
     client: 'codex',
     installed: true,
-    installedSkillVersion: '4.9.2',
+    installedSkillVersion: '4.9.3',
   }]);
 
   assert.equal(result.mcpContractCompatible, false);
@@ -664,7 +664,7 @@ test('agent doctor accepts the legacy MCP contract only while accessible executi
   const clients = [{
     client: 'codex',
     installed: true,
-    installedSkillVersion: '4.9.2',
+    installedSkillVersion: '4.9.3',
   }];
   const base = {
     version: '3.4.0',
@@ -705,7 +705,7 @@ test('agent doctor does not infer controller and user tab union inventory from p
   await withTempAgentHomeAsync(async () => {
     const report = await agent.doctorAgent();
     assert.equal(report.cliVersion, packageManifest.version);
-    assert.equal(report.mcpContractVersion, '3.9.2');
+    assert.equal(report.mcpContractVersion, '3.9.3');
     assert.match(report.skillPackIntegrity.expectedDigest, /^[a-f0-9]{64}$/);
     assert.deepEqual(report.browserControl.tabInventory, {
       controllerOwnedTabs: 'runtime_verification_required',

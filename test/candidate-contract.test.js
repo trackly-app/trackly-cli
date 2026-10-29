@@ -110,8 +110,10 @@ test('candidate checkpoint pin rejects an unexpected variant and another contrac
   const actions = require('../contracts/trackly-apply-tools.json').constants.applyCheckpointActionCodes;
   const source = `const applyCheckpointActionSchema = z.discriminatedUnion('actionCode', [${actions.map(code => `applyCheckpointActionVariant('${code}')`).join(',')}]);`;
   assert.doesNotThrow(() => assertCandidateCheckpointActionSchema(source, '3.9.2'));
+  assert.doesNotThrow(() => assertCandidateCheckpointActionSchema(source, '3.9.3'));
   assert.throws(() => assertCandidateCheckpointActionSchema(source.replace('client/upgrade_required', 'client/unexpected'), '3.9.2'), /locked active semantic AST/);
-  assert.throws(() => assertCandidateCheckpointActionSchema(source, '3.9.1'), /requires contract 3.9.2/);
+  assert.throws(() => assertCandidateCheckpointActionSchema(source.replace('client/upgrade_required', 'client/unexpected'), '3.9.3'), /locked active semantic AST/);
+  assert.throws(() => assertCandidateCheckpointActionSchema(source, '3.9.1'), /requires contract 3.9.2 or 3.9.3/);
 });
 
 test('candidate writer requires the exact awaited schema guard and preserves the deployed boundary', () => {
@@ -176,7 +178,7 @@ test('candidate writer also refuses an always-ready delegated database probe', (
 });
 
 
-test('legacy 3.9.2 decoder accepts only reviewed raw schemas and preserves exact executable literals', () => {
+test('retained legacy decoder accepts only reviewed raw schemas and preserves exact executable literals', () => {
   const { expectedContractSchemaAst } = require('../scripts/verify-candidate-contract');
   const { activeToolRegistrations, registrationInputSchemaAst, canonicalSchemaAst } = require('../scripts/verify-hosted-contract');
   const contract = require('../contracts/trackly-apply-tools.json');
@@ -186,11 +188,27 @@ test('legacy 3.9.2 decoder accepts only reviewed raw schemas and preserves exact
     'trackly_get_apply_execution_snapshot', 'trackly_advance_apply_execution', 'trackly_record_application_outcomes']) {
     const raw = contract.tools[name];
     const actual = canonicalSchemaAst(registrationInputSchemaAst(source, registrations.find(entry => entry.name === name), 'local'));
-    for (const lane of ['local', 'hosted']) assert.deepEqual(expectedContractSchemaAst(name, raw, '3.9.2', lane), actual);
+    for (const lane of ['local', 'hosted']) {
+      for (const version of ['3.9.2', '3.9.3']) assert.deepEqual(expectedContractSchemaAst(name, raw, version, lane), actual);
+    }
     assert.throws(() => expectedContractSchemaAst(name, raw + ' ', '3.9.2', 'local'), /unknown legacy raw schema/);
-    assert.throws(() => expectedContractSchemaAst(name, raw, '3.9.3', 'local'), /requires contract 3.9.2/);
+    assert.throws(() => expectedContractSchemaAst(name, raw, '3.9.4', 'local'), /requires contract 3.9.2 or 3.9.3/);
     assert.throws(() => expectedContractSchemaAst(name, raw, '3.9.2', 'unknown'), /Unknown contract schema lane/);
   }
+});
+
+test('3.9.3 exact-selection schema decodes only its reviewed bytes and preserves the uniqueness message', () => {
+  const { expectedContractSchemaAst } = require('../scripts/verify-candidate-contract');
+  const { activeToolRegistrations, registrationInputSchemaAst, canonicalSchemaAst } = require('../scripts/verify-hosted-contract');
+  const name = 'trackly_start_apply_execution';
+  const raw = require('../contracts/trackly-apply-tools.json').tools[name];
+  const source = fs.readFileSync(path.join(__dirname, '../mcp/apply-tools.js'), 'utf8');
+  const entry = activeToolRegistrations(source, 'server.tool', 'local').find(row => row.name === name);
+  const actual = canonicalSchemaAst(registrationInputSchemaAst(source, entry, 'local'));
+  for (const lane of ['local', 'hosted']) assert.deepEqual(expectedContractSchemaAst(name, raw, '3.9.3', lane), actual);
+  assert.throws(() => expectedContractSchemaAst(name, raw + ' ', '3.9.3', 'local'), /unknown exact-selection raw schema/);
+  assert.throws(() => expectedContractSchemaAst(name, raw.replace('jobIdsmustbeunique', 'jobIdsmustbeun ique'), '3.9.3', 'local'), /unknown exact-selection raw schema/);
+  assert.throws(() => expectedContractSchemaAst(name, raw, '3.9.2', 'local'), /requires contract 3.9.3/);
 });
 
 test('known legacy schema rejects joint literal drift in both lanes', t => {

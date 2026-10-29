@@ -24,6 +24,7 @@ runs remain recovery-only compatibility paths.
   active execution first or start one with target 1–20. Continue through its
   original recent-first Check Later snapshot until N forms are durably ready
   for manual review, the snapshot is exhausted, or the user stops it.
+- A request naming specific jobs means only those jobs. Resolve their Trackly IDs, pass the exact ordered `jobIds` with `target` equal to their count, and preserve that immutable selection through retries and later waves. Never fill unrelated jobs to replace blocked selected members. Keep the original idempotency key for an exact start replay; a changed key or set cannot authorize resuming a different active execution. A rejected selection must not fall back to a count-only start or queue reordering.
 - “Inspect the next N records” means a fixed immutable batch of exactly those
   queue records. Never replenish or replace that inspection batch.
 - A saved/check-later job is already approved. Neither mode rescans fit.

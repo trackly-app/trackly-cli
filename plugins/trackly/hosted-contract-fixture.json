@@ -1,20 +1,20 @@
 {
   "formatVersion": 3,
-  "capturedAt": "2026-10-24T14:10:08-0700",
+  "capturedAt": "2026-10-29T04:25:58-07:00",
   "sourceRuntime": {
-    "commit": "345277ec453c0591e055ec992e38cc3f757cd9c8",
-    "parent": "00ec67b25103624a2895affe911b86e931d946a9",
-    "committedAt": "2026-10-24T05:32:06-07:00"
+    "commit": "3d479b941dcd6cf703d5ad8bab1ae7f45a39f832",
+    "parent": "9a54c2235e28a78451721602c2d5d11fcc750af1",
+    "committedAt": "2026-10-29T03:32:32-07:00"
   },
   "mergedRuntime": {
-    "commit": "6be6d4d2105f7de7f491c7b55bfdf00057d193f4",
+    "commit": "71e7f9bfa73df85bbd483ee07712a38d386b79a1",
     "parents": [
-      "ccf9e0590bfe6b7d29df8b3014800aa99d353a53",
-      "345277ec453c0591e055ec992e38cc3f757cd9c8"
+      "52efd2f8bd5224d35343a5ccee1e3bd0333e2286",
+      "3d479b941dcd6cf703d5ad8bab1ae7f45a39f832"
     ],
-    "committedAt": "2026-10-24T12:50:09-07:00"
+    "committedAt": "2026-10-29T03:54:22-07:00"
   },
-  "applyContractVersion": "3.9.2",
+  "applyContractVersion": "3.9.3",
   "pluginContractVersion": "1.0.0",
   "publicTools": [
     [
@@ -89,8 +89,8 @@
     ],
     [
       "trackly_start_or_resume_apply",
-      "6c372e9bcbf7248f7c45a14ae0dc2efed9994309518c359b786746c65f165a8c",
-      "983f8e67ea0b5e779e2db33db14c14075e5073e32b223858a1fa5d25064d15b6"
+      "96e7a96129ee04ed11a80e562aeef551fc0649905336261725f5a0c157eaae28",
+      "4f4cbed87b23025c19a062bfd9de4d98eeae28e8198ee7642f7f049c5483f491"
     ],
     [
       "trackly_get_apply_work",
@@ -181,9 +181,9 @@
     "get_more_tools"
   ],
   "sourceSha256": {
-    "pluginServer": "75c8e4341220950af16ac9708586420ee08a24db4627ef3a4e55f099f9c67bc0",
+    "pluginServer": "a9adfbf263dbc76ed937e9c7aa11be59e76e06f6cd90d6f1323704f4951fa9c4",
     "pluginScopes": "7af7450c08a4b1944fb4f5dd0cf97a2f1247693326ba1af4e866b5fe4fa5d040",
-    "jobBriefService": "1d62b3a2fd262dcca364b34d82b27ad37eb3ba5fce21f8b8049ea3273c238616",
+    "jobBriefService": "fee263be5b7b05da8db6b9b9e2cb7559a50abeeeab447166f5fe7a889892bc7b",
     "backendUiRedirect": "3d1018e472992626d39299be89ee8e996930fb76ce0f69155f2f63bb6f34d55e",
     "maintenanceMode": "0409b32355a014ecc4d64056bf251fcde5f377400fe4f7485e70795420b25afe",
     "databaseBinding": "70ab2f622f10e4c4c082f114573d0b5d572bcb143556e9d5a549d7689f171974",
@@ -191,7 +191,7 @@
     "reviewIdentity": "d03432434c10bbfd0e53f51b2d475f0adf3ada88ac85c2c0534791be0bf03c10",
     "azureRateLimitOptions": "f3e081d25fd066e76c5c622873622909bd6121e86845e09dd99d4cdf0b47778a",
     "authRateLimit": "ce3e53c0c7b0e9df804fb027c061e27948aff5c5b9a1d022064ed7d0a92c11a5",
-    "applicationProfileService": "313e9a040cf2d0f4dc23affebf7b2c800d818023024cb11b299a76f3a3443352"
+    "applicationProfileService": "1fa343df32f36c269e4f60c0dde1b50ddfa301185c0b3ff20caf7fa67b423531"
   },
   "hostedPluginLifecycle": {
     "readinessMissingProfileFields": "canonical_key_and_public_label_only",

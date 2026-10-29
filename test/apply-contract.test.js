@@ -13,7 +13,12 @@ const shrinkwrap = require('../npm-shrinkwrap.json');
 const {
   HOSTED_DEPLOYABLE_PATHS,
   HOSTED_GIT_MAX_BUFFER,
+  HOSTED_MCP_ANALYTICS_HELPER_AST_SHA256,
   activeNamedDefinitionAst,
+  directToolRegistrationsInExportedFunction,
+  assertExportedFactoryUsedByPluginRouter,
+  assertImportedBindingNeverRedeclared,
+  assertActiveFunctionAstSha256,
   assertApplicationFieldByKeyReferenceSemantics,
   assertBoundedApplyAdapterValidation,
   assertCheckpointRouteCallChain,
@@ -1218,7 +1223,7 @@ test('documented local MCP tool count matches every registered tool', () => {
 });
 
 test('local MCP Apply schemas match each complete versioned input schema', () => {
-  assert.equal(contract.contractVersion, '3.9.2');
+  assert.equal(contract.contractVersion, '3.9.3');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
     const localSchema = typeof expectedSchema === 'string' ? expectedSchema : expectedSchema.local;
     const executableSchema = LOCAL_VALIDATION_SCHEMAS[name] || toolArguments(name)[2];
@@ -1395,6 +1400,7 @@ test('hosted provenance covers plugin UI, resource identity, and auth-epoch runt
     'src/middleware/channel-attribution.ts',
     'src/middleware/maintenance-mode.ts',
     'src/routes/trackly-apply.ts',
+    'src/routes/central-promotion-observation.ts',
     'src/routes/jobscout-tracker.ts',
     'src/routes/auth.ts',
   ]) {
@@ -1530,6 +1536,66 @@ test('hosted plugin route accepts only the exact reviewed disjoint /api router m
     check(source.replace("app.use('/api', scraperIngestRoutes);", ''), REVIEWED_DISJOINT_ROUTER_MOUNT_DIGESTS),
     /complete reviewed disjoint router inventory/,
   );
+});
+
+function observationRoutePrecedenceFixture() {
+  const moduleSource = "export const OBSERVATION_PATH = '/admin/central-promotion/observation';\n";
+  const source = [
+    "import { createApiObservationHandler, OBSERVATION_PATH } from './routes/central-promotion-observation';",
+    'export function createApp() {',
+    '  const app = express();',
+    '  app.get(OBSERVATION_PATH, createApiObservationHandler(boundedCatalogQuery(pool)));',
+    "  app.use('/api/plugin/trackly/mcp', tracklyPluginMcpRoutes);",
+    '  return app;',
+    '}',
+  ].join('\n');
+  const check = (candidate = source, reviewedObservationRouteSource = moduleSource) => () => assertPluginRoutePrecedenceProduction(
+    candidate,
+    'tracklyPluginMcpRoutes',
+    '/api/plugin/trackly/mcp',
+    'observation route fixture',
+    {
+      reviewedGlobalMiddlewareCallDigests: [],
+      reviewedPluginScopedMiddlewareCallDigests: [],
+      reviewedDisjointRouterMountDigests: [],
+      reviewedObservationRouteSource,
+    },
+  );
+  return { source, moduleSource, check };
+}
+
+test('hosted plugin route resolves only the verified observation-path import', () => {
+  const { check } = observationRoutePrecedenceFixture();
+  assert.doesNotThrow(check());
+});
+
+test('hosted plugin route rejects unsafe observation-path bindings', () => {
+  const { source, moduleSource, check } = observationRoutePrecedenceFixture();
+  for (const [label, candidate, module] of [
+    ['covering exported literal', source, moduleSource.replace('/admin/central-promotion/observation', '/api/plugin/trackly/mcp')],
+    ['mutable exported path', source, moduleSource.replace('export const', 'export let')],
+    ['reassigned exported path', source, moduleSource + "OBSERVATION_PATH = '/api/plugin/trackly/mcp';\n"],
+    ['reexported path', source, "export { OBSERVATION_PATH } from './other-module';\n"],
+    ['missing exported path', source, 'export const OTHER_PATH = 1;\n'],
+    ['missing source proof', source, null],
+    ['wrong importing module', source.replace("from './routes/central-promotion-observation'", "from './routes/other-module'"), moduleSource],
+    ['missing import', source.replace("import { createApiObservationHandler, OBSERVATION_PATH } from './routes/central-promotion-observation';", ''), moduleSource],
+    ['shadowed local path', source.replace('const app = express();', "const app = express(); const OBSERVATION_PATH = '/api/plugin/trackly/mcp';"), moduleSource],
+    ['reassigned imported path', source.replace('const app = express();', "const app = express(); OBSERVATION_PATH = '/api/plugin/trackly/mcp';"), moduleSource],
+    ['aliased imported path', source.replace('createApiObservationHandler, OBSERVATION_PATH }', 'createApiObservationHandler, OBSERVATION_PATH as OTHER_PATH }').replace('app.get(OBSERVATION_PATH,', 'app.get(OTHER_PATH,'), moduleSource],
+    ['unreviewed identifier', source.replace('app.get(OBSERVATION_PATH,', 'app.get(UNREVIEWED_PATH,'), moduleSource],
+    ['unreviewed handler expression', source.replace('createApiObservationHandler(boundedCatalogQuery(pool))', 'otherHandler(pool)'), moduleSource],
+    ['shadowed handler factory', source.replace('const app = express();', 'const app = express(); const createApiObservationHandler = otherHandler;'), moduleSource],
+    ['non-GET observation route', source.replace('app.get(OBSERVATION_PATH,', 'app.post(OBSERVATION_PATH,'), moduleSource],
+    ['type-only import declaration', source.replace('import { createApiObservationHandler, OBSERVATION_PATH }', 'import type { createApiObservationHandler, OBSERVATION_PATH }'), moduleSource],
+    ['type-only path import', source.replace('createApiObservationHandler, OBSERVATION_PATH }', 'createApiObservationHandler, type OBSERVATION_PATH }'), moduleSource],
+    ['escaped path binding', source.replace('return app;', 'consume(OBSERVATION_PATH); return app;'), moduleSource],
+    ['source binding alias', source, moduleSource + 'const copiedPath = OBSERVATION_PATH;'],
+    ['nested parameter shadow', source.replace('function createApp()', 'function createApp(OBSERVATION_PATH)'), moduleSource],
+
+  ]) {
+    assert.throws(check(candidate, module), /OBSERVATION_PATH|observation|covering/, label);
+  }
 });
 
 test('hosted plugin route rejects earlier Express handlers covering its canonical mount', () => {
@@ -1731,7 +1797,7 @@ test('hosted UI semantic lock rejects MIME, metadata, tool-output, and HTML drif
     import { MCP_ISSUER } from './mcp-config.js';
     export const TRACKLY_PLUGIN_UI_MIME_TYPE = 'text/html;profile=mcp-app';
     export const TRACKLY_PLUGIN_UI = Object.freeze({
-      readiness: 'ui://trackly/apply-readiness-v1.html',
+      readiness: 'ui://trackly/apply-readiness-v2.html',
       apply: 'ui://trackly/apply-run-v1.html',
       resume: 'ui://trackly/resume-handoff-v1.html',
       review: 'ui://trackly/review-ready-v1.html',
@@ -1798,6 +1864,16 @@ test('hosted UI semantic lock rejects MIME, metadata, tool-output, and HTML drif
     ),
     /tracklyPluginUiHtml.*locked active semantic AST/,
   );
+  for (const [from, to] of [
+    ["readiness: 'ui://trackly/apply-readiness-v2.html'", "readiness: 'ui://trackly/apply-readiness-v1.html'"],
+    ['connectDomains: []', "connectDomains: ['https://untrusted.invalid']"],
+    ['resource_domains: []', "resource_domains: ['https://untrusted.invalid']"],
+    ['const resourceUri = TRACKLY_PLUGIN_UI[view];', "const resourceUri = 'ui://untrusted/card.html';"],
+  ]) {
+    const changed = uiSource.replace(from, to);
+    assert.notEqual(changed, uiSource);
+    assert.throws(() => assertPluginUiContractSemantics(changed, 'changed current UI fixture', options));
+  }
 });
 
 test('manual-submission route semantic lock rejects auth and transaction drift', () => {
@@ -2886,13 +2962,13 @@ test('Apply MCP evidence preserves custom bounds and prompt gates new executions
   assert.match(promptRegion, /keep the confirmation tab open until a refetch proves member lifecycle submitted and Trackly job state applied_confirmed/);
 });
 
-test('Apply skill 4.9.2 requires protocol 3.7.0 for new work and preserves active legacy recovery', () => {
+test('Apply skill 4.9.3 requires protocol 3.7.0 for new work and preserves active legacy recovery', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
-  assert.match(skill, /Skill 4\.9\.2 requires protocol 3\.7\.0 or newer/);
+  assert.match(skill, /Skill 4\.9\.3 requires protocol 3\.7\.0 or newer/);
   assert.match(skill, /protocol 3\.2 remains valid only for an already-active explicit legacy single run/i);
   assert.match(skill, /an already-active explicit 3\.2 single run may finish through its legacy path/i);
   assert.match(skill, /`compatibleSkillMajor: 4`/);
-  assert.match(skill, /Never continue a pre-evidence 3\.0\.x run under skill 4\.9\.2/);
+  assert.match(skill, /Never continue a pre-evidence 3\.0\.x run under skill 4\.9\.3/);
   assert.match(skill, /Preserve that run instead of starting a replacement/);
   assert.match(skill, /already-active protocol 3\.4 execution is read-only legacy recovery/i);
   assert.match(skill, /never call the 3\.5-only snapshot/i);
@@ -3308,12 +3384,12 @@ test('Apply skill runs Humanizer when available and retains a self-contained fal
   assert.match(writing, /use the saved style instructions or plain default instead/);
 });
 
-test('Apply skill 4.9.2 uses compact snapshots, parked-member controls, local lint, and upload proofs', () => {
+test('Apply skill 4.9.3 uses compact snapshots, parked-member controls, local lint, and upload proofs', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
   const writing = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'application-writing.md'), 'utf8');
   const review = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'review-handoff.md'), 'utf8');
   const upload = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'browser-upload.md'), 'utf8');
-  assert.match(skill, /Skill 4\.9\.2/);
+  assert.match(skill, /Skill 4\.9\.3/);
   assert.match(skill, /trackly_get_apply_execution_snapshot/);
   assert.match(skill, /`mutable` and `allowedOperations`/);
   assert.match(skill, /trackly_resume_parked_apply_member/);
@@ -3490,4 +3566,646 @@ test('hosted plugin route accepts only the exact reviewed plugin-scoped middlewa
     check(source.replace(pluginCors, `if (enabled) { ${pluginCors} }`), 'conditional plugin cors fixture'),
     /must preserve straight-line setup|must not have an earlier Express route or path-scoped middleware covering/,
   );
+});
+
+// Exact deployed-source fixtures; parsed as data, never executed.
+const CURRENT_ANALYTICS_ROUTER_FIXTURE = [
+  "/** HTTP transport and authorization boundary for the public trackly plugin. */",
+  "",
+  "import { Router, type NextFunction, type Request, type Response } from 'express';",
+  "import rateLimit, { ipKeyGenerator } from 'express-rate-limit';",
+  "import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';",
+  "import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';",
+  "import { tracklyOAuthProvider } from './oauth-provider.js';",
+  "import {",
+  "  generateHostedOAuthInternalToken,",
+  "  buildHostedMcpAnalyticsContext,",
+  "  runWithHostedMcpRequestAnalytics,",
+  "  type HostedOAuthAuthInfo,",
+  "} from './server.js';",
+  "import {",
+  "  enforceTracklyPluginScope, enforceTracklyOpenaiScope, enforceTracklyMuseScope, enforceTracklyClaudeScope,",
+  "} from './plugin-scopes.js';",
+  "import { createTracklyPluginMcpServer, apiRequest } from './plugin-server.js';",
+  "import { createPluginResumeRouter } from './plugin-resume-router.js';",
+  "import { pluginResumeDocuments } from './plugin-resume-store.js';",
+  "import { requireTracklyAccess } from '../services/trackly-access.js';",
+  "import { logger } from '../utils/logger.js';",
+  "import { pool } from '../config/database.js';",
+  "import { museConnectorTraceMethod, recordMuseConnectorTrace } from './connector-revocation.js';",
+  "import { requireMuseConnectorSchema } from './muse-schema-readiness.js';",
+  "import { azureRehearsalRateLimitOptions } from '../utils/azure-rehearsal-ip.js';",
+  "import {",
+  "  isAllowedMcpOrigin,",
+  "  MCP_PLUGIN_RESOURCE_METADATA_URL,",
+  "  MCP_PLUGIN_SURFACE, MCP_OPENAI_SURFACE, MCP_MUSE_SURFACE, MCP_CLAUDE_SURFACE, type CuratedMcpSurface,",
+  "} from './mcp-config.js';",
+  "",
+  "export const RESOURCE_METADATA_URL = MCP_PLUGIN_RESOURCE_METADATA_URL;",
+  "",
+  "export function validateOrigin(req: Request, res: Response, next: NextFunction): void {",
+  "  const origin = req.headers.origin;",
+  "  if (!isAllowedMcpOrigin(origin)) {",
+  "    res.status(403).json({ error: 'Forbidden origin' });",
+  "    return;",
+  "  }",
+  "  next();",
+  "}",
+  "",
+  "export const enforcePluginResource = enforceCuratedResource(MCP_PLUGIN_SURFACE);",
+  "function enforceCuratedResource(surface: CuratedMcpSurface) {",
+  "  return (req: Request, res: Response, next: NextFunction): void => {",
+  "    if ((req as Request & { auth?: HostedOAuthAuthInfo }).auth?.extra?.resource === surface.resource) {",
+  "      next(); return;",
+  "    }",
+  "    const tokenError = surface === MCP_PLUGIN_SURFACE ? 'error=\"invalid_token\", ' : '';",
+  "    res.setHeader('WWW-Authenticate', `Bearer ${tokenError}resource_metadata=\"${surface.metadataUrl}\"`);",
+  "    res.status(401).json({ error: 'Bearer token is not valid for the trackly plugin resource' });",
+  "  };",
+  "}",
+  "",
+  "export function requirePluginEnabled(",
+  "  _req: Request,",
+  "  res: Response,",
+  "  next: NextFunction,",
+  "): void {",
+  "  if (process.env.MCP_SERVER_ENABLED === 'true') {",
+  "    next();",
+  "    return;",
+  "  }",
+  "  res.status(503).json({ error: 'trackly plugin is not enabled' });",
+  "}",
+  "",
+  "export const PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX = 6_000;",
+  "const ipLimiter = rateLimit({",
+  "  windowMs: 60_000,",
+  "  // ChatGPT and Codex can share a small egress pool. Keep this as a broad",
+  "  // unauthenticated abuse ceiling; per-user fairness is enforced below.",
+  "  max: PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX,",
+  "  standardHeaders: true,",
+  "  legacyHeaders: false,",
+  "  message: { error: 'Too many trackly plugin requests. Try again later.' },",
+  "  ...azureRehearsalRateLimitOptions(),",
+  "});",
+  "const identityLimiter = rateLimit({",
+  "  windowMs: 60_000,",
+  "  max: 120,",
+  "  standardHeaders: true,",
+  "  legacyHeaders: false,",
+  "  keyGenerator: (req) => {",
+  "    const auth = (req as Request & { auth?: HostedOAuthAuthInfo }).auth;",
+  "    return auth?.extra?.userId",
+  "      ? `${auth.clientId}:${auth.extra.userId}`",
+  "      : ipKeyGenerator(req.ip || '');",
+  "  },",
+  "  message: { error: 'trackly plugin rate limit exceeded. Try again later.' },",
+  "});",
+  "const museIpLimiter = rateLimit({",
+  "  windowMs: 60_000,",
+  "  max: PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX,",
+  "  standardHeaders: true,",
+  "  legacyHeaders: false,",
+  "  message: { error: 'Too many trackly plugin requests. Try again later.' },",
+  "  ...azureRehearsalRateLimitOptions(),",
+  "});",
+  "const museIdentityLimiter = rateLimit({",
+  "  windowMs: 60_000,",
+  "  max: 120,",
+  "  standardHeaders: true,",
+  "  legacyHeaders: false,",
+  "  keyGenerator: (req) => {",
+  "    const auth = (req as Request & { auth?: HostedOAuthAuthInfo }).auth;",
+  "    return auth?.extra?.userId",
+  "      ? `${auth.clientId}:${auth.extra.userId}`",
+  "      : ipKeyGenerator(req.ip || '');",
+  "  },",
+  "  message: { error: 'trackly plugin rate limit exceeded. Try again later.' },",
+  "});",
+  "",
+  "// Claude tool traffic egresses from one Anthropic range, so this IP budget is",
+  "// shared by every Claude user. Raise it first; never exempt the range.",
+  "const claudeIpLimiter = rateLimit({",
+  "  windowMs: 60_000,",
+  "  max: PLUGIN_SHARED_EGRESS_RATE_LIMIT_MAX,",
+  "  standardHeaders: true,",
+  "  legacyHeaders: false,",
+  "  message: { error: 'Too many trackly plugin requests. Try again later.' },",
+  "  ...azureRehearsalRateLimitOptions(),",
+  "});",
+  "const claudeIdentityLimiter = rateLimit({",
+  "  windowMs: 60_000,",
+  "  max: 120,",
+  "  standardHeaders: true,",
+  "  legacyHeaders: false,",
+  "  keyGenerator: (req) => {",
+  "    const auth = (req as Request & { auth?: HostedOAuthAuthInfo }).auth;",
+  "    return auth?.extra?.userId",
+  "      ? `${auth.clientId}:${auth.extra.userId}`",
+  "      : ipKeyGenerator(req.ip || '');",
+  "  },",
+  "  message: { error: 'trackly plugin rate limit exceeded. Try again later.' },",
+  "});",
+  "",
+  "export function createTracklyPluginRouter(surface: CuratedMcpSurface = MCP_PLUGIN_SURFACE) {",
+  "  if (surface !== MCP_PLUGIN_SURFACE && surface !== MCP_OPENAI_SURFACE && surface !== MCP_MUSE_SURFACE",
+  "    && surface !== MCP_CLAUDE_SURFACE) {",
+  "    throw new Error('Unknown curated MCP surface');",
+  "  }",
+  "  const muse = surface === MCP_MUSE_SURFACE;",
+  "  const claude = surface === MCP_CLAUDE_SURFACE;",
+  "  const requestIpLimiter = muse ? museIpLimiter : claude ? claudeIpLimiter : ipLimiter;",
+  "  const requestIdentityLimiter = muse ? museIdentityLimiter : claude ? claudeIdentityLimiter : identityLimiter;",
+  "  const router = Router();",
+  "  const bearerAuth = requireBearerAuth({ verifier: tracklyOAuthProvider, resourceMetadataUrl: surface.metadataUrl });",
+  "  router.post(",
+  "    '/',",
+  "    requestIpLimiter,",
+  "    requirePluginEnabled,",
+  "    validateOrigin,",
+  "    ...(muse ? [requireMuseConnectorSchema] : []),",
+  "    bearerAuth,",
+  "    enforceCuratedResource(surface),",
+  "    requireTracklyAccess,",
+  "    surface === MCP_OPENAI_SURFACE ? enforceTracklyOpenaiScope",
+  "      : muse ? enforceTracklyMuseScope",
+  "      : claude ? enforceTracklyClaudeScope",
+  "      : enforceTracklyPluginScope,",
+  "    requestIdentityLimiter,",
+  "    async (req: Request, res: Response) => {",
+  "      const authInfo = (req as Request & { auth: HostedOAuthAuthInfo }).auth;",
+  "      const authToken = generateHostedOAuthInternalToken(authInfo);",
+  "      const server = surface === MCP_MUSE_SURFACE",
+  "        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'muse' })",
+  "        : claude",
+  "        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'claude' })",
+  "        : createTracklyPluginMcpServer(authToken, apiRequest, async () => {",
+  "          const { capability, filenameSha256: _filenameHash, ...document } = await pluginResumeDocuments(surface.resource).prepare({",
+  "            userId: authInfo.extra.userId, authEpoch: authInfo.extra.authEpoch,",
+  "            clientId: authInfo.clientId, grantId: authInfo.extra.grantId,",
+  "          });",
+  "          return { ...document, openUrl: `${surface.resource}/resume#${capability}` };",
+  "        }, surface === MCP_OPENAI_SURFACE ? MCP_OPENAI_SURFACE.resumePath : MCP_PLUGIN_SURFACE.resumePath, {",
+  "          surface: surface === MCP_OPENAI_SURFACE ? 'openai' : 'legacy',",
+  "        });",
+  "      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });",
+  "      const analyticsContext = buildHostedMcpAnalyticsContext({",
+  "        requestBody: req.body,",
+  "        userId: authInfo.extra.userId,",
+  "        userAgent: req.get('user-agent'),",
+  "        surface: surface.analyticsSurface,",
+  "      });",
+  "      try {",
+  "        await runWithHostedMcpRequestAnalytics(",
+  "          analyticsContext, async () => {",
+  "            await server.connect(transport);",
+  "            await transport.handleRequest(req, res, req.body);",
+  "          },",
+  "        );",
+  "      } catch (error: unknown) {",
+  "        const errorMessage = error instanceof Error ? error.message : 'unknown';",
+  "        logger.error('trackly-plugin-mcp', 'Error handling plugin MCP request', {",
+  "          error: errorMessage,",
+  "          userId: authInfo.extra.userId,",
+  "        });",
+  "        if (!res.headersSent) {",
+  "          res.status(500).json({",
+  "            jsonrpc: '2.0',",
+  "            error: { code: -32603, message: 'Internal error' },",
+  "            id: null,",
+  "          });",
+  "        }",
+  "      } finally {",
+  "        if (surface === MCP_MUSE_SURFACE) {",
+  "          await recordMuseConnectorTrace(pool, {",
+  "            userId: authInfo.extra.userId,",
+  "            clientId: authInfo.clientId,",
+  "            method: museConnectorTraceMethod(req.body),",
+  "          });",
+  "        }",
+  "        await server.close().catch(() => {});",
+  "      }",
+  "    },",
+  "  );",
+  "",
+  "  if (!muse && !claude) router.use('/resume', requestIpLimiter, requirePluginEnabled, createPluginResumeRouter(surface.resource));",
+  "",
+  "  router.get('/', requestIpLimiter, (_req, res) => {",
+  "    res.status(405).json({ error: 'Use POST for MCP JSON-RPC requests.' });",
+  "  });",
+  "  router.options('/', requestIpLimiter, (_req, res) => {",
+  "    res.sendStatus(204);",
+  "  });",
+  "  router.delete('/', requestIpLimiter, (_req, res) => {",
+  "    res.status(405).json({ error: 'Session termination is not supported.' });",
+  "  });",
+  "",
+  "  return router;",
+  "}",
+  "export const openaiPluginMcpRouter = createTracklyPluginRouter(MCP_OPENAI_SURFACE);",
+  "export const musePluginMcpRouter = createTracklyPluginRouter(MCP_MUSE_SURFACE);",
+  "export const claudePluginMcpRouter = createTracklyPluginRouter(MCP_CLAUDE_SURFACE);",
+  "export default createTracklyPluginRouter(MCP_PLUGIN_SURFACE);"
+].join("\n");
+const CURRENT_PLUGIN_PREFIX_FIXTURE = [
+  "if (options.surface !== 'legacy' && options.surface !== 'openai' && options.surface !== 'muse'",
+  "    && options.surface !== 'claude') {",
+  "    throw new Error('Unknown plugin tool surface');",
+  "  }",
+  "  const server = new McpServer({ name: 'trackly', version: PLUGIN_VERSION });",
+  "  server.server.registerCapabilities({ prompts: {} });",
+  "  server.server.setRequestHandler(ListPromptsRequestSchema, () => ({ prompts: [] }));",
+  "",
+  "  const searchJobsRequest = async (params: any) => {",
+  "    const query = new URLSearchParams();",
+  "    query.set('jobFunction', params.function || ALL_JOB_FUNCTIONS.join(','));",
+  "    if (params.companyId !== undefined) query.set('companyId', String(params.companyId));",
+  "    if (params.keywords) query.set('search', params.keywords);",
+  "    // usStates and sponsorship are advertised on the Claude surface only; the other",
+  "    // surfaces' strict schemas never pass them. States go as the web app sends them.",
+  "    const usStates: string[] = Array.isArray(params.usStates) ? [...new Set<string>(params.usStates)] : [];",
+  "    if (params.remote) usStates.push('REMOTE');",
+  "    if (usStates.length > 0) query.set('usStates', usStates.join(','));",
+  "    if (params.locationFilter) query.set('locationFilter', params.locationFilter);",
+  "    else if (Array.isArray(params.usStates) && params.usStates.length > 0) query.set('locationFilter', 'us');",
+  "    if (params.jobModality) query.set('jobModality', params.jobModality);",
+  "    if (params.status) query.set('status', params.status);",
+  "    if (params.sponsorship) {",
+  "      query.set('sponsorship', params.sponsorship);",
+  "      // The backend applies the filter only on status=new, as the hosted search does.",
+  "      if (params.sponsorship !== 'all' && !params.status) query.set('status', 'new');",
+  "    }",
+  "    if (params.sort) query.set('sort', params.sort);",
+  "    if (params.limit) query.set('limit', String(params.limit));",
+  "    if (params.offset !== undefined) query.set('offset', String(params.offset));",
+  "    return requestApi('GET', `/api/jobscout/jobs?${query}`, authToken);",
+  "  };",
+  "  const claudeSearchJobs = async (params: any) => {",
+  "    try {",
+  "      return claudeSearchToolResult(await searchJobsRequest({ ...params, limit: params.limit ?? CLAUDE_SEARCH_MAX_LIMIT }));",
+  "    } catch (error) {",
+  "      return errorContent(error, 'Failed to search jobs');",
+  "    }",
+  "  };",
+  "",
+  "  const registerPluginTool = (",
+  "    name: string,",
+  "    config: Record<string, any>,",
+  "    handler: (params: any) => Promise<any>,",
+  "  ) => {",
+  "    const register = (toolName: string, toolConfig: Record<string, any>, toolHandler: typeof handler) => {",
+  "      const securitySchemes = [{",
+  "        type: 'oauth2',",
+  "        scopes: requiredScopesForPluginTool(toolName, options.surface) || [],",
+  "      }];",
+  "      return server.registerTool<z.ZodRawShape, z.ZodRawShape>(toolName, {",
+  "        ...toolConfig,",
+  "        _meta: { ...toolConfig._meta, securitySchemes },",
+  "      } as any, (params, extra) => captureHostedMcpTool(",
+  "        toolName, extra.requestId, () => toolHandler(params),",
+  "      ));",
+  "    };",
+  "    if (options.surface === 'legacy') {",
+  "      const required = requiredScopesForPluginTool(name, 'legacy') ?? [];",
+  "      if (required.some((scope) => scope.startsWith('apply:'))) {",
+  "        config = {",
+  "          ...config,",
+  "          description: `Requires trackly Apply (apply:* scopes). ${config.description ?? ''}`.trim(),",
+  "        };",
+  "      }",
+  "      // Same discovery fix Muse uses: a .strict().superRefine root publishes an",
+  "      // empty object. Advertise the inner object and keep the refinement on the call.",
+  "      const discovered = museDiscoveryRegistration(config.inputSchema, handler);",
+  "      return register(name, { ...config, inputSchema: discovered.inputSchema }, discovered.handler);",
+  "    }",
+  "    if (options.surface === 'claude') {",
+  "      if (!isClaudeToolName(name)) return;",
+  "      const entry = CLAUDE_TOOLS[name];",
+  "      const { _meta, ...rest } = config;",
+  "      const meta = museRegistrationMeta(_meta);",
+  "      const discovered = museDiscoveryRegistration(",
+  "        rest.inputSchema,",
+  "        name === 'trackly_search_jobs' ? claudeSearchJobs : handler,",
+  "      );",
+  "      return register(name, {",
+  "        ...rest,",
+  "        title: entry.title,",
+  "        description: entry.description,",
+  "        inputSchema: claudeInputSchema(name, discovered.inputSchema),",
+  "        annotations: claudeToolAnnotations(name),",
+  "        ...(meta ? { _meta: meta } : {}),",
+  "      }, discovered.handler);",
+  "    }",
+  "    if (options.surface === 'muse') {",
+  "      if (!isMuseToolName(name)) return;",
+  "      const { _meta, ...rest } = config;",
+  "      const meta = museRegistrationMeta(_meta);",
+  "      const discovered = museDiscoveryRegistration(rest.inputSchema, handler);",
+  "      return register(name, {",
+  "        ...rest,",
+  "        inputSchema: discovered.inputSchema,",
+  "        annotations: museToolAnnotations(name),",
+  "        ...(meta ? { _meta: meta } : {}),",
+  "      }, discovered.handler);",
+  "    }",
+  "    for (const definition of openaiToolDefinitions(name, config.inputSchema)) {",
+  "      register(definition.name, {",
+  "        ...config,",
+  "        inputSchema: definition.inputSchema,",
+  "        ...(definition.title ? { title: definition.title } : {}),",
+  "        ...(definition.description ? { description: definition.description } : {}),",
+  "        ...(definition.progressOperation ? {",
+  "          outputSchema: config.outputSchema.extend({ operation: z.literal(definition.progressOperation) }),",
+  "          annotations: mutationAnnotations(false, true),",
+  "        } : {}),",
+  "      }, async (input) => {",
+  "        // Discovery uses a serializable object; the original strict union or",
+  "        // refinement still authorizes every call before even a capability GET.",
+  "        const parsed = config.inputSchema.safeParse(definition.toLegacyInput(input));",
+  "        if (!parsed.success) return errorContent(new Error('Invalid tool input'), 'Invalid tool input');",
+  "        return handler(parsed.data);",
+  "      });",
+  "    }",
+  "  };"
+].join("\n");
+const CURRENT_PLUGIN_RESOURCE_TAIL_FIXTURE = [
+  "const uiResources = Object.entries(TRACKLY_PLUGIN_UI) as Array<[keyof typeof TRACKLY_PLUGIN_UI, string]>;",
+  "  // The v1 URI aliases the current renderer; it is not a frozen copy of old markup.",
+  "  // Keep that URI readable while supported clients can retain its cached tool definition.",
+  "  // Remove only through a reviewed compatibility migration; no cache-expiry guarantee is known.",
+  "  uiResources.push(['readiness', 'ui://trackly/apply-readiness-v1.html']);",
+  "  if (options.surface !== 'muse' && options.surface !== 'claude') for (const [view, uri] of uiResources) {",
+  "    const name = `trackly-${view}-card${uri === TRACKLY_PLUGIN_UI[view] ? '' : '-v1'}`;",
+  "    server.registerResource(name, uri, {",
+  "      title: `trackly ${view} card`,",
+  "      description: 'Private trackly Apply status UI. The user always submits manually.',",
+  "      mimeType: TRACKLY_PLUGIN_UI_MIME_TYPE,",
+  "    }, async () => ({",
+  "      contents: [{",
+  "        uri,",
+  "        mimeType: TRACKLY_PLUGIN_UI_MIME_TYPE,",
+  "        text: tracklyPluginUiHtml(view, resumePath),",
+  "        _meta: TRACKLY_PLUGIN_UI_RESOURCE_META,",
+  "      }],",
+  "    }));",
+  "  }"
+].join("\n");
+const CURRENT_ANALYTICS_HELPER_FIXTURES = {
+  runWithHostedMcpToolContext: [
+  "function runWithHostedMcpToolContext<T>(toolName: string, rawRequestId: unknown, invoke: () => T): T {",
+  "  const outerContext = hostedMcpAnalyticsContext.getStore();",
+  "  const pending = outerContext?.pendingToolContexts;",
+  "  const requestId = normalizeHostedMcpRequestId(rawRequestId);",
+  "  const matchingIndexes = pending?.flatMap((context, index) => (",
+  "    context.toolName === toolName",
+  "      && (requestId === undefined || context.requestId === requestId)",
+  "      ? [index]",
+  "      : []",
+  "  )) ?? [];",
+  "  // ID-less calls are ambiguous when a batch invokes the same tool more than",
+  "  // once. Do not guess and attach one call's intent to another call's result.",
+  "  const pendingIndex = requestId === undefined",
+  "    ? matchingIndexes.length === 1 ? matchingIndexes[0] : -1",
+  "    : matchingIndexes[0] ?? -1;",
+  "  if (!pending || pendingIndex < 0) return invoke();",
+  "  const [toolContext] = pending.splice(pendingIndex, 1);",
+  "  toolContext.startedAtNs = process.hrtime.bigint();",
+  "  return hostedMcpAnalyticsContext.run(toolContext, invoke);",
+  "}"
+].join("\n"),
+  captureHostedMcpTool: [
+  "function captureHostedMcpTool<T>(",
+  "  toolName: string,",
+  "  requestId: unknown,",
+  "  operation: () => Promise<T>,",
+  "): Promise<T> {",
+  "  return runWithHostedMcpToolContext(toolName, requestId, async () => {",
+  "    try {",
+  "      const result = await operation();",
+  "      const isError = result && typeof result === 'object' && 'isError' in result",
+  "        && result.isError === true;",
+  "      queueHostedMcpToolCapture(result, isError ? result : undefined);",
+  "      return result;",
+  "    } catch (error) {",
+  "      queueHostedMcpToolCapture(undefined, error);",
+  "      throw error;",
+  "    }",
+  "  });",
+  "}"
+].join("\n"),
+  buildHostedMcpAnalyticsContext: [
+  "function buildHostedMcpAnalyticsContext(input: {",
+  "  requestBody: unknown;",
+  "  userId: number;",
+  "  userAgent?: string;",
+  "  surface?: 'hosted' | 'claude' | 'openai' | 'muse' | 'legacy';",
+  "  resolveAnonymousDistinctId?: (userId: number) => string | undefined;",
+  "}): HostedMcpAnalyticsContext {",
+  "  const messages = Array.isArray(input.requestBody) ? input.requestBody : [input.requestBody];",
+  "  const records = messages.map((message) => (",
+  "    message && typeof message === 'object' && !Array.isArray(message)",
+  "      ? message as Record<string, unknown>",
+  "      : {}",
+  "  ));",
+  "  const initialization = records.find((message) => message.method === 'initialize');",
+  "  const initializationParams = initialization?.params",
+  "    && typeof initialization.params === 'object'",
+  "    && !Array.isArray(initialization.params)",
+  "    ? initialization.params as Record<string, unknown>",
+  "    : {};",
+  "  const clientInfo = initializationParams.clientInfo",
+  "    && typeof initializationParams.clientInfo === 'object'",
+  "    && !Array.isArray(initializationParams.clientInfo)",
+  "    ? initializationParams.clientInfo as Record<string, unknown>",
+  "    : {};",
+  "  const clientFamily = resolveMcpClientFamily(clientInfo.name, input.userAgent);",
+  "  const runtimeProperties = {",
+  "    $mcp_client_name: clientFamily,",
+  "    $mcp_vendor_client: clientFamily,",
+  "    $mcp_client_version: clientInfo.version,",
+  "    $mcp_client_user_agent: input.userAgent,",
+  "    $mcp_protocol_version: initializationParams.protocolVersion,",
+  "    $mcp_server_name: 'trackly',",
+  "    $mcp_server_version: MCP_VERSION,",
+  "    $mcp_source: 'hosted',",
+  "    $mcp_surface: input.surface ?? 'hosted',",
+  "    build: BUILD_SHA,",
+  "    node_version: process.versions.node,",
+  "    operating_system: process.platform,",
+  "    cpu_architecture: process.arch,",
+  "    trackly_mcp_analytics_contract: 'production-v1',",
+  "  };",
+  "  const anonymousDistinctId = (",
+  "    input.resolveAnonymousDistinctId ?? resolveHostedMcpAnonymousDistinctId",
+  "  )(input.userId);",
+  "  const createContext = (requestBody: Record<string, unknown>): HostedMcpAnalyticsContext => {",
+  "    const params = requestBody.params && typeof requestBody.params === 'object'",
+  "      && !Array.isArray(requestBody.params)",
+  "      ? requestBody.params as Record<string, unknown>",
+  "      : {};",
+  "    const argumentsValue = params.arguments && typeof params.arguments === 'object'",
+  "      && !Array.isArray(params.arguments)",
+  "      ? params.arguments as Record<string, unknown>",
+  "      : {};",
+  "    return {",
+  "      userId: input.userId,",
+  "      anonymousDistinctId,",
+  "      method: typeof requestBody.method === 'string' ? requestBody.method : '',",
+  "      requestId: normalizeHostedMcpRequestId(requestBody.id),",
+  "      toolName: typeof params.name === 'string' ? params.name : undefined,",
+  "      context: typeof argumentsValue.context === 'string'",
+  "        ? argumentsValue.context.slice(0, 1_000)",
+  "        : undefined,",
+  "      requestBody,",
+  "      runtimeProperties,",
+  "      startedAtNs: process.hrtime.bigint(),",
+  "    };",
+  "  };",
+  "",
+  "  if (!Array.isArray(input.requestBody)) return createContext(records[0] ?? {});",
+  "  return {",
+  "    ...createContext({}),",
+  "    requestBody: input.requestBody,",
+  "    pendingToolContexts: records",
+  "      .filter((message) => message.method === 'tools/call')",
+  "      .map(createContext),",
+  "    batchLifecycleContexts: records",
+  "      .filter((message) => message.method === 'initialize' || message.method === 'tools/list')",
+  "      .map(createContext),",
+  "  };",
+  "}"
+].join("\n"),
+  runWithHostedMcpRequestAnalytics: [
+  "async function runWithHostedMcpRequestAnalytics<T>(",
+  "  context: HostedMcpAnalyticsContext,",
+  "  operation: () => Promise<T>,",
+  "): Promise<T> {",
+  "  try {",
+  "    const result = await runWithHostedMcpAnalyticsContext(context, operation);",
+  "    for (const lifecycle of context.batchLifecycleContexts ?? [context]) {",
+  "      if (lifecycle.method === 'initialize') queueHostedMcpCapture(lifecycle, '$mcp_initialize', {});",
+  "      else if (lifecycle.method === 'tools/list') queueHostedMcpCapture(lifecycle, '$mcp_tools_list', {});",
+  "    }",
+  "    return result;",
+  "  } catch (error) {",
+  "    queueHostedMcpCapture(context, '$exception', {",
+  "      $mcp_error_type: classifyMcpError(error), $mcp_is_error: true,",
+  "    });",
+  "    throw error;",
+  "  } finally {",
+  "    queueHostedMcpValidationFailures(context);",
+  "  }",
+  "}"
+].join("\n"),
+};
+const CURRENT_ANALYTICS_HELPER_DIGESTS = {
+  "runWithHostedMcpToolContext": "a1a973ac01a2943d4e5751bd61c32e290d49069bbc7db05925e67956156f93f5",
+  "captureHostedMcpTool": "d661823521f8d974ffa3ecdc608f9dd5c6cec9a79eda441ad9b87bf8e2afcc4f",
+  "buildHostedMcpAnalyticsContext": "a5243cfc8b16687b3a3206e37d133724804b393ca4bf739e3b2529fce3b042fc",
+  "runWithHostedMcpRequestAnalytics": "2e23c2e572fa952130ffa78a7d3b51ac402e1f9c7021c756bec1e6caef977734"
+};
+
+function currentAnalyticsFactory(prefix = CURRENT_PLUGIN_PREFIX_FIXTURE, tail = CURRENT_PLUGIN_RESOURCE_TAIL_FIXTURE) {
+  return `import {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
+    import {captureHostedMcpTool} from './server.js';
+    export function createTracklyPluginMcpServer(authToken: string, requestApi: PluginApiRequest = apiRequest) {
+      ${prefix}
+      registerPluginTool('trackly_one', { inputSchema: z.object({}) }, async params => params);
+      ${tail}
+      return server;
+    }`;
+}
+function checkCurrentAnalyticsFactory(source, tail = CURRENT_PLUGIN_RESOURCE_TAIL_FIXTURE) {
+  assertImportedBindingNeverRedeclared(source, 'captureHostedMcpTool', 'captureHostedMcpTool', './server.js', 'current analytics factory fixture');
+  return directToolRegistrationsInExportedFunction(source, 'createTracklyPluginMcpServer', 'registerPluginTool', 'current analytics factory fixture', {
+    requireUiResourceLoop: true,
+    lockedPrefixSource: CURRENT_PLUGIN_PREFIX_FIXTURE,
+    expectedPrefixDeclarators: ['server', 'searchJobsRequest', 'claudeSearchJobs', 'registerPluginTool'],
+    uiResourceLoopSource: tail,
+  });
+}
+test('current hosted analytics factory accepts the reviewed wrapper and exact readiness alias tail', () => {
+  assert.deepEqual(checkCurrentAnalyticsFactory(currentAnalyticsFactory()).map(item => item.name), ['trackly_one']);
+});
+test('current hosted analytics factory rejects name params invocation result and error drift', () => {
+  const source = currentAnalyticsFactory();
+  for (const changed of [
+    source.replace('toolName, extra.requestId, () => toolHandler(params)', "'different_tool', extra.requestId, () => toolHandler(params)"),
+    source.replace('() => toolHandler(params)', '() => toolHandler({})'),
+    source.replace('() => toolHandler(params)', '() => { toolHandler(params); return toolHandler(params); }'),
+    source.replace('() => toolHandler(params)', '() => toolHandler(params).then(() => ({}))'),
+    source.replace('() => toolHandler(params)', '() => toolHandler(params).catch(() => null)'),
+    source.replace("from './server.js'", "from './unreviewed-server.js'"),
+    source + '\nfunction shadow(captureHostedMcpTool) { return captureHostedMcpTool; }',
+  ]) {
+    assert.notEqual(changed, source);
+    assert.throws(() => checkCurrentAnalyticsFactory(changed), /reviewed statements before tool registration|must import|resolve only to its import/);
+  }
+});
+test('current hosted analytics factory rejects alias surface handler and tail extensions', () => {
+  const source = currentAnalyticsFactory();
+  for (const changed of [
+    source.replace("uiResources.push(['readiness',", "uiResources.push(['apply',"),
+    source.replace('ui://trackly/apply-readiness-v1.html', 'ui://trackly/apply-readiness-v0.html'),
+    source.replace("uiResources.push(['readiness', 'ui://trackly/apply-readiness-v1.html']);", "uiResources.push(['readiness', 'ui://trackly/apply-readiness-v1.html']); uiResources.push(['apply', 'ui://untrusted/card.html']);"),
+    source.replace("options.surface !== 'muse' && options.surface !== 'claude'", "options.surface !== 'muse'"),
+    source.replace('text: tracklyPluginUiHtml(view, resumePath)', "text: '<script>fetch(\"https://untrusted.invalid\")</script>'"),
+    source.replace('      uri,', "      uri: 'ui://untrusted/card.html',"),
+    source.replace('      return server;', '      mutateRuntime();\n      return server;'),
+    source.replace('      return server;', '      const escapedServer = server;\n      return server;'),
+  ]) {
+    assert.notEqual(changed, source);
+    assert.throws(() => checkCurrentAnalyticsFactory(changed));
+  }
+});
+test('hosted resource proof rejects unreviewed statements after a previously supported single loop', () => {
+  const loop = `for (const view of Object.keys(TRACKLY_PLUGIN_UI) as Array<keyof typeof TRACKLY_PLUGIN_UI>) {
+    const uri = TRACKLY_PLUGIN_UI[view];
+    server.registerResource(\`trackly-\${view}-card\`, uri, {
+      title: \`trackly \${view} card\`, description: 'Private trackly Apply status UI. The user always submits manually.',
+      mimeType: TRACKLY_PLUGIN_UI_MIME_TYPE,
+    }, async () => ({ contents: [{uri, mimeType: TRACKLY_PLUGIN_UI_MIME_TYPE, text: tracklyPluginUiHtml(view), _meta: TRACKLY_PLUGIN_UI_RESOURCE_META}] }));
+  }`;
+  const original = currentAnalyticsFactory(CURRENT_PLUGIN_PREFIX_FIXTURE, loop);
+  assert.doesNotThrow(() => checkCurrentAnalyticsFactory(original, loop));
+  for (const suffix of ['unreviewedOperation();', "const extraAliases = []; extraAliases.push(['apply', 'ui://untrusted/card.html']);"]) {
+    const changed = original.replace('      return server;', suffix + '\n      return server;');
+    assert.throws(() => checkCurrentAnalyticsFactory(changed, loop), /resource registration tail/);
+  }
+});
+test('current hosted router accepts reviewed analytics wiring and rejects client selected authority or skipped gates', () => {
+  const source = CURRENT_ANALYTICS_ROUTER_FIXTURE;
+  const check = candidate => assertExportedFactoryUsedByPluginRouter(candidate, 'createTracklyPluginMcpServer', 'current analytics router fixture');
+  assert.doesNotThrow(() => check(source));
+  for (const changed of [
+    source.replace('surface: surface.analyticsSurface', 'surface: req.body.surface'),
+    source.replace('userId: authInfo.extra.userId,\n        userAgent:', 'userId: req.body.userId,\n        userAgent:'),
+    source.replace('        surface: surface.analyticsSurface,', "        surface: req.get('x-surface'),"),
+    source.replace('    bearerAuth,', ''),
+    source.replace('    enforceCuratedResource(surface),', ''),
+    source.replace('    requestIdentityLimiter,', ''),
+    source.replace('await transport.handleRequest(req, res, req.body);', 'await Promise.resolve();'),
+    source.replace('await server.close().catch(() => {});', 'await Promise.resolve();'),
+    source.replace('  buildHostedMcpAnalyticsContext,', '  buildHostedMcpAnalyticsContext as otherContext,'),
+    source.replace('  runWithHostedMcpRequestAnalytics,', '  runWithHostedMcpRequestAnalytics as otherRunner,'),
+    source.replace("} from './server.js';", "} from './unreviewed-server.js';"),
+    source + '\nfunction shadow(buildHostedMcpAnalyticsContext) { return buildHostedMcpAnalyticsContext; }',
+    source + '\nfunction shadow(runWithHostedMcpRequestAnalytics) { return runWithHostedMcpRequestAnalytics; }',
+  ]) {
+    assert.notEqual(changed, source);
+    assert.throws(() => check(changed));
+  }
+});
+test('hosted analytics transitive helper locks reject result error attribution and surface drift', () => {
+  assert.deepEqual(HOSTED_MCP_ANALYTICS_HELPER_AST_SHA256, CURRENT_ANALYTICS_HELPER_DIGESTS);
+  for (const [name, source] of Object.entries(CURRENT_ANALYTICS_HELPER_FIXTURES)) {
+    const digest = CURRENT_ANALYTICS_HELPER_DIGESTS[name];
+    assert.doesNotThrow(() => assertActiveFunctionAstSha256(source, name, digest, 'reviewed analytics helper fixture'));
+    const changed = source.replace('{', '{ unintendedOperation();');
+    assert.throws(() => assertActiveFunctionAstSha256(changed, name, digest, 'changed analytics helper fixture'), /locked active semantic AST/);
+  }
+  const source = CURRENT_ANALYTICS_HELPER_FIXTURES.captureHostedMcpTool;
+  for (const changed of [source.replace('return result;', 'return {};'), source.replace('throw error;', 'return null;'), source.replace('const result = await operation();', 'await operation(); const result = await operation();')]) {
+    assert.notEqual(changed, source);
+    assert.throws(() => assertActiveFunctionAstSha256(changed, 'captureHostedMcpTool', CURRENT_ANALYTICS_HELPER_DIGESTS.captureHostedMcpTool, 'changed capture helper fixture'), /locked active semantic AST/);
+  }
 });

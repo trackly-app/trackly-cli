@@ -18,7 +18,7 @@ const LOCAL_ONLY = new Set(['trackly_lint_application_text', 'trackly_diagnose_l
 
 const CANDIDATE_CHECKPOINT_ACTION_SHA256 = APPLY_392_CHECKPOINT_ACTION_SCHEMA_SHA256;
 function assertCandidateCheckpointActionSchema(source, version) {
-  assert.equal(version, '3.9.2', 'Candidate checkpoint pin requires contract 3.9.2');
+  assert.ok(['3.9.2', '3.9.3'].includes(version), 'Candidate checkpoint pin requires contract 3.9.2 or 3.9.3');
   assertActiveFunctionAstSha256(source, 'applyCheckpointActionSchema', CANDIDATE_CHECKPOINT_ACTION_SHA256, 'candidate checkpoint');
 }
 
@@ -49,7 +49,8 @@ function assertSurfaceEnumBindings(localSource, hostedSource, batchSource, const
 
 // Lossless decoding is restricted to these exact published 3.9.2 schemas from
 // CLI 6f050f00f8dd9bc606bdfe80a747509acf09aba5. That serializer removed spaces
-// from new Set and refinement messages; no other literal or schema is normalized.
+// from new Set and refinement messages. Apply 3.9.3 retains those exact bytes;
+// no other literal or schema is normalized.
 const LEGACY_392_SCHEMAS = {
   trackly_recover_exact_apply_members: ['ee240a4ebb068788b3b897d043717c11a9545ac2820d4abe9afda6dd82153bc7', ['candidateIds must be unique']],
   trackly_claim_apply_review_handoff: ['efc6b25923e991ad410ee756873f26470a97fdfacefc4022e06b6114f3c6278c', ['members must contain unique memberId values']],
@@ -57,11 +58,12 @@ const LEGACY_392_SCHEMAS = {
   trackly_advance_apply_execution: ['617c8d98b0f6fd64488b05b35bad1ce072d67588917b74f261ed21c1494173a0', ['jobIds must be unique']],
   trackly_record_application_outcomes: ['8a12aaba65d1358ec17aac207225d4c5d3f8945e96b4fc5876ddec92c7423f7c', ['outcomes must contain unique runId values']],
 };
+const EXACT_SELECTION_393_SCHEMA_SHA256 = 'a1b560490515b2524a91ab222e2de6ba6148c66c1ededda2bfcff75544da0ca3';
 function expectedContractSchemaAst(name, serialized, version, lane) {
   assert.ok(['local', 'hosted'].includes(lane), 'Unknown contract schema lane');
   if (Object.hasOwn(LEGACY_392_SCHEMAS, name)) {
     const [digest, messages] = LEGACY_392_SCHEMAS[name];
-    assert.equal(version, '3.9.2', 'Legacy schema decoder requires contract 3.9.2');
+    assert.ok(['3.9.2', '3.9.3'].includes(version), 'Legacy schema decoder requires contract 3.9.2 or 3.9.3');
     assert.equal(sha256ExactBytes(serialized), digest, `${name} unknown legacy raw schema`);
     serialized = serialized.replace(/\bnewSet\(/g, 'new Set(');
     for (const message of messages) {
@@ -69,6 +71,12 @@ function expectedContractSchemaAst(name, serialized, version, lane) {
       assert.ok(serialized.includes(encoded), `${name} legacy message missing`);
       serialized = serialized.replace(encoded, `'${message}'`);
     }
+  } else if (name === 'trackly_start_apply_execution'
+    && (version === '3.9.3' || sha256ExactBytes(serialized) === EXACT_SELECTION_393_SCHEMA_SHA256)) {
+    assert.equal(version, '3.9.3', 'Exact-selection schema decoder requires contract 3.9.3');
+    assert.equal(sha256ExactBytes(serialized), EXACT_SELECTION_393_SCHEMA_SHA256, `${name} unknown exact-selection raw schema`);
+    serialized = serialized.replace(/\bnewSet\(/g, 'new Set(')
+      .replace("'jobIdsmustbeunique'", "'jobIds must be unique'");
   }
   return canonicalSchemaAst(parseExpression(serialized));
 }
