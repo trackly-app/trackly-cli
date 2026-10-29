@@ -221,7 +221,7 @@ test('apiRequest preserves start capability and Idempotency-Key across OAuth ref
       false,
       false,
       'trackly-test/1.0.0',
-      { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': '3.9.2' },
+      { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': '3.9.3' },
     );
 
     assert.equal(result.batch.id, 44);
@@ -230,12 +230,12 @@ test('apiRequest preserves start capability and Idempotency-Key across OAuth ref
       {
         authorization: 'Bearer jwt_old',
         idempotencyKey,
-        startContract: '3.9.2',
+        startContract: '3.9.3',
       },
       {
         authorization: 'Bearer jwt_new',
         idempotencyKey,
-        startContract: '3.9.2',
+        startContract: '3.9.3',
       },
     ]);
   });

@@ -2024,7 +2024,7 @@ test('application field sensitivity catalog extraction is static and fail closed
 });
 
 test('plugin registration proof binds the exported factory to the live POST route', () => {
-  // close-ai 6be6d4d21 src/mcp/plugin-router.ts, verbatim: one router per
+  // close-ai 52efd2f8 src/mcp/plugin-router.ts, verbatim: one router per
   // curated surface from createTracklyPluginRouter (close-ai #2705, #2777,
   // #2792, #3180).
   const routerSource = `/** HTTP transport and authorization boundary for the public trackly plugin. */
@@ -2036,6 +2036,8 @@ import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middlew
 import { tracklyOAuthProvider } from './oauth-provider.js';
 import {
   generateHostedOAuthInternalToken,
+  buildHostedMcpAnalyticsContext,
+  runWithHostedMcpRequestAnalytics,
   type HostedOAuthAuthInfo,
 } from './server.js';
 import {
@@ -2203,9 +2205,19 @@ export function createTracklyPluginRouter(surface: CuratedMcpSurface = MCP_PLUGI
           surface: surface === MCP_OPENAI_SURFACE ? 'openai' : 'legacy',
         });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      const analyticsContext = buildHostedMcpAnalyticsContext({
+        requestBody: req.body,
+        userId: authInfo.extra.userId,
+        userAgent: req.get('user-agent'),
+        surface: surface.analyticsSurface,
+      });
       try {
-        await server.connect(transport);
-        await transport.handleRequest(req, res, req.body);
+        await runWithHostedMcpRequestAnalytics(
+          analyticsContext, async () => {
+            await server.connect(transport);
+            await transport.handleRequest(req, res, req.body);
+          },
+        );
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'unknown';
         logger.error('trackly-plugin-mcp', 'Error handling plugin MCP request', {
@@ -4021,6 +4033,11 @@ test('adapted trackly Apply skill is traceable to its source and safety invarian
   const handoff = read('plugins/trackly/skills/trackly-apply/references/review-handoff.md');
   assert.equal(lock.source.treeSha256, treeSha256(path.join(ROOT, lock.source.path)));
   assert.equal(lock.adapted.treeSha256, treeSha256(path.join(ROOT, lock.adapted.path)));
+  assert.match(lifecycle, /For an exact `jobIds` request,[^\n]*`targetMismatch=true`[^\n]*stop/);
+  assert.match(lifecycle, /Only count-only requests without `jobIds` may follow/);
+  const mismatchStep = skill.split('\n').find(line => line.startsWith('5. If `targetMismatch`'));
+  assert.match(mismatchStep, /exact `jobIds`[^.]*stop[^.]*active-selection mismatch/);
+  assert.match(mismatchStep, /count-only requests without `jobIds`/);
   assert.match(
     skill,
     /`reasonCode: execution_restarted`/,

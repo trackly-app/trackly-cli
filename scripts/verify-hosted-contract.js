@@ -13,7 +13,7 @@ const { HOSTED_RESUME_SECURITY_SOURCE_SHA256, assertHostedResumeSecuritySourceSn
 const assertResumeGlobalParserCarveout = createResumeParserVerifier({ activeNamedDefinitionAst, staticMemberName, parseFullSource, canonicalSchemaAst });
 
 const sha256ExactBytes = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-const CHECKED_IN_HOSTED_FIXTURE_SHA256 = '3bd5de31bbe39eaa6da3ca9c0ed7bfeb3e59da09f7d827fcdce5a291e052a4ed';
+const CHECKED_IN_HOSTED_FIXTURE_SHA256 = 'a87e3c8f9febf140d64bfcc9074e96c706d2db84215a1c70848c5c3ef06c1c27';
 const HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256 = Object.freeze({
   applyCheckpointActionVariant: '6d83fd691e69b578f683c5e367cc1706a8f74b336e0ff435195f580c2350587c',
   applyCheckpointActionSchema: '6f0b0698b13997eda7100ec00720fff199d936270d232c7de5f55a8fcef2c2ab',
@@ -21,8 +21,8 @@ const HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256 = Object.freeze({
 });
 // Apply 3.9.2 adds exactly the client/upgrade_required checkpoint variant
 // (reviewed in trackly-cli #144: removing it restores the 3.8.1 digest above).
-// Deployed backends that publish 3.9.2 are verified with the 3.9.2 writer
-// generation and this digest; everything else keeps the 3.8.1 pins.
+// Apply 3.9.3 retains this exact writer generation and digest while adding
+// exact-selection inputs; older generations keep the 3.8.1 pins.
 const APPLY_392_CHECKPOINT_ACTION_SCHEMA_SHA256 = '604ccf2ef203d80f022fde2a10d3e471c64724a3c3473569629f05315953cb21';
 // Exact bytes of close-ai src/mcp/mcp-config.ts at aa74d3e5 (introduced by
 // close-ai #1750): issuer canonicalization, plugin/legacy resources, the MCP
@@ -30,7 +30,8 @@ const APPLY_392_CHECKPOINT_ACTION_SCHEMA_SHA256 = '604ccf2ef203d80f022fde2a10d3e
 // close-ai 6be6d4d2: OpenAI, Muse and Claude curated resources and frozen
 // server-owned surface records (#2705, #2777, #3180), isCuratedMcpResource, and
 // https://agent.meta.ai added to the MCP browser origin allowlist (#2777, #2792).
-const HOSTED_MCP_CONFIG_SHA256 = 'fcbae1322bd505a282c415e51fb75b125b02b680a2545bcc3143ac77a5c5b77d';
+// Recaptured from deployed52efd2; actual behavior diff reviewed; dedicated-budget regression tests passed58/58.
+const HOSTED_MCP_CONFIG_SHA256 = 'd15af5ec7ef1ca27b36c4633b5ec72ad6fdca32c6ffcf5eae93370285ef91b78';
 // Exact bytes of the two middleware modules that now run before the plugin
 // mount or the shared /api/ limiter at close-ai aa74d3e5: the retired Signals
 // containment (close-ai #1770) and collapseOnboardingTrailingSlashes plus the
@@ -38,15 +39,15 @@ const HOSTED_MCP_CONFIG_SHA256 = 'fcbae1322bd505a282c415e51fb75b125b02b680a2545b
 const HOSTED_LEGACY_SIGNALS_CONTAINMENT_SHA256 = 'd92c5b8a0b0089704e565e5a8fd0eaeb232a76176d048747ae29f938b4b63613';
 // close-ai #2979 (scraper ingest, dormant until its token is set) and #3131 (public
 // company assets, GET/HEAD only) add exact-path exemptions whose routes own limiters.
-const HOSTED_GENERAL_RATE_LIMIT_SHA256 = 'd525887d4ed7ec24292a33007369e95a850d649eed6a5f46dcc85bf0edc423d3';
+// Recaptured from deployed52efd2; actual behavior diff reviewed; dedicated-budget regression tests passed58/58.
+const HOSTED_GENERAL_RATE_LIMIT_SHA256 = 'c724c5215e1014a5e4cb598cb8487a4524e51ec1547cc555700ff4d3f0c54006';
 // Reviewed at close-ai 6be6d4d21: #2705/#2711/#2777/#3180 serve the legacy,
 // OpenAI, Muse and Claude catalogs from one factory. Everything before the
 // first registration is locked as exact AST: the surface guard, the server,
 // the empty prompt handler, the shared search request, Claude's search wrapper
 // and the per-surface registerPluginTool helper. Scope enforcement stays in
 // plugin-scopes; this helper only shapes the published descriptors.
-const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `
-  if (options.surface !== 'legacy' && options.surface !== 'openai' && options.surface !== 'muse'
+const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' && options.surface !== 'openai' && options.surface !== 'muse'
     && options.surface !== 'claude') {
     throw new Error('Unknown plugin tool surface');
   }
@@ -59,10 +60,20 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `
     query.set('jobFunction', params.function || ALL_JOB_FUNCTIONS.join(','));
     if (params.companyId !== undefined) query.set('companyId', String(params.companyId));
     if (params.keywords) query.set('search', params.keywords);
-    if (params.remote) query.set('usStates', 'REMOTE');
+    // usStates and sponsorship are advertised on the Claude surface only; the other
+    // surfaces' strict schemas never pass them. States go as the web app sends them.
+    const usStates: string[] = Array.isArray(params.usStates) ? [...new Set<string>(params.usStates)] : [];
+    if (params.remote) usStates.push('REMOTE');
+    if (usStates.length > 0) query.set('usStates', usStates.join(','));
     if (params.locationFilter) query.set('locationFilter', params.locationFilter);
+    else if (Array.isArray(params.usStates) && params.usStates.length > 0) query.set('locationFilter', 'us');
     if (params.jobModality) query.set('jobModality', params.jobModality);
     if (params.status) query.set('status', params.status);
+    if (params.sponsorship) {
+      query.set('sponsorship', params.sponsorship);
+      // The backend applies the filter only on status=new, as the hosted search does.
+      if (params.sponsorship !== 'all' && !params.status) query.set('status', 'new');
+    }
     if (params.sort) query.set('sort', params.sort);
     if (params.limit) query.set('limit', String(params.limit));
     if (params.offset !== undefined) query.set('offset', String(params.offset));
@@ -86,10 +97,12 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `
         type: 'oauth2',
         scopes: requiredScopesForPluginTool(toolName, options.surface) || [],
       }];
-      return server.registerTool(toolName, {
+      return server.registerTool<z.ZodRawShape, z.ZodRawShape>(toolName, {
         ...toolConfig,
         _meta: { ...toolConfig._meta, securitySchemes },
-      } as any, toolHandler);
+      } as any, (params, extra) => captureHostedMcpTool(
+        toolName, extra.requestId, () => toolHandler(params),
+      ));
     };
     if (options.surface === 'legacy') {
       const required = requiredScopesForPluginTool(name, 'legacy') ?? [];
@@ -152,8 +165,16 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `
         return handler(parsed.data);
       });
     }
-  };
-`;
+  };`;
+
+// Exact reviewed telemetry helpers; attribution cannot become request authority.
+const HOSTED_MCP_ANALYTICS_HELPER_AST_SHA256 = Object.freeze({
+  "runWithHostedMcpToolContext": "a1a973ac01a2943d4e5751bd61c32e290d49069bbc7db05925e67956156f93f5",
+  "captureHostedMcpTool": "d661823521f8d974ffa3ecdc608f9dd5c6cec9a79eda441ad9b87bf8e2afcc4f",
+  "buildHostedMcpAnalyticsContext": "a5243cfc8b16687b3a3206e37d133724804b393ca4bf739e3b2529fce3b042fc",
+  "runWithHostedMcpRequestAnalytics": "2e23c2e572fa952130ffa78a7d3b51ac402e1f9c7021c756bec1e6caef977734"
+});
+
 // close-ai #3089: job tools (jobIdKey) normalize closed or missing postings into a
 // non-retryable unavailable result and classify failures; other tools keep the
 // original resultContent/errorContent path. job-result.ts is whole-byte locked.
@@ -187,6 +208,8 @@ const HOSTED_JOB_RESULT_SHA256 = 'e337bad5f2ebcdb4ebfa3379498852fa6fe8f78758f9b5
 const HOSTED_PLUGIN_ONBOARDING_SHA256 = '5d4c4bd48dcc81f5230eb01e1e3269fa4ce4c9a2340eb232f6cb4104befd26ae';
 // close-ai #2105: rate-limit client IP resolution mounted in the global inventory.
 const HOSTED_CLIENT_IP_SHA256 = '9e09a30d819487315ea4e02d3c1ad1c3a584e65d36bd42882a0aad01610ee7ed';
+// Exact deployed observation module; its imported literal path is resolved only after provenance verification.
+const HOSTED_OBSERVATION_ROUTE_SOURCE_SHA256 = 'a26b97cca7047c14df805f306aa00047d9264fdeb5136094c285b69a754cdfe9';
 const HOSTED_APPLY_REPLAY_HELPER_AST_SHA256 = Object.freeze({
   actionCodeFromStoredCheckpoint: 'b23c10235645aa732c28073adfa2fd72dec0a8f7770b461df8bd5f408f896c6d',
   loadStoredApplyBatchCheckpoint: '598233925c66ca36c69ae3dfe75984ec1d7098f27b8356d51cd6a43a7947bfd6',
@@ -478,7 +501,7 @@ function directHostedToolRegistrationsInNamedFactory(
   sourcePath,
   expectedToolCatalog,
   {
-    helperAstSha256 = '62cb38dc14622e0f6e96bca650876a142cc8a2b38adfb8bf9e257a13abdbc11d',
+    helperAstSha256 = '2fe648415f8e9b36be4db0e48a88952c8995784b112ef7cdae42e13529cfa97e',
   } = {},
 ) {
   const ast = parseFullSource(source, sourcePath);
@@ -777,33 +800,16 @@ const HOSTED_DEPLOYABLE_PATHS = Object.freeze([
   'src/routes/jobscout-filter-utils.ts',
   'src/routes/jobscout-tracker.ts',
   'src/routes/trackly-apply.ts',
+  'src/routes/central-promotion-observation.ts',
   'src/routes/auth.ts',
+  'src/middleware/school-request-paths.ts',
+  'src/middleware/school-ingress.ts',
+  'src/routes/admin-read-query.ts',
 ]);
 
-// close-ai #3186 (source 345277ec) predates #3158 on main, so the deployed merge 6be6d4d2
-// inherits these four paths from its first parent ccf9e059 (the #3158 merge).
-const REVIEWED_INHERITED_BASELINE = Object.freeze([
-  ['src/mcp/plugin-server.ts', '0667a7058a96f9f047e4420e9886dce69b6ab55510b95d8a5962dfbb0c5a227e',
-    '75c8e4341220950af16ac9708586420ee08a24db4627ef3a4e55f099f9c67bc0',
-    'ccf9e0590bfe6b7d29df8b3014800aa99d353a53'], // close-ai PR #3158 merge (combines #3180 and #3184)
-  ['src/mcp/__tests__/plugin-server.test.ts', '46f37e64626d56d602cacadc483e6c7213df6e13949c20a1af9b15c2f2cfb322',
-    '550ffdcb65c88849ee5327d028bf6e75d1d6cf61ae40d2c18fe8e6c0a95e8515',
-    'ccf9e0590bfe6b7d29df8b3014800aa99d353a53'], // close-ai PR #3158 merge (combines #3180 and #3184)
-  ['src/services/application-profile/catalog.ts', '233a964351b653020d8dc7dd193af958afa123a23da1e37d20abb4a6690c059c',
-    '469e4c149a84d0d16c6e88f309baab56325a2bcbf9306775b28555b21d793f6a',
-    '1c8f87057eaa66b17e729c87cf13098387ff56ad'], // close-ai PR #3158 head
-  ['src/services/application-profile/service.ts', '029446f02cfb83b747effb7fb4badeaa4771786392df644f393f9584a3637726',
-    '313e9a040cf2d0f4dc23affebf7b2c800d818023024cb11b299a76f3a3443352',
-    '1c8f87057eaa66b17e729c87cf13098387ff56ad'], // close-ai PR #3158 head
-].map(([relativePath, sourceSha256, inheritedSha256, originCommit]) => Object.freeze({
-  sourceCommit: '345277ec453c0591e055ec992e38cc3f757cd9c8',
-  mergeCommit: '6be6d4d2105f7de7f491c7b55bfdf00057d193f4',
-  firstParent: 'ccf9e0590bfe6b7d29df8b3014800aa99d353a53',
-  relativePath,
-  sourceSha256,
-  inheritedSha256,
-  originCommit,
-})));
+// Recaptured from reviewed source 3d479b94 and ordinary deployed merge 71e7f9bf.
+// All 49 deployable paths preserve the reviewed bytes; no inherited exception applies.
+const REVIEWED_INHERITED_BASELINE = Object.freeze([]);
 
 function assertMergeCommitPreservesPaths(repository, sourceCommit, mergeCommit, relativePaths, inheritedBaseline = []) {
   const unused = new Set(inheritedBaseline);
@@ -1518,7 +1524,7 @@ function directToolRegistrationsInExportedFunction(
     }
   }
   visitServerReferences(factory);
-  const expectedUiResourceLoop = parseFullSource(
+  const expectedUiResourceStatements = parseFullSource(
     uiResourceLoopSource ?? [
       'for (const view of Object.keys(TRACKLY_PLUGIN_UI) as Array<keyof typeof TRACKLY_PLUGIN_UI>) {',
       '  const uri = TRACKLY_PLUGIN_UI[view];',
@@ -1537,7 +1543,8 @@ function directToolRegistrationsInExportedFunction(
       '}',
     ].join('\n'),
     'locked plugin UI resource registration',
-  ).program.body[0];
+  ).program.body;
+  const expectedUiResourceLoop = expectedUiResourceStatements.at(-1);
   const uiResourceLoops = factory.body.body.filter((statement) => (
     JSON.stringify(canonicalSchemaAst(statement))
       === JSON.stringify(canonicalSchemaAst(expectedUiResourceLoop))
@@ -1552,6 +1559,14 @@ function directToolRegistrationsInExportedFunction(
     assert.ok(
       uiResourceLoops.length <= 1,
       `${expectedFunction} in ${sourcePath} may contain at most one exact locked plugin UI resource loop`,
+    );
+  }
+  if (uiResourceLoops.length === 1) {
+    const actualUiResourceStatements = factory.body.body.slice(registrationStatementIndexes.at(-1) + 1, -1);
+    assert.deepEqual(
+      actualUiResourceStatements.map((statement) => canonicalSchemaAst(statement)),
+      expectedUiResourceStatements.map((statement) => canonicalSchemaAst(statement)),
+      `${expectedFunction} in ${sourcePath} must preserve its exact resource registration tail`,
     );
   }
   // A reviewed surface guard may wrap the loop as `if (...) for (...) {...}`.
@@ -1819,9 +1834,19 @@ const HOSTED_PLUGIN_ROUTER_FACTORY_SOURCE = `function createTracklyPluginRouter(
           surface: surface === MCP_OPENAI_SURFACE ? 'openai' : 'legacy',
         });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      const analyticsContext = buildHostedMcpAnalyticsContext({
+        requestBody: req.body,
+        userId: authInfo.extra.userId,
+        userAgent: req.get('user-agent'),
+        surface: surface.analyticsSurface,
+      });
       try {
-        await server.connect(transport);
-        await transport.handleRequest(req, res, req.body);
+        await runWithHostedMcpRequestAnalytics(
+          analyticsContext, async () => {
+            await server.connect(transport);
+            await transport.handleRequest(req, res, req.body);
+          },
+        );
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'unknown';
         logger.error('trackly-plugin-mcp', 'Error handling plugin MCP request', {
@@ -1983,6 +2008,9 @@ function assertExportedFactoryUsedByPluginRouter(
     ['MCP_PLUGIN_RESOURCE_METADATA_URL', 'MCP_PLUGIN_RESOURCE_METADATA_URL', './mcp-config.js'],
   ]) {
     assertImportBinding(source, importedName, localName, moduleName, sourcePath);
+  }
+  for (const name of ['buildHostedMcpAnalyticsContext', 'runWithHostedMcpRequestAnalytics']) {
+    assertImportedBindingNeverRedeclared(source, name, name, './server.js', sourcePath);
   }
   assertActiveVariableInitializerAst(
     source,
@@ -2331,6 +2359,7 @@ function assertPluginRoutePrecedence(
     reviewedGlobalMiddlewareCallDigests = REVIEWED_GLOBAL_MIDDLEWARE_CALL_DIGESTS,
     reviewedPluginScopedMiddlewareCallDigests = REVIEWED_PLUGIN_SCOPED_MIDDLEWARE_CALL_DIGESTS,
     reviewedDisjointRouterMountDigests = REVIEWED_DISJOINT_ROUTER_MOUNT_DIGESTS,
+    reviewedObservationRouteSource = null,
   } = {},
 ) {
   const factory = resolvedFactory || activeNamedDefinitionAst(source, 'createApp', sourcePath);
@@ -2404,6 +2433,67 @@ function assertPluginRoutePrecedence(
     );
     legalRedirectPathsVerified = true;
   }
+  function verifiedObservationRoutePath(pathArgument, call, method) {
+    const binding = 'OBSERVATION_PATH';
+    const moduleName = './routes/central-promotion-observation';
+    const modulePath = sourcePath + ' observation route module';
+    assert.equal(typeof reviewedObservationRouteSource, 'string',
+      binding + ' requires its reviewed observation route module source');
+    assert.equal(method, 'get', binding + ' must be used only by the reviewed app.get registration');
+    assert.ok(directCreateAppCalls.has(call),
+      binding + ' must be registered directly in createApp');
+    assert.deepEqual(
+      canonicalSchemaAst(call),
+      canonicalSchemaAst(parseFullSource(
+        'app.get(OBSERVATION_PATH, createApiObservationHandler(boundedCatalogQuery(pool)));',
+        'reviewed observation registration',
+      ).program.body[0].expression),
+      binding + ' must preserve its exact reviewed app.get handler expression',
+    );
+    const imported = assertImportBinding(source, binding, binding, moduleName, sourcePath);
+    const pathImport = parseFullSource(source, sourcePath).program.body.find(statement => (
+      statement.type === 'ImportDeclaration' && statement.specifiers.includes(imported)
+    ));
+    assert.notEqual(pathImport.importKind, 'type', binding + ' must have a runtime import');
+    assert.notEqual(imported.importKind, 'type', binding + ' must have a runtime import');
+    assertImportedBindingNeverRedeclared(source, binding, binding, moduleName, sourcePath);
+    assertImportedBindingNeverRedeclared(
+      source, 'createApiObservationHandler', 'createApiObservationHandler', moduleName, sourcePath,
+    );
+    const references = collectBindingReferences(
+      parseFullSource(source, sourcePath),
+      binding,
+      (_node, parent, key) => parent?.type === 'ImportSpecifier' && key === 'imported',
+    );
+    assert.deepEqual(
+      references,
+      [imported.local, pathArgument],
+      binding + ' must not be aliased, escaped or used outside its reviewed observation registration',
+    );
+    const moduleAst = parseFullSource(reviewedObservationRouteSource, modulePath);
+    const exports = moduleAst.program.body.filter(statement => (
+      statement.type === 'ExportNamedDeclaration'
+      && statement.source === null
+      && statement.declaration?.type === 'VariableDeclaration'
+      && statement.declaration.declarations.some(item => item.id?.name === binding)
+    ));
+    assert.equal(exports.length, 1, binding + ' must have one direct exported observation route declaration');
+    const declaration = exports[0].declaration;
+    assert.equal(declaration.kind, 'const', binding + ' must be exported as an immutable const');
+    assert.notEqual(declaration.declare, true, binding + ' must have a runtime definition');
+    assert.equal(declaration.declarations.length, 1, binding + ' must have its own exported declaration');
+    const exported = declaration.declarations[0];
+    const literal = activeNamedDefinitionAst(reviewedObservationRouteSource, binding, modulePath);
+    assert.equal(literal.type, 'StringLiteral', binding + ' must use a direct literal');
+    assert.equal(literal.value, '/admin/central-promotion/observation',
+      binding + ' must preserve its exact reviewed observation path');
+    assert.deepEqual(
+      collectBindingReferences(moduleAst, binding, () => false),
+      [exported.id],
+      binding + ' must not be reassigned, aliased, reexported or shadowed in its source module',
+    );
+    return literal.value;
+  }
   function visitEarlierRoutes(node) {
     if (node === null || typeof node !== 'object') return;
     if (Array.isArray(node)) {
@@ -2456,11 +2546,18 @@ function assertPluginRoutePrecedence(
           && reviewedDisjointRouterMountDigestSet.has(disjointRouterMountDigest)
           && directCreateAppCalls.has(node);
         if (reviewedDisjointRouterMount) encounteredReviewedDisjointRouterMountDigests.push(disjointRouterMountDigest);
+        const observationPath = directAppCall && method === 'get'
+          && pathArgument?.type === 'Identifier' && pathArgument.name === 'OBSERVATION_PATH'
+          && reviewedObservationRouteSource !== null
+          ? verifiedObservationRoutePath(pathArgument, node, method)
+          : null;
         const covers = reviewedPluginScopedMiddleware || reviewedDisjointRouterMount
           ? false
-          : pathArgument?.type === 'StringLiteral'
-            ? staticExpressPathCovers(pathArgument.value, mountPath, method)
-            : !knownDisjointLegalRedirectPaths && !reviewedGlobalMiddleware;
+          : observationPath !== null
+            ? staticExpressPathCovers(observationPath, mountPath, method)
+            : pathArgument?.type === 'StringLiteral'
+              ? staticExpressPathCovers(pathArgument.value, mountPath, method)
+              : !knownDisjointLegalRedirectPaths && !reviewedGlobalMiddleware;
         if (covers) earlierCoveringHandlers.push(node);
       }
     }
@@ -3455,7 +3552,7 @@ function assertPluginUiContractSemantics(
   sourcePath,
   // close-ai #2705: the card accepts only the legacy or OpenAI resume path and
   // now also rejects an open URL with a query string; copy drops the accent.
-  { htmlAstSha256 = '5bc8eb4b8c7a741136cfbc8286c28b754cf0e49dbcc1d9ed4153fc741dbb9233' } = {},
+  { htmlAstSha256 = '70f7e4141deb76f0c53d3389c8bd60ba0a07d16076b57fab003c22b62562a891' } = {},
 ) {
   assertActiveVariableInitializerAst(
     source,
@@ -3469,7 +3566,7 @@ function assertPluginUiContractSemantics(
     source,
     'TRACKLY_PLUGIN_UI',
     `Object.freeze({
-      readiness: 'ui://trackly/apply-readiness-v1.html',
+      readiness: 'ui://trackly/apply-readiness-v2.html',
       apply: 'ui://trackly/apply-run-v1.html',
       resume: 'ui://trackly/resume-handoff-v1.html',
       review: 'ui://trackly/review-ready-v1.html',
@@ -7349,6 +7446,7 @@ const hostedApplicationProfileCatalogPath = path.join(backendRoot, 'src', 'servi
 const hostedApplicationProfileServicePath = path.join(backendRoot, 'src', 'services', 'application-profile', 'service.ts');
 const hostedJobscoutFilterUtilsPath = path.join(backendRoot, 'src', 'routes', 'jobscout-filter-utils.ts');
 const hostedTracklyApplyPath = path.join(backendRoot, 'src', 'routes', 'trackly-apply.ts');
+const hostedObservationRoutePath = path.join(backendRoot, 'src', 'routes', 'central-promotion-observation.ts');
 const pluginLockPath = path.join(cliRoot, 'plugins', 'trackly', 'skill-lock.json');
 
 if (!fs.existsSync(hostedContractPath)) {
@@ -7402,6 +7500,7 @@ const hostedApplicationProfileCatalogSource = fs.readFileSync(hostedApplicationP
 const hostedApplicationProfileServiceSource = fs.readFileSync(hostedApplicationProfileServicePath, 'utf8');
 const hostedJobscoutFilterUtilsSource = fs.readFileSync(hostedJobscoutFilterUtilsPath, 'utf8');
 const hostedTracklyApplySource = fs.readFileSync(hostedTracklyApplyPath, 'utf8');
+const hostedObservationRouteSource = fs.readFileSync(hostedObservationRoutePath, 'utf8');
 const hostedResumeSecuritySources = Object.fromEntries(
   Object.keys(HOSTED_RESUME_SECURITY_SOURCE_SHA256).map((relativePath) => [
     relativePath,
@@ -7435,12 +7534,18 @@ assertUnshadowedImportBinding(
   hostedBatchServicePath,
 );
 assertCheckpointRouteCallChain(hostedTracklyApplySource, hostedTracklyApplyPath);
+assertExactHostedSourceSha256(
+  hostedObservationRouteSource,
+  HOSTED_OBSERVATION_ROUTE_SOURCE_SHA256,
+  hostedObservationRoutePath,
+);
 assertLivePluginRouterMount(
   hostedApplicationSource,
   'tracklyPluginMcpRoutes',
   './mcp/plugin-router',
   '/api/plugin/trackly/mcp',
   hostedApplicationPath,
+  { reviewedObservationRouteSource: hostedObservationRouteSource },
 );
 assertImportedFunctionCallInventory(
   hostedAuthRateLimitSource,
@@ -7528,7 +7633,7 @@ assertCoordinatedCheckpointHelperSemantics({
     hostedApply: hostedApplySourcePath,
     hostedCheckpointContract: hostedCheckpointContractPath,
   },
-  ...(local.contractVersion === '3.9.2'
+  ...(['3.9.2', '3.9.3'].includes(local.contractVersion)
     ? {
       checkpointWriterGeneration: 'candidate-3.9.2',
       expectedHostedDigests: {
@@ -8343,6 +8448,12 @@ assertActiveFunctionDefinitionAst(
   }`,
   hostedApplySourcePath,
 );
+for (const [name, expectedDigest] of Object.entries(HOSTED_MCP_ANALYTICS_HELPER_AST_SHA256)) {
+  assertActiveFunctionAstSha256(hostedApplySource, name, expectedDigest, hostedApplySourcePath);
+}
+assertImportedBindingNeverRedeclared(
+  hostedPluginSource, 'captureHostedMcpTool', 'captureHostedMcpTool', './server.js', hostedPluginSourcePath,
+);
 const executablePluginRegistrations = directToolRegistrationsInExportedFunction(
   hostedPluginSource,
   'createTracklyPluginMcpServer',
@@ -8357,23 +8468,26 @@ const executablePluginRegistrations = directToolRegistrationsInExportedFunction(
     expectedPrefixDeclarators: ['server', 'searchJobsRequest', 'claudeSearchJobs', 'registerPluginTool'],
     // close-ai #2777/#3180: Muse and Claude publish no Apply UI cards; #2705
     // renders each card with the surface's own resume path.
-    uiResourceLoopSource: [
-      "if (options.surface !== 'muse' && options.surface !== 'claude') for (const view of Object.keys(TRACKLY_PLUGIN_UI) as Array<keyof typeof TRACKLY_PLUGIN_UI>) {",
-      '  const uri = TRACKLY_PLUGIN_UI[view];',
-      '  server.registerResource(`trackly-${view}-card`, uri, {',
-      '    title: `trackly ${view} card`,',
-      "    description: 'Private trackly Apply status UI. The user always submits manually.',",
-      '    mimeType: TRACKLY_PLUGIN_UI_MIME_TYPE,',
-      '  }, async () => ({',
-      '    contents: [{',
-      '      uri,',
-      '      mimeType: TRACKLY_PLUGIN_UI_MIME_TYPE,',
-      '      text: tracklyPluginUiHtml(view, resumePath),',
-      '      _meta: TRACKLY_PLUGIN_UI_RESOURCE_META,',
-      '    }],',
-      '  }));',
-      '}',
-    ].join('\n'),
+    uiResourceLoopSource: `const uiResources = Object.entries(TRACKLY_PLUGIN_UI) as Array<[keyof typeof TRACKLY_PLUGIN_UI, string]>;
+  // The v1 URI aliases the current renderer; it is not a frozen copy of old markup.
+  // Keep that URI readable while supported clients can retain its cached tool definition.
+  // Remove only through a reviewed compatibility migration; no cache-expiry guarantee is known.
+  uiResources.push(['readiness', 'ui://trackly/apply-readiness-v1.html']);
+  if (options.surface !== 'muse' && options.surface !== 'claude') for (const [view, uri] of uiResources) {
+    const name = \`trackly-\${view}-card\${uri === TRACKLY_PLUGIN_UI[view] ? '' : '-v1'}\`;
+    server.registerResource(name, uri, {
+      title: \`trackly \${view} card\`,
+      description: 'Private trackly Apply status UI. The user always submits manually.',
+      mimeType: TRACKLY_PLUGIN_UI_MIME_TYPE,
+    }, async () => ({
+      contents: [{
+        uri,
+        mimeType: TRACKLY_PLUGIN_UI_MIME_TYPE,
+        text: tracklyPluginUiHtml(view, resumePath),
+        _meta: TRACKLY_PLUGIN_UI_RESOURCE_META,
+      }],
+    }));
+  }`,
   },
 );
 const executablePluginTools = executablePluginRegistrations.map((registration) => registration.name);
@@ -9663,11 +9777,33 @@ const startOrResumeDescriptorProperties = staticBabelObjectProperties(
   startOrResumeRegistration.call.arguments[1],
   'trackly_start_or_resume_apply descriptor',
 );
+assertWrappedHandlerDirectStatementAst(
+  startOrResumeRegistration,
+  `if (jobIds !== undefined && target !== jobIds.length) {
+    throw new Error('target must equal the jobIds selection length.');
+  }`,
+  hostedPluginSourcePath,
+);
+assertWrappedHandlerStatementSequenceAst(
+  startOrResumeRegistration,
+  `if (jobIds !== undefined) {
+    const replay = await orchestrationRequest('POST', '/api/jobscout/apply/executions',
+      { mode: 'complete_next_n_accessible', target, jobIds },
+      { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': '3.9.3' });
+    if (replay?.replay !== true || replay.execution?.id !== current.execution?.id) {
+      throw new Error('Resolve the active Apply execution before starting the selected jobs.');
+    }
+  }
+  const activeExecutionId = readinessCount(current.execution?.id);`,
+  hostedPluginSourcePath,
+);
 assertBabelPropertyExpression(
   startOrResumeDescriptorProperties,
   'inputSchema',
   `z.object({
     target: z.number().int().min(1).max(APPLY_EXECUTION_MAX_TARGET),
+    jobIds: z.array(z.number().int().min(1)).min(1).max(APPLY_EXECUTION_MAX_TARGET)
+      .refine((ids) => new Set(ids).size === ids.length, { message: 'jobIds must be unique' }).optional(),
     idempotencyKey: z.string().min(16).max(180).regex(SAFE_IDEMPOTENCY_KEY),
     browserSurface: z.enum(APPLY_BROWSER_SURFACES),
   }).strict()`,
@@ -9709,8 +9845,8 @@ assertWrappedHandlerStatementSequenceAst(
   startOrResumeRegistration,
   `const started = await orchestrationRequest(
     'POST', '/api/jobscout/apply/executions',
-    { mode: 'complete_next_n_accessible', target },
-    { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': '3.9.2' },
+    { mode: 'complete_next_n_accessible', target, ...(jobIds === undefined ? {} : { jobIds }) },
+    { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': '3.9.3' },
   );
   startResult = projectApplyStartResult(started, target, {
     resumed: false, started: true, targetMismatch: false,
@@ -10350,6 +10486,7 @@ function verifyHostedResumeToolContract(source, sourcePath) {
 module.exports = {
   assertMachineAccessSemantics,
   HOSTED_MACHINE_ACCESS_SOURCES,
+  HOSTED_MCP_ANALYTICS_HELPER_AST_SHA256,
   HOSTED_REQUIRE_MCP_ENTITLEMENT_SOURCE,
   verifyHostedResumeToolContract,
   CHECKED_IN_HOSTED_FIXTURE_SHA256,

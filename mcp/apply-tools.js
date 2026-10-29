@@ -976,13 +976,18 @@ function registerApplyTools(
 
   server.tool(
     'trackly_start_apply_execution',
-    'Start a server-owned execution that keeps selecting from one recent-first Check Later snapshot until the requested number of accessible forms is durably ready for manual review. Consume the returned authoritative progress and nextAction immediately; never infer the first wave or next step locally.',
+    'Start a server-owned no-submit execution. For named or explicitly selected jobs, supply their exact ordered jobIds and set target to their count; no replacement outside that set is allowed. Omit jobIds only for a user-requested recent-first queue target. Consume authoritative progress and nextAction; never fall back to count-only after an exact selection is rejected.',
     {
       mode: z.literal('complete_next_n_accessible'),
       target: z.number().int().min(1).max(APPLY_EXECUTION_MAX_TARGET),
+      jobIds: z.array(z.number().int().min(1)).min(1).max(APPLY_EXECUTION_MAX_TARGET)
+        .refine((ids) => new Set(ids).size === ids.length, { message: 'jobIds must be unique' }).optional(),
       idempotencyKey: z.string().min(16).max(200).regex(SAFE_IDEMPOTENCY_KEY),
     },
     wrapTool(async ({ idempotencyKey, ...body }) => {
+      if (body.jobIds !== undefined && body.target !== body.jobIds.length) {
+        throw new Error('target must equal the jobIds selection length.');
+      }
       const rawResponse = await applyControlRequest(
         'POST', '/api/jobscout/apply/executions', body, idempotencyKey,
       );

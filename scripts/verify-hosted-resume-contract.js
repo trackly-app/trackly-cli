@@ -6,13 +6,13 @@ function assertExactHostedSourceSha256(source, expected, label) { assert.equal(c
 // hosted fixture. Keep these separate so historical fixture verification stays
 // independent while coordinated verification locks every new trust boundary.
 const HOSTED_RESUME_SECURITY_SOURCE_SHA256 = Object.freeze({
-  'src/mcp/plugin-router.ts': 'c23d3c30e289d1fc781ef00d5a7bd9993cb82d9960c90923ca57338693ade1ff',
+  'src/mcp/plugin-router.ts': '6a2fea712f9b614cdbfa295f824bf39499bd561488d3c5acd7d8c72a03fa6adc',
   'src/mcp/plugin-resume-capability.ts': '944bcb942c9a537e8fa0d90991aab49b1e12582d05091ea5ace4776d2ddca322',
   'src/mcp/plugin-resume-document.ts': '1ee57a9948aa296cd1b75dac814386609cf0e02b7d02dbcb9f096ddce98068db',
   'src/mcp/plugin-resume-router.ts': '3d927aa94a019c45fc302d5d148da99ee6a2045a72efb73ef34d022102ebac30',
-  'src/mcp/plugin-resume-store.ts': 'c6c4a36a70d0ae5f9a2064861311ca8d9442dea2cb24f0498e9c18078188169f',
-  'src/services/application-profile/plugin-resume-attachment.ts': '7c0bb50d33913987fdebfd135c5bc5fcf89d16325eeb38c5c5ef8ded6b001f9b',
-  'src/index.ts': '4c70824c6c240363af8fd1e8a7beb9ee8c08d964496bbcbbce65f7681160694f',
+  'src/mcp/plugin-resume-store.ts': '2cadf97d3e9211b6c88f1894312bc0a40a36bff887b68981431735aab33ee43c',
+  'src/services/application-profile/plugin-resume-attachment.ts': '29e206e0439719418f33124d61630bf7feeca3204f664c645511849faa80f64c',
+  'src/index.ts': '0bbb96757a6f54cc682410c76a03a562b185a5b7f5309fcdde5e818eaed7ff34',
 });
 
 function assertHostedResumeSecuritySourceSnapshots(

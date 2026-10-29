@@ -1,14 +1,14 @@
 {
   "formatVersion": 1,
-  "adaptationVersion": "1.1.2",
+  "adaptationVersion": "1.1.3",
   "source": {
     "path": "skills/trackly-apply",
-    "skillVersion": "4.9.2",
-    "treeSha256": "f4482f41ed6d205f84c420469ec105e4cc8e1f3858f980205267b6d8a613ce23"
+    "skillVersion": "4.9.3",
+    "treeSha256": "6b00d790069ae815818336c3db7e6226aaa4188db7d6198ee012f6ca9ba36513"
   },
   "adapted": {
     "path": "plugins/trackly/skills/trackly-apply",
-    "treeSha256": "8544ffcfa6f328bf57959763deba5de0c457d0f7b9701f831f87bdf4965853f4"
+    "treeSha256": "783bd776695024a7e84a68eeaca07b40b440a8626bf39236ee0c19c501aca763"
   },
   "adaptation": {
     "reason": "The public plugin facade intentionally exposes a smaller stable tool vocabulary than the full local trackly Apply MCP contract.",
@@ -141,7 +141,7 @@
       "trackly_list_apply_access_deferments": "7ddc74ee90c3c0e0a9cb729ccd2c2f4ed9443d2cd5827f32cb3846d956deb393",
       "trackly_defer_apply_access": "7fce7d4e88ce9fb5ee0afacc7c09458c1bc5a1987664a9e52f4fe509e98506ce",
       "trackly_clear_apply_access_deferment": "31cde6cfa9f1a4c48dda7cfcb69092682a9d6333da8669ec5ff3ef4a784a8c95",
-      "trackly_start_or_resume_apply": "6c372e9bcbf7248f7c45a14ae0dc2efed9994309518c359b786746c65f165a8c",
+      "trackly_start_or_resume_apply": "96e7a96129ee04ed11a80e562aeef551fc0649905336261725f5a0c157eaae28",
       "trackly_get_apply_work": "5fbcf31759ee849b4e38389142a5fc7f37b3ebfee550b90942ab25e348f5f98a",
       "trackly_report_apply_progress": "052e539891de1df18ecc96b7a3615d44b99a3c3dcd253a327b0d55645478a818",
       "trackly_prepare_resume_artifact": "cd5173c44d6d2670cae41cc08dcf547eacbf574d850c62cb1467877cde9d7af2",
@@ -164,7 +164,7 @@
       "trackly_list_apply_access_deferments": "11a3a58d1a775f830cc64ff17d591f7c3b7c6d67329f66c376697051a32f08a1",
       "trackly_defer_apply_access": "1389d30551a8536f09592c14184d4e156c91cef11895abe3eee508ed55ea932e",
       "trackly_clear_apply_access_deferment": "de6b29b8469b758f5252edc565cc33d6e5a07c43a97cc2f7e8ebf3f0e3342e0b",
-      "trackly_start_or_resume_apply": "983f8e67ea0b5e779e2db33db14c14075e5073e32b223858a1fa5d25064d15b6",
+      "trackly_start_or_resume_apply": "4f4cbed87b23025c19a062bfd9de4d98eeae28e8198ee7642f7f049c5483f491",
       "trackly_get_apply_work": "f04236fa329f2a3acb2fd71486dc26fe2d8d762f90be17d903c0539aecf6535d",
       "trackly_report_apply_progress": "61418579d192bcc44a273b4480fadd09ebec292f4a6ea1145ef0ac6da316c4c2",
       "trackly_prepare_resume_artifact": "a83b1f55b59755d302c82d26dc0e3883b4aa6728463fb18a9609e4fdb333101b",
@@ -172,9 +172,9 @@
       "trackly_reconcile_manual_submission": "32be19dadef3c8e3a1d9f320d3c1a9a0cde3845f930dac85641409f25a722b0a",
       "trackly_stop_apply": "8363bfe5eb7fb8ed4093b1f01bdaa9ebcb599ac35004fd13bab0ae6a2ab4f1ce"
     },
-    "pluginServerSha256": "75c8e4341220950af16ac9708586420ee08a24db4627ef3a4e55f099f9c67bc0",
+    "pluginServerSha256": "a9adfbf263dbc76ed937e9c7aa11be59e76e06f6cd90d6f1323704f4951fa9c4",
     "pluginScopesSha256": "7af7450c08a4b1944fb4f5dd0cf97a2f1247693326ba1af4e866b5fe4fa5d040",
-    "jobBriefServiceSha256": "1d62b3a2fd262dcca364b34d82b27ad37eb3ba5fce21f8b8049ea3273c238616",
+    "jobBriefServiceSha256": "fee263be5b7b05da8db6b9b9e2cb7559a50abeeeab447166f5fe7a889892bc7b",
     "backendUiRedirectSha256": "3d1018e472992626d39299be89ee8e996930fb76ce0f69155f2f63bb6f34d55e",
     "maintenanceModeSha256": "0409b32355a014ecc4d64056bf251fcde5f377400fe4f7485e70795420b25afe",
     "databaseBindingSha256": "70ab2f622f10e4c4c082f114573d0b5d572bcb143556e9d5a549d7689f171974",
@@ -182,7 +182,7 @@
     "reviewIdentitySha256": "d03432434c10bbfd0e53f51b2d475f0adf3ada88ac85c2c0534791be0bf03c10",
     "azureRateLimitOptionsSha256": "f3e081d25fd066e76c5c622873622909bd6121e86845e09dd99d4cdf0b47778a",
     "authRateLimitSha256": "ce3e53c0c7b0e9df804fb027c061e27948aff5c5b9a1d022064ed7d0a92c11a5",
-    "applicationProfileServiceSha256": "313e9a040cf2d0f4dc23affebf7b2c800d818023024cb11b299a76f3a3443352",
+    "applicationProfileServiceSha256": "1fa343df32f36c269e4f60c0dde1b50ddfa301185c0b3ff20caf7fa67b423531",
     "schemaSha256": {
       "SAFE_IDEMPOTENCY_KEY": "046859665306e5aeaf57032c76268934e1b98c95d4c17a88434062c9b6a4547a",
       "SAFE_CODE": "a35176c6c3f6ee563d4b6f6f68e4c546d8b03b03915d37bf55dd5a7011927574",

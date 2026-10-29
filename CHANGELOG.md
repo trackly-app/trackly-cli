@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.4] - 2026-10-29
+
+### Fixed
+
+- Keep named Apply jobs as an exact ordered selection. Apply contract 3.9.3 forwards selected job IDs, rejects mismatched targets before a request, and never replaces rejected selections with unrelated queued jobs.
+- Ship Apply skill 4.9.3 and plugin 1.1.3 with the exact-selection and same-key recovery instructions.
+- Pin the Node HTTP adapter to the patched 2.1.3 release; the installed package audit remains free of advisory exceptions.
+
 ## [0.22.3] - 2026-10-27
 
 ### Changed

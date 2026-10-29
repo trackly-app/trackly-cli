@@ -124,7 +124,7 @@ Actual failures retain `isError: true`, HTTP status when available, a closed `ca
 - **trackly_get_application_profile** — Get the versioned, scoped application profile.
 - **trackly_get_profile_onboarding** — Get backend-owned questions plus only missing/unconfirmed answers.
 - **trackly_update_application_profile** — Save explicit answer states with optimistic concurrency and global/provider/company scope. Setting `sensitiveStorageConsent=false` is destructive and requires a second call echoing the `sensitiveRevocationConfirmToken` from the returned challenge.
-- **trackly_start_apply_execution** — Start a server-owned `complete_next_n_accessible` execution with a target from 1–20, then consume the returned authoritative `progress` and `nextAction` before doing browser work.
+- **trackly_start_apply_execution** — Start a server-owned `complete_next_n_accessible` execution with a target from 1–20. For explicitly selected jobs, pass their exact ordered `jobIds` and set `target` to the list length; no unrelated replacements are allowed. Omit `jobIds` only for a requested recent-first queue target. Consume authoritative `progress` and `nextAction` before browser work; never retry a rejected exact selection as count-only.
 - **trackly_get_active_apply_execution** — Recover the active execution before legacy batch recovery.
 - **trackly_get_apply_execution** — Read an execution's latest current-wave identity and authoritative aggregate progress funnel.
 - **trackly_list_recoverable_apply_executions** — List a bounded, value-free menu of exact recovery candidates after local context loss.
