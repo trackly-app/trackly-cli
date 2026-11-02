@@ -14,6 +14,12 @@ to apply, inspect receipts, or run the optional duplicate preflight alone does
 not authorize mailbox changes. If cleanup was not authorized, offer it once
 without delaying application reconciliation or browser cleanup.
 
+Offer at most once per current execution or frozen batch. Keep a value-free
+local decision (`not_offered`, `declined`, or `authorized`) for that execution
+or batch; a decline suppresses further offers within it. A new batch needs
+its own authorization unless an explicit standing instruction covers it.
+After recovery, confirm any missing authorization rather than assuming it.
+
 Honor the user's configured inbox preference. Prefer an already connected,
 authorized Superhuman MCP when no contrary preference exists. Discover its
 linked accounts and use the exact acting account for every read and mutation,
@@ -27,6 +33,9 @@ identity with its profile/account tool before searching or changing mail, and
 resolve receipt IDs through that connector; never reuse opaque Superhuman IDs.
 Discover the actual connector tools and schemas; do not invent tool names.
 A connector-specific instruction does not authorize switching connectors.
+A Gmail fallback must itself be covered by the cleanup authorization. If it
+is not, confirm that connector and account before its first read or write;
+connector availability alone is not consent.
 A read-only preflight consent does not grant write access.
 Never add mailbox access or switch accounts silently. Ask only for genuinely
 missing account/scope authorization, preserving all completed work. Other users
@@ -85,12 +94,16 @@ do not install a background watcher or keep polling to reach an expected count.
   use an atomic consistency check when the connector supports one. Gmail tools
   without that check cannot guarantee thread-level race protection. If new
   content appears in readback, report the conflict rather than claiming clean
-  completion, and restore inbox visibility if the cleanup hid that new content.
+  completion. If cleanup removed `INBOX` from new content outside the reviewed
+  set, restore only `INBOX` to that message, or to the thread if message-scoped
+  restoration is unavailable, then verify restored inbox visibility. This
+  corrective restoration is the only permitted `INBOX` addition.
   If neither message-scoped modification nor an atomic consistency check is
   available, leave any thread with activity after the reviewed acknowledgment
   untouched and report the limitation.
 - An already archived receipt is an idempotent no-op. Do not toggle it back into
-  the inbox, change unrelated labels, or archive the same shared thread twice.
+  the inbox (except the corrective restoration above), change unrelated labels,
+  or archive the same shared thread twice.
 - Read back the exact account and thread/messages after each mutation. Require
   provider-specific evidence: for Gmail, absence of `INBOX` on the targeted
   receipts; for Superhuman, confirmed Done/archive state using its underlying
@@ -110,13 +123,15 @@ do not install a background watcher or keep polling to reach an expected count.
 ## Closeout and privacy
 
 Report the number of verified Done threads and acknowledgment emails, already
-Done no-ops, and missing, ambiguous, action-required, or failed items. Keep the
-user's existing tracker current when their workflow requires it, preserving
-application history and keeping email housekeeping separate from sends and
-follow-up counts. A universal user is not required to create a tracker.
+Done no-ops, and missing, ambiguous, action-required, or failed items. Explain
+that a missing receipt can be checked again on request. Do not read or update
+another tracker or data source unless the user separately authorized that
+workflow. Keep email cleanup separate from application history and other
+activity counts; users do not need another tracker to use this procedure.
 
 Keep raw messages, subjects, addresses, message/thread IDs, receipt links,
 connector credentials, account access, and cleanup consent out of Trackly.
 Never send them through progress, observation, profile, or outcome tools. Any
-local recovery note records only value-free dispositions and counts. Do not
+local recovery note records only value-free offer decisions, dispositions,
+and counts. Do not
 persist one user's connector preference or account as a global default.
