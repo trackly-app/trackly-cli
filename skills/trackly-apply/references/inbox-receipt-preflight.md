@@ -4,6 +4,10 @@ Use this preflight only to detect applications the user may already have
 submitted. It is agent-side connector orchestration, not a Trackly mailbox
 feature. Trackly remains mailbox-blind.
 
+Mailbox access in this preflight is read-only. For separately authorized Done/archive work after
+confirmed submission, use [post-submission email cleanup](post-submission-email-cleanup.md).
+Preflight consent alone never authorizes mailbox changes.
+
 ## Offer once per frozen batch
 
 Before mutating the first application form, make one non-blocking offer:
