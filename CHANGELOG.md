@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
 - Add authorized post-submission confirmation-email cleanup to the native and public plugin Apply skills: Superhuman Done with an authorized Gmail archive fallback, exact-account handling, action-required thread protection, idempotency, and fresh provider readback. Inbox content remains outside Trackly.
 

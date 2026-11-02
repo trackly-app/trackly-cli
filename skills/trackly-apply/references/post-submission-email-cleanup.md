@@ -6,8 +6,9 @@ orchestration; Trackly remains mailbox-blind.
 
 ## Authorization and connector choice
 
-Use this procedure at post-submission closeout when the user requests inbox or
-confirmation-email cleanup, or has an applicable standing instruction. An
+Read this procedure at every post-submission closeout. Perform cleanup only
+when the user requests it or has an applicable standing instruction from the
+acting user covering the selected mailbox and cleanup scope. An
 existing request for this cleanup is sufficient; do not ask again. Permission
 to apply, inspect receipts, or run the optional duplicate preflight alone does
 not authorize mailbox changes. If cleanup was not authorized, offer it once
@@ -19,13 +20,22 @@ linked accounts and use the exact acting account for every read and mutation,
 including a different email selected for one application. Do not assume the
 client's default mailbox is the application mailbox.
 
-If Superhuman is unavailable or cannot perform the authorized operation, use an
-already connected Gmail MCP as fallback only for the same authorized account
-and cleanup scope. Discover the actual connector tools and schemas; do not
-invent tool names. A read-only preflight consent does not grant write access.
+If Superhuman is not connected, lacks the selected acting account, or has no
+Done capability, use an already connected Gmail MCP as fallback only for the
+same authorized account and cleanup scope. Verify the Gmail connector's acting
+identity with its profile/account tool before searching or changing mail, and
+resolve receipt IDs through that connector; never reuse opaque Superhuman IDs.
+Discover the actual connector tools and schemas; do not invent tool names.
+A connector-specific instruction does not authorize switching connectors.
+A read-only preflight consent does not grant write access.
 Never add mailbox access or switch accounts silently. Ask only for genuinely
 missing account/scope authorization, preserving all completed work. Other users
 need neither Superhuman nor a particular email address to use Trackly Apply.
+
+Consistency conflicts, ambiguous mutation results, and failed readbacks are
+not capability unavailability. Never use Gmail to retry a thread already
+attempted through Superhuman in this closeout. Refetch and reclassify through
+the same connector, or leave the thread untouched and report it as incomplete.
 
 If no authorized write-capable connector is available, complete unaffected
 status and tab cleanup, report email cleanup as unavailable or incomplete, and
@@ -57,6 +67,8 @@ an attempted mutation, or an unavailable tool.
 Missing receipts do not undo independently confirmed applications. Report
 missing, ambiguous, or action-required threads separately; never manufacture
 receipts or mark unrelated mail Done.
+If a receipt arrives later, a user-requested bounded recheck is idempotent;
+do not install a background watcher or keep polling to reach an expected count.
 
 ## Mark Done or archive, then verify
 
@@ -74,15 +86,26 @@ receipts or mark unrelated mail Done.
   without that check cannot guarantee thread-level race protection. If new
   content appears in readback, report the conflict rather than claiming clean
   completion, and restore inbox visibility if the cleanup hid that new content.
+  If neither message-scoped modification nor an atomic consistency check is
+  available, leave any thread with activity after the reviewed acknowledgment
+  untouched and report the limitation.
 - An already archived receipt is an idempotent no-op. Do not toggle it back into
   the inbox, change unrelated labels, or archive the same shared thread twice.
 - Read back the exact account and thread/messages after each mutation. Require
-  provider-confirmed Done/archive state and absence of `INBOX` on the targeted
-  receipts. Compare the message set with the reviewed set; a success response
+  provider-specific evidence: for Gmail, absence of `INBOX` on the targeted
+  receipts; for Superhuman, confirmed Done/archive state using its underlying
+  provider's mailbox state (Gmail labels or Outlook folders). Compare the
+  message set with the reviewed set; a success response
   alone is insufficient. A failed mutation or readback remains incomplete.
 - Count emails and threads separately. Two role acknowledgments in one thread
   are two emails and one Done action. Preserve role-specific evidence when
   reporting a shared-thread cleanup.
+  Thread-level Done is allowed only when every acknowledgment in that thread
+  belongs to an in-scope role with verified submission readback. Otherwise
+  archive only verified messages where supported, or leave the shared thread
+  untouched and report the unreconciled/out-of-scope sibling. If message-only
+  archive leaves other INBOX messages, report archived emails and a still-open
+  thread; do not count it as a verified Done thread.
 
 ## Closeout and privacy
 
