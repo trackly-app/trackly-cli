@@ -14,10 +14,12 @@ to apply, inspect receipts, or run the optional duplicate preflight alone does
 not authorize mailbox changes. If cleanup was not authorized, offer it once
 without delaying application reconciliation or browser cleanup.
 
-Offer at most once per current execution or frozen batch. Keep a value-free
-local decision (`not_offered`, `declined`, or `authorized`) for that execution
-or batch; a decline suppresses further offers within it. A new batch needs
-its own authorization unless an explicit standing instruction covers it.
+Offer at most once per frozen batch. Keep a value-free local decision
+(`not_offered`, `declined`, or `authorized`) bound to the normalized backend
+origin, exact batch ID, and immutable membership hash; a numeric ID alone is
+insufficient. A decline suppresses further offers within that batch. A new
+batch needs its own authorization unless an explicit standing instruction
+or a request covering the whole execution already covers its roles and accounts.
 After recovery, confirm any missing authorization rather than assuming it.
 
 Honor the user's configured inbox preference. Prefer an already connected,
@@ -45,6 +47,10 @@ Consistency conflicts, ambiguous mutation results, and failed readbacks are
 not capability unavailability. Never use Gmail to retry a thread already
 attempted through Superhuman in this closeout. Refetch and reclassify through
 the same connector, or leave the thread untouched and report it as incomplete.
+Keep value-free attempted-connector and unresolved-mutation flags in the local
+batch record. After recovery, an unresolved Superhuman attempt or unknown
+attempt history forbids Gmail fallback for that closeout; use the original
+connector to verify it or report cleanup incomplete.
 
 If no authorized write-capable connector is available, complete unaffected
 status and tab cleanup, report email cleanup as unavailable or incomplete, and
@@ -103,7 +109,9 @@ do not install a background watcher or keep polling to reach an expected count.
   untouched and report the limitation.
 - An already archived receipt is an idempotent no-op. Do not toggle it back into
   the inbox (except the corrective restoration above), change unrelated labels,
-  or archive the same shared thread twice.
+  or archive the same shared thread twice within one closeout. A later in-scope
+  acknowledgment that returns the thread to the inbox is a fresh target for a
+  later closeout, subject to full inspection and authorization again.
 - Read back the exact account and thread/messages after each mutation. Require
   provider-specific evidence: for Gmail, absence of `INBOX` on the targeted
   receipts; for Superhuman, confirmed Done/archive state using its underlying
@@ -132,6 +140,6 @@ activity counts; users do not need another tracker to use this procedure.
 Keep raw messages, subjects, addresses, message/thread IDs, receipt links,
 connector credentials, account access, and cleanup consent out of Trackly.
 Never send them through progress, observation, profile, or outcome tools. Any
-local recovery note records only value-free offer decisions, dispositions,
-and counts. Do not
+local recovery note records only the bound batch identity, value-free offer
+decisions, connector-attempt flags, dispositions, and counts. Do not
 persist one user's connector preference or account as a global default.
