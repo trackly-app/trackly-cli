@@ -6,16 +6,21 @@ other.
 
 ## Capability gate
 
-Before an automated upload, require the active browser adapter to advertise all
-five capabilities: semantic control discovery, chooser arming, file attachment,
-committed-filename inspection, and parser-field recheck. If only chooser arming
-or file attachment is unavailable, fail closed before opening the chooser and
-hand the upload to the user only when semantic control discovery,
-committed-filename inspection, and parser-field recheck remain available. If
-any of those three verification capabilities is unavailable, stop the fill as
-unverified; do not route it into `manual_unbound`, claim a passed audit, or
-continue to review. Never navigate to a `file://` URL or paste a local path into
-an ordinary text field.
+Before an automated upload, require semantic control discovery, file attachment,
+committed-filename inspection, and parser-field recheck, plus either chooser
+arming or explicit `directFileSet: true` support. For Claude in Chrome,
+`file_upload` sets the verified host file directly on the exact
+`<input type=file>` found by ref; no native chooser is involved. Set
+`chooserArming: false` and `directFileSet: true` only when that primitive is
+available and the exact input is unambiguous. A chooser-less adapter without
+explicit direct-file support fails closed.
+
+If neither chooser arming nor direct file setting, or file attachment, is
+available, fail closed before upload and hand attachment to the user only when
+all three verification capabilities remain available. If any verification
+capability is unavailable, stop the fill as unverified; do not route it into
+`manual_unbound`, claim a passed audit, or continue to review. Never navigate to
+a `file://` URL or paste a local path into an ordinary text field.
 
 When the user performs that handoff upload, keep it explicitly manual,
 browser-local, and unbound. Record `resumeAudit.mode: manual_unbound`,
@@ -25,7 +30,7 @@ those values for an agent-performed upload or a failed verifier. Before
 continuing, require `passed` filename verification and parser recheck, then
 prove during the `passed` final sweep that the attachment and filename persist.
 
-Perform these stages in exact order:
+For the chooser path, perform these stages in exact order:
 
 1. identify the exact semantic Resume or CV control;
 2. arm the file chooser before clicking that control;
@@ -37,6 +42,15 @@ Perform these stages in exact order:
    parsing may have changed; and
 7. during the final sweep, prove the attachment is still committed and the
    visible filename remains the approved employer-facing filename.
+
+For the direct-set path, omit chooser stages entirely (not fabricated passes):
+`semantic_control_discovered` -> `set_files_succeeded` ->
+`user_facing_filename_committed` -> `parser_fields_rechecked`. Immediately before
+`file_upload`, run `trackly_verify_prepared_resume` and attach only its verified
+exact prepared host path with the approved filename. Keep exact-file approval,
+hash, size, run binding, expiry, parser provenance, and final-sweep persistence
+checks identical to the chooser path. Do not switch paths to hide a failed
+chooser or accept an arbitrary file.
 
 Pass only the value-free stage outcomes to
 `trackly_validate_apply_resume_upload`. Do not pass a filename, local path,

@@ -49,6 +49,10 @@
     "contractSha256": "d3a82489330d0b0062a1baec8d226b510628accc434731136dca9951ec64c302"
   },
   "3.9.3": {
-    "contractSha256": "0773b7fef8ac012fe028c7e61ecf00272122949290fe35f01aa577f63a4f01df"
+    "contractSha256": "0773b7fef8ac012fe028c7e61ecf00272122949290fe35f01aa577f63a4f01df",
+    "sharedContractSha256": "e8fa111bd2d85005fc51bddc5a7dc7680dcafa28af1d6ec7e1a62486c9c825f0"
+  },
+  "3.9.4": {
+    "contractSha256": "1ed3b9f641f55fb6c84df459cd378015ef446d0927ec1dfc6931816da5bd9c65"
   }
 }

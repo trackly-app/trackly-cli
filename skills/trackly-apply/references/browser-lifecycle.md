@@ -1,4 +1,4 @@
-> Read [handoff-compatibility.md](handoff-compatibility.md): its documented markHandoff path supersedes returned-receipt/finalizer requirements below. Actual visibility and other review gates remain in force.
+> Read [handoff-compatibility.md](handoff-compatibility.md): its documented markHandoff and Claude in Chrome paths supersede returned-receipt/finalizer requirements below. Actual visibility and other review gates remain in force.
 
 # Browser lifecycle and recovery
 
@@ -113,7 +113,11 @@ Never make a closure claim from one inventory surface.
 
 ## Close proof
 
-For a submitted application, do not begin tab closure until Trackly has
+For local MCP Claude in Chrome, use the success-evidence-before-close and
+close-receipts-before-final-outcomes sequence in
+[post-submit closeout](review-handoff.md#claude-in-chrome-post-submit-closeout-local-mcp).
+It supersedes the outcome-before-close order below only for that supported path.
+For other submitted applications, do not begin tab closure until Trackly has
 durably reconciled both the batch member to `submitted` and the saved job to
 `applied_confirmed`. A success page or explicit user confirmation authorizes
 the outcome write; it does not prove that the write committed. On a conflict,
@@ -282,3 +286,31 @@ mapped tab in the user-visible browser, remove it from any active mutation keep
 set, and never continue filling it after cancellation. Close it only when the
 user explicitly requests cleanup and the normal controller/user inventory
 absence proof succeeds. Cancellation is never submission evidence.
+
+## Claude in Chrome bindings
+
+For `trackly_bind_apply_surface`, `adapterCode` must be a published
+`<provider>:<major>` code, for example `ashby:1`, from the protocol-supported
+adapter set. A bare provider or browser-surface name is invalid. Use
+`browserSurface: claude_in_chrome` for Claude's browser control, independently
+of that ATS adapter code. Follow the persistent MCP-group preservation path in
+[handoff compatibility](handoff-compatibility.md); refresh `tabs_context_mcp`
+before mutation, at turn end, and on reclaim. Its MCP-group inventory cannot
+prove absence from all of Chrome; retain `closure_unverified` without a complete
+controller/user union and the normal close proof.
+
+The versioned [public Apply contract](https://github.com/trackly-app/trackly-cli/blob/main/contracts/trackly-apply-tools.json)
+lists published codes under `constants.applyAdapterCodes`. The backend remains
+the authority for current acceptance. If the exact provider/code cannot be
+established, preserve the tab and stop binding; never invent an adapter or
+substitute `generic_web_form:1` for a known ATS. An inventory failure or an
+unverifiable mapped tab mid-turn or at turn end stops mutation; follow
+existing-run recovery without claiming preservation.
+
+Claude post-submit cleanup uses `tabs_close_mcp` only for success-confirmed
+submitted tabs under `consent.apply_tab_cleanup = submitted_only`, then refreshes
+`tabs_context_mcp`. Empty means only the MCP tab group is empty; preserve
+unsubmitted siblings and retain `closure_unverified` without complete union
+proof. Finish the same closeout with Trackly `applied_confirmed` readback,
+then [post-submission email cleanup](post-submission-email-cleanup.md), then
+the existing outreach-tracker Applications rows, as specified in review handoff.

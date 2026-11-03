@@ -64,3 +64,63 @@ test('passed upload stage carrying a failure code fails closed', () => {
   assert.equal(result.lastPassedStage, 'user_facing_filename_committed');
   assert.equal(result.completedStageCount, 5);
 });
+
+const directEvents = passedEvents.filter(({ stage }) => !stage.startsWith('file_chooser_'));
+const directCapabilities = { ...capabilities, chooserArming: false, directFileSet: true };
+
+test('direct file setting proves attachment without a native chooser', () => {
+  assert.deepEqual(validateApplyResumeUpload({ capabilities: directCapabilities, events: directEvents }), {
+    safeToClaimAttachment: true,
+    failureCodes: [],
+    lastPassedStage: 'parser_fields_rechecked',
+    completedStageCount: 4,
+    requiredStageCount: 4,
+  });
+});
+
+test('chooser-less upload without explicit direct file capability fails closed', () => {
+  for (const directFileSet of [undefined, false]) {
+    const result = validateApplyResumeUpload({
+      capabilities: { ...capabilities, chooserArming: false, directFileSet }, events: directEvents,
+    });
+    assert.equal(result.safeToClaimAttachment, false);
+    assert.ok(result.failureCodes.includes('upload_capability_unavailable'));
+    assert.ok(result.failureCodes.includes('upload_stage_missing'));
+  }
+});
+
+test('direct upload rejects chooser stages, gaps, reordering, duplicates, and failures', () => {
+  const invalidSequences = [
+    passedEvents,
+    directEvents.slice(0, -1),
+    [directEvents[1], directEvents[0], ...directEvents.slice(2)],
+    [directEvents[0], ...directEvents],
+    directEvents.map((event) => event.stage === 'set_files_succeeded'
+      ? { ...event, outcome: 'failed', failureCode: 'set_files_failed' } : event),
+    directEvents.map((event) => event.stage === 'parser_fields_rechecked'
+      ? { ...event, failureCode: 'parser_field_regression' } : event),
+  ];
+  for (const events of invalidSequences) {
+    assert.equal(validateApplyResumeUpload({ capabilities: directCapabilities, events }).safeToClaimAttachment, false);
+  }
+});
+
+test('direct setting still requires every shared verification capability', () => {
+  for (const capability of APPLY_UPLOAD_CAPABILITIES.filter((name) => name !== 'chooserArming')) {
+    const result = validateApplyResumeUpload({
+      capabilities: { ...directCapabilities, [capability]: false }, events: directEvents,
+    });
+    assert.equal(result.safeToClaimAttachment, false, capability);
+    assert.ok(result.failureCodes.includes('upload_capability_unavailable'));
+  }
+});
+
+test('direct proof requires chooser arming to be explicitly inapplicable', () => {
+  for (const chooserArming of [true, undefined]) {
+    const result = validateApplyResumeUpload({
+      capabilities: { ...directCapabilities, chooserArming }, events: directEvents,
+    });
+    assert.equal(result.safeToClaimAttachment, false);
+    assert.ok(result.failureCodes.includes('upload_capability_unavailable'));
+  }
+});

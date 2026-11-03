@@ -17,6 +17,14 @@ related_components: [service_object, tooling, development_workflow]
 tags: [trackly-apply, exact-recovery, browser-restart, inspection-epoch, manual-submit, durable-handoff]
 ---
 
+> 2026-11-02 update: skill 4.9.4 adds the Claude in Chrome persistent MCP-group
+> preservation path and explicit four-stage direct-file upload proof. Those
+> paths supersede chooser-only and finalizer-only wording below; exact recovery,
+> file approval, parser verification and manual Submit gates remain required.
+> See [the current adapter learning](claude-chrome-direct-upload-and-tab-preservation.md)
+> and the skill handoff-compatibility and browser-upload references.
+
+
 # Durable exact recovery after browser state loss
 
 ## Problem

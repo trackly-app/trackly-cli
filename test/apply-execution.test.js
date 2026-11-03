@@ -84,7 +84,7 @@ for (const name of ['trackly_bind_apply_surface', 'trackly_record_apply_surface_
 }
 
 test('protocol 3.7 publishes all accessible execution, recovery, and access-knowledge tools', () => {
-  assert.equal(contract.contractVersion, '3.9.3');
+  assert.equal(contract.contractVersion, '3.9.4');
   for (const name of executionTools) {
     assert.ok(contract.tools[name], `${name} missing from contract fixture`);
     assert.match(tools, new RegExp(`['"]${name}['"]`));
@@ -187,7 +187,7 @@ test('durable recovery tools use exact bounded HTTP contracts and validate resul
     mode: 'recover_exact_members', sourceExecutionId: 11, sourceSnapshotHash, candidateIds: [21],
     explicitExactSetConfirmation: true,
   }]);
-  assert.deepEqual(calls[1].at(-1), { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': contract.contractVersion });
+  assert.deepEqual(calls[1].at(-1), { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': contract.sharedContractVersion });
   assert.deepEqual(calls[2].slice(0, 2), ['GET', '/api/jobscout/apply/executions/12/review-handoffs']);
   assert.deepEqual(calls[3].slice(0, 3), ['POST', '/api/jobscout/apply/review-handoffs/41/claim', {
     members: [{ memberId: 51, classification: 'detected' }],
@@ -707,7 +707,7 @@ test('execution tools validate and send the exact HTTP contract', async () => {
   const cases = [
     ['trackly_start_apply_execution',
       { mode: 'complete_next_n_accessible', target: 10, idempotencyKey },
-      ['POST', '/api/jobscout/apply/executions', { mode: 'complete_next_n_accessible', target: 10 }, false, false, 'trackly-mcp/test', { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': contract.contractVersion }]],
+      ['POST', '/api/jobscout/apply/executions', { mode: 'complete_next_n_accessible', target: 10 }, false, false, 'trackly-mcp/test', { 'Idempotency-Key': idempotencyKey, 'X-Trackly-Apply-Start-Contract': contract.sharedContractVersion }]],
     ['trackly_get_active_apply_execution', {},
       ['GET', '/api/jobscout/apply/executions/active', null, false, false, 'trackly-mcp/test', undefined]],
     ['trackly_get_apply_execution', { executionId: 41 },
@@ -1537,10 +1537,10 @@ test('advance replay returns the backend current revision and progress unchanged
   assert.deepEqual(result, response);
 });
 
-test('skill 4.9.3 recovers executions before legacy batches and distinguishes complete from inspect requests', () => {
-  assert.match(agent, /const SKILL_VERSION = '4\.9\.3'/);
+test('skill 4.9.4 recovers executions before legacy batches and distinguishes complete from inspect requests', () => {
+  assert.match(agent, /const SKILL_VERSION = '4\.9\.4'/);
   assert.match(agent, /const MIN_APPLY_PROTOCOL_VERSION = '3\.7\.0'/);
-  assert.match(skill, /Skill 4\.9\.3 requires protocol 3\.7\.0 or newer/);
+  assert.match(skill, /Skill 4\.9\.4 requires protocol 3\.7\.0 or newer/);
   assert.match(skill, /trackly_get_active_apply_execution[\s\S]*before[\s\S]*trackly_get_active_apply_batch/i);
   assert.match(skill, /complete_next_n_accessible/);
   assert.match(skill, /durablyReviewReady/);
@@ -2671,7 +2671,9 @@ test('registered Apply prompt requires the current contract for new work', async
   const { prompts } = registerRuntimeTools();
   const result = await prompts.get('trackly-apply')();
   const texts = result.messages.filter(message => message.content.type === 'text').map(message => message.content.text);
-  const requirements = texts.flatMap(text => Array.from(text.matchAll(/require MCP contract ([0-9]+\.[0-9]+\.[0-9]+)/g), match => match[1]));
+  const requirements = texts.flatMap(text => Array.from(text.matchAll(/require local MCP contract ([0-9]+\.[0-9]+\.[0-9]+)/g), match => match[1]));
   assert.deepEqual(requirements, [contract.contractVersion]);
+  assert.ok(texts.some(text => text.includes(`shared backend contract ${contract.sharedContractVersion || contract.contractVersion}`)));
+  assert.ok(texts.some(text => text.includes('Compare the backend protocol compatibility window against the shared version')));
   assert.ok(texts.some(text => text.includes('Never send raw browser values or click Submit.')));
 });

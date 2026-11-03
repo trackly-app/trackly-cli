@@ -7282,15 +7282,16 @@ function verifyCheckedInHostedContractFixture(
   );
   // This immutable snapshot describes its recorded merge. It was recaptured
   // from a runtime that publishes the checked-in Apply contract, so the two
-  // versions must agree; backendDir mode below proves full parity.
+  // shared versions must agree; a local-only revision never relabels this fixture.
+  // backendDir mode below proves full shared parity.
   const localApplyContract = JSON.parse(fs.readFileSync(
     path.join(cliRoot, 'contracts', 'trackly-apply-tools.json'),
     'utf8',
   ));
   assert.equal(
     fixture.applyContractVersion,
-    localApplyContract.contractVersion,
-    `${fixturePath} must identify the checked-in local Apply contract version it was captured against`,
+    localApplyContract.sharedContractVersion || localApplyContract.contractVersion,
+    `${fixturePath} must identify the checked-in shared Apply contract version it was captured against`,
   );
   assert.equal(fixture.pluginContractVersion, '1.0.0');
   const lock = JSON.parse(fs.readFileSync(path.join(path.dirname(fixturePath), 'skill-lock.json'), 'utf8'));
@@ -7633,7 +7634,7 @@ assertCoordinatedCheckpointHelperSemantics({
     hostedApply: hostedApplySourcePath,
     hostedCheckpointContract: hostedCheckpointContractPath,
   },
-  ...(['3.9.2', '3.9.3'].includes(local.contractVersion)
+  ...(['3.9.2', '3.9.3'].includes(local.sharedContractVersion || local.contractVersion)
     ? {
       checkpointWriterGeneration: 'candidate-3.9.2',
       expectedHostedDigests: {
@@ -7678,10 +7679,11 @@ for (const toolName of LOCAL_ONLY_TOOLS) {
   assert.equal(hosted.tools[toolName], undefined, `${toolName} must not be advertised by hosted MCP`);
   assert.doesNotMatch(hostedApplySource, new RegExp(`['"]${toolName}['"]`), `${toolName} must not be registered by hosted MCP`);
 }
-const { schemaDigests: coordinatedSchemaDigests, ...sharedLocalContract } = local;
+const { schemaDigests: coordinatedSchemaDigests, sharedContractVersion, ...sharedLocalContract } = local;
 assert.ok(coordinatedSchemaDigests, 'Local contract must publish coordinated checkpoint helper digests');
 const sharedLocal = {
   ...sharedLocalContract,
+  contractVersion: sharedContractVersion || local.contractVersion,
   constants: Object.fromEntries(
     Object.entries(local.constants).filter(([name]) => !LOCAL_ONLY_CONSTANTS.includes(name)),
   ),
@@ -10474,7 +10476,7 @@ assertWrappedHandlerAst(
 );
 
 console.log(
-  `Trackly Apply MCP contracts match at ${local.contractVersion}; the ${hostedPluginTools.length}-tool public plugin facade matches at ${hostedPluginContract.contractVersion}.`,
+  `Trackly Apply local contract ${local.contractVersion} matches shared hosted contract ${sharedLocal.contractVersion}; the ${hostedPluginTools.length}-tool public plugin facade matches at ${hostedPluginContract.contractVersion}.`,
 );
 }
 
