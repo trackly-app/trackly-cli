@@ -132,7 +132,7 @@ do not install a background watcher or keep polling to reach an expected count.
 
 After the Claude browser closeout and durable Trackly `applied_confirmed`
 readback, perform the authorized email cleanup here before updating the existing
-Applications rows. The authorization, account, consistency and privacy rules
+Applications rows. The authorization, scope, account, consistency and privacy rules
 above still apply; these calls do not grant mailbox access. This path was
 verified on 2026-11-02 PST. Discover the current connector schema first and stop
 if it cannot express these checks; do not guess parameters.
@@ -145,7 +145,9 @@ if it cannot express these checks; do not guess parameters.
    Always bound discovery by `start_date`: unbounded windows can overflow the
    tool output. Follow available pagination and inspect complete candidates;
    truncated or incomplete results never prove absence or authorize mutation.
-2. Classify only in-scope acknowledgment threads whose complete messages are
+2. Limit cleanup to roles whose submissions were verified in this closeout,
+   within the user-authorized scope. Classify only acknowledgment threads whose
+   complete messages are
    all from the verified ATS sender (for example `no-reply@ashbyhq.com`) or
    the verified employer no-reply sender. For this Claude path require
    `message_count` equal to 1, no drafts, and a current `INBOX` label. Leave

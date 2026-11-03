@@ -1724,6 +1724,8 @@ test('Claude Superhuman cleanup documents bounded discovery, guarded Done and fr
     const rawSection = reference.split('## Claude Code with Superhuman')[1];
     const section = rawSection && rawSection.replace(/\s+/g, ' ');
     assert.ok(section, `${root} must document the verified connector path`);
+    assert.match(section, /authorization, scope, account, consistency and privacy rules/);
+    assert.match(section, /roles whose submissions were verified in this closeout/);
     assert.match(section, /list_threads[\s\S]*acting_email[\s\S]*start_date/);
     assert.match(section, /no free-text `query`[\s\S]*`to`[\s\S]*`from`[\s\S]*arrays/);
     assert.match(section, /message_count[\s\S]*1[\s\S]*drafts[\s\S]*INBOX/);
