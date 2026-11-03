@@ -1,13 +1,11 @@
-import test from "node:test";
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { readFileSync } = require("node:fs");
+const { join } = require("node:path");
 
 test("publishing to npm waits for the npm-publish approval", () => {
-  const workflow = readFileSync(new URL("../.github/workflows/publish.yml", import.meta.url), "utf8");
-  const publish = workflow.slice(workflow.indexOf("
-  publish:"));
-  assert.match(publish, /
-    environment: npm-publish?
-/);
+  const workflow = readFileSync(join(__dirname, "../.github/workflows/publish.yml"), "utf8");
+  const publish = workflow.slice(workflow.indexOf("\n  publish:"));
+  assert.match(publish, /\n    environment: npm-publish\r?\n/);
   assert.match(publish, /npm publish/);
 });
