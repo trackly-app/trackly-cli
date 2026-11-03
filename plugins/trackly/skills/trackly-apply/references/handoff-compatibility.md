@@ -16,9 +16,10 @@ A documented session finalizer with complete inventories and a complete explicit
 
 On macOS, `claude_in_chrome` is a supported browser surface when the fetched
 protocol allows it. Claude in Chrome's MCP tab group contains real tabs in the
-user's own Chrome; they persist across turns without `markHandoff` or a session
-finalizer. This is a third supported preservation path, not a fabricated
-handoff receipt. Verify browser control, stable tab identity, and the exact
+user's own Chrome and remain open across normal turns without `markHandoff`
+or a session finalizer. This is observed runtime behavior, not an unconditional
+persistence guarantee across browser crashes, restarts, or group removal.
+This is a third supported preservation path, not a fabricated handoff receipt. Verify browser control, stable tab identity, and the exact
 job/run/tab binding before mutation, then call `tabs_context_mcp` and require
 each mapped tab to be present in the MCP group. Failed calls or missing tabs
 block mutation; never treat a no-op as proof of persistence.
@@ -30,7 +31,11 @@ cleanup, and do not invoke a Codex finalizer on this path. On the next turn,
 refresh the inventory, reclaim the exact tab, and revalidate employer, role,
 requisition, origin, tenant policy, current run authority, and observable form
 state before continuing. Missing tabs follow existing-run recovery; never
-assume unsaved draft state survived.
+assume unsaved draft state survived. If inventory fails or any mapped tab
+cannot be verified mid-turn or at turn end, stop further mutation, report the
+affected bindings without claiming preservation, and use existing-run recovery.
+An MCP-group inventory is incomplete for all Chrome tabs, but must account for
+every bound application tab before preservation can be claimed.
 
 `tabs_context_mcp` inventories only the MCP group, not all user Chrome tabs.
 A tab dragged out of that group is not proven absent. Report incomplete

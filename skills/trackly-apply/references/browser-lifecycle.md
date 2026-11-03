@@ -294,3 +294,11 @@ of that ATS adapter code. Follow the persistent MCP-group preservation path in
 before mutation, at turn end, and on reclaim. Its MCP-group inventory cannot
 prove absence from all of Chrome; retain `closure_unverified` without a complete
 controller/user union and the normal close proof.
+
+The versioned [public Apply contract](https://github.com/trackly-app/trackly-cli/blob/main/contracts/trackly-apply-tools.json)
+lists published codes under `constants.applyAdapterCodes`. The backend remains
+the authority for current acceptance. If the exact provider/code cannot be
+established, preserve the tab and stop binding; never invent an adapter or
+substitute `generic_web_form:1` for a known ATS. An inventory failure or an
+unverifiable mapped tab mid-turn or at turn end stops mutation; follow
+existing-run recovery without claiming preservation.

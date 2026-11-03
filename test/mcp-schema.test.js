@@ -1169,6 +1169,16 @@ test('local MCP accepts direct file upload proofs and retains chooser compatibil
   });
   await server.connect(serverTransport);
   await client.connect(clientTransport);
+  const { tools } = await client.listTools();
+  const uploadTool = tools.find(tool => tool.name === 'trackly_validate_apply_resume_upload');
+  assert.match(uploadTool.description, /capabilities.directFileSet=true/);
+  assert.match(uploadTool.description, /semantic_control_discovered -> set_files_succeeded -> user_facing_filename_committed -> parser_fields_rechecked, without chooser events/);
+  const prompt = await client.getPrompt({ name: 'trackly-apply' });
+  const guidance = prompt.messages.map(message => message.content.text || '').join('\n');
+  assert.match(guidance, /For chooser uploads, arm the chooser before clicking/);
+  assert.match(guidance, /For explicit directFileSet uploads,[^.]*without chooser events/);
+  assert.match(guidance, /Both paths require[^.]*immediately verified file[^.]*filename committed[^.]*parser-modified fields/);
+  assert.match(guidance, /Never click Submit/);
   const capabilities = {
     semanticControlDiscovery: true, chooserArming: false, directFileSet: true,
     fileAttachment: true, committedFilenameInspection: true, parserFieldRecheck: true,

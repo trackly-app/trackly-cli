@@ -1,4 +1,4 @@
-> Read [handoff-compatibility.md](handoff-compatibility.md): its documented markHandoff path supersedes returned-receipt/finalizer requirements below. Actual visibility and other review gates remain in force.
+> Read [handoff-compatibility.md](handoff-compatibility.md): its documented markHandoff and Claude in Chrome paths supersede returned-receipt/finalizer requirements below. Actual visibility and other review gates remain in force.
 
 # Operational checkpoints
 

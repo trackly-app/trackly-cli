@@ -2671,7 +2671,9 @@ test('registered Apply prompt requires the current contract for new work', async
   const { prompts } = registerRuntimeTools();
   const result = await prompts.get('trackly-apply')();
   const texts = result.messages.filter(message => message.content.type === 'text').map(message => message.content.text);
-  const requirements = texts.flatMap(text => Array.from(text.matchAll(/require MCP contract ([0-9]+\.[0-9]+\.[0-9]+)/g), match => match[1]));
+  const requirements = texts.flatMap(text => Array.from(text.matchAll(/require local MCP contract ([0-9]+\.[0-9]+\.[0-9]+)/g), match => match[1]));
   assert.deepEqual(requirements, [contract.contractVersion]);
+  assert.ok(texts.some(text => text.includes(`shared backend contract ${contract.sharedContractVersion || contract.contractVersion}`)));
+  assert.ok(texts.some(text => text.includes('Compare the backend protocol compatibility window against the shared version')));
   assert.ok(texts.some(text => text.includes('Never send raw browser values or click Submit.')));
 });

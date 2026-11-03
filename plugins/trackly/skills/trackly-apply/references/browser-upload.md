@@ -21,3 +21,8 @@ fails closed. Preserve approval, run binding, expiration, same-file attachment,
 filename readback, parser-field provenance and final-sweep persistence gates.
 Never put a local path into a text field, navigate to a file URL, append another
 file over a committed input, or activate Submit.
+
+These stages are observed browser proof, not hosted validator receipts. Keep
+that proof locally and report only the existing protocol-supported value-free
+observations. If file_upload rejects the verified path, record attachment
+failure and use the manual fallback; never substitute another file or claim success.

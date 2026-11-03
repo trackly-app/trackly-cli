@@ -36,3 +36,7 @@ not establish hosted deployment or installation parity.
 
 Verification: `node --test test/apply-upload.test.js test/mcp-schema.test.js`,
 `npm test`, `npm run test:contract-fixture`, and `npm run test:plugin-submission`.
+
+This extends [exact recovery after browser state loss](durable-exact-recovery-after-browser-state-loss.md).
+The versioned adapter and resolution-code rules were confirmed in the
+2026-11-02 macOS pilot; the backend remains authoritative for acceptance.
