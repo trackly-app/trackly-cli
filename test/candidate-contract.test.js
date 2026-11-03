@@ -316,3 +316,21 @@ for (const [name, localAlias, hostedAlias] of [
     assert.throws(() => verifyCandidateContract(f), /declared schema alias drifted/);
   });
 }
+
+
+test('candidate uses the shared version to decode exact-selection schemas after a local helper bump', t => {
+  const f = fixture(t);
+  const name = 'trackly_start_apply_execution';
+  const raw = require('../contracts/trackly-apply-tools.json').tools[name];
+  const hosted = { contractVersion: '3.9.3', tools: { [name]: raw } };
+  f.write(f.backendDir, 'contracts/trackly-apply-tools.json', JSON.stringify(hosted));
+  f.write(f.cliRoot, 'contracts/trackly-apply-tools.json', JSON.stringify({
+    ...hosted, contractVersion: '3.9.4', sharedContractVersion: '3.9.3', schemaDigests: {},
+  }));
+  const schema = raw.replace(/\bnewSet\(/g, 'new Set(').replace("'jobIdsmustbeunique'", "'jobIds must be unique'");
+  f.write(f.cliRoot, 'mcp/apply-tools.js', `function registerApplyTools(server) { server.tool('${name}', 'example', ${schema}, handler); }`);
+  f.write(f.backendDir, 'src/mcp/server.ts', `registerHostedMcpTool(server, '${name}', 'example', ${schema}, handler);`);
+  f.expectedBackendSha = f.commit();
+  // Both executable schemas must pass before the fixture's absent plugin lock is read.
+  assert.throws(() => verifyCandidateContract(f), error => error.code === 'ENOENT' && /skill-lock.json/.test(error.path));
+});

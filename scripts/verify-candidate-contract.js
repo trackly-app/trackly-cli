@@ -120,7 +120,7 @@ function verifyCandidateContract({ cliRoot = path.join(__dirname, '..'), backend
       const schema = registrationInputSchemaAst(source, matches[0], lane);
       executableSchemas[lane][name] = canonicalSchemaAst(schema);
       assert.deepEqual(executableSchemas[lane][name],
-        expectedContractSchemaAst(name, expected, contract.contractVersion, lane),
+        expectedContractSchemaAst(name, expected, contract.sharedContractVersion || contract.contractVersion, lane),
         `${lane} ${name} executable schema drifted`);
     }
   }
