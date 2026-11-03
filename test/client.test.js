@@ -1343,7 +1343,7 @@ test('Apply tool HTTP requests advertise fresh-start capability only on creation
       await assert.rejects(handlers.get(name)({ ...input, idempotencyKey }), (error) => error.status === 409 && error.error === 'Synthetic boundary denial');
       const request = requests.at(-1);
       assert.equal(request.path, endpoint);
-      assert.equal(request.headers['x-trackly-apply-start-contract'], capability ? contract.contractVersion : undefined);
+      assert.equal(request.headers['x-trackly-apply-start-contract'], capability ? contract.sharedContractVersion : undefined);
       if (request.method === 'POST') assert.equal(request.headers['idempotency-key'], idempotencyKey);
     }
     assert.equal(requests[0].headers['x-trackly-apply-start-contract'], undefined);

@@ -39,3 +39,9 @@ For each exercised scenario, call `trackly_report_apply_observation` with:
 ## Final reporting
 
 List scenario codes separately for every run. Do not report a code because the ATS commonly has that behavior; report it only when it actually occurred and was observed on that run. A visible value is not proof of committed state. When committed state cannot be verified, omit passed/corrected coverage for that scenario and record the run as blocked.
+
+For `observationType: scenario_coverage`, `resolutionCode` must be exactly
+`passed` or `corrected`. Any other value rejects the whole bulk observation
+call to `trackly_report_apply_observations`; split or retry only after correcting
+the invalid entry, without relabeling a failed check as passed. This rule does
+not change resolution codes for other observation types.

@@ -1223,7 +1223,8 @@ test('documented local MCP tool count matches every registered tool', () => {
 });
 
 test('local MCP Apply schemas match each complete versioned input schema', () => {
-  assert.equal(contract.contractVersion, '3.9.3');
+  assert.equal(contract.contractVersion, '3.9.4');
+  assert.equal(contract.sharedContractVersion, '3.9.3');
   for (const [name, expectedSchema] of Object.entries(contract.tools)) {
     const localSchema = typeof expectedSchema === 'string' ? expectedSchema : expectedSchema.local;
     const executableSchema = LOCAL_VALIDATION_SCHEMAS[name] || toolArguments(name)[2];
@@ -1321,6 +1322,31 @@ function assertNoHistoricalVersionReuse(candidate) {
     }
   }
 }
+
+function sharedContractDigest(candidate) {
+  const { schemaDigests, sharedContractVersion, ...shared } = candidate;
+  shared.contractVersion = sharedContractVersion || candidate.contractVersion;
+  const localOnly = new Set(['trackly_lint_application_text', 'trackly_diagnose_local_path',
+    'trackly_validate_apply_tab_keep_set', 'trackly_validate_apply_resume_upload']);
+  shared.tools = Object.fromEntries(Object.entries(shared.tools).filter(([name]) => !localOnly.has(name)));
+  return require('node:crypto').createHash('sha256')
+    .update(JSON.stringify(canonicalJsonValue(shared))).digest('hex');
+}
+
+test('local upload revision preserves every shared hosted contract field', () => {
+  const expected = contractHistory[contract.sharedContractVersion].sharedContractSha256;
+  assert.match(expected, /^[a-f0-9]{64}$/);
+  assert.equal(sharedContractDigest(contract), expected);
+  for (const mutate of [
+    c => { c.tools.trackly_get_apply_queue += ',extra:z.boolean()'; },
+    c => { c.constants.applyAdapterCodes.push('invented:1'); },
+    c => { c.sharedContractVersion = c.contractVersion; },
+  ]) {
+    const changed = structuredClone(contract);
+    mutate(changed);
+    assert.notEqual(sharedContractDigest(changed), expected);
+  }
+});
 
 test('changed MCP schemas never reuse a historical contract version', () => {
   assertNoHistoricalVersionReuse(contract);
@@ -2784,7 +2810,7 @@ test('standalone hosted verifier executes tool, schema, and handler snapshot wir
   assert.notEqual(versionDrift.applyContractVersion, contract.contractVersion);
   assert.throws(
     verifyFixture(versionDrift),
-    /must identify the checked-in local Apply contract version it was captured against/,
+    /must identify the checked-in shared Apply contract version it was captured against/,
   );
   const lifecycleDrift = structuredClone(originalFixture);
   lifecycleDrift.hostedPluginLifecycle.accessDefermentRecovery = 'owner_scoped_list_create_and_same_session_idempotent_clear';
@@ -2962,13 +2988,13 @@ test('Apply MCP evidence preserves custom bounds and prompt gates new executions
   assert.match(promptRegion, /keep the confirmation tab open until a refetch proves member lifecycle submitted and Trackly job state applied_confirmed/);
 });
 
-test('Apply skill 4.9.3 requires protocol 3.7.0 for new work and preserves active legacy recovery', () => {
+test('Apply skill 4.9.4 requires protocol 3.7.0 for new work and preserves active legacy recovery', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
-  assert.match(skill, /Skill 4\.9\.3 requires protocol 3\.7\.0 or newer/);
+  assert.match(skill, /Skill 4\.9\.4 requires protocol 3\.7\.0 or newer/);
   assert.match(skill, /protocol 3\.2 remains valid only for an already-active explicit legacy single run/i);
   assert.match(skill, /an already-active explicit 3\.2 single run may finish through its legacy path/i);
   assert.match(skill, /`compatibleSkillMajor: 4`/);
-  assert.match(skill, /Never continue a pre-evidence 3\.0\.x run under skill 4\.9\.3/);
+  assert.match(skill, /Never continue a pre-evidence 3\.0\.x run under skill 4\.9\.4/);
   assert.match(skill, /Preserve that run instead of starting a replacement/);
   assert.match(skill, /already-active protocol 3\.4 execution is read-only legacy recovery/i);
   assert.match(skill, /never call the 3\.5-only snapshot/i);
@@ -3384,12 +3410,12 @@ test('Apply skill runs Humanizer when available and retains a self-contained fal
   assert.match(writing, /use the saved style instructions or plain default instead/);
 });
 
-test('Apply skill 4.9.3 uses compact snapshots, parked-member controls, local lint, and upload proofs', () => {
+test('Apply skill 4.9.4 uses compact snapshots, parked-member controls, local lint, and upload proofs', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
   const writing = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'application-writing.md'), 'utf8');
   const review = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'review-handoff.md'), 'utf8');
   const upload = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'browser-upload.md'), 'utf8');
-  assert.match(skill, /Skill 4\.9\.3/);
+  assert.match(skill, /Skill 4\.9\.4/);
   assert.match(skill, /trackly_get_apply_execution_snapshot/);
   assert.match(skill, /`mutable` and `allowedOperations`/);
   assert.match(skill, /trackly_resume_parked_apply_member/);

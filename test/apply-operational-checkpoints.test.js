@@ -72,8 +72,8 @@ test('operational checkpoints require audited whole-form, history, resume, looku
   assert.match(integrity, /one accounting row[\s\S]*every visible control/i);
   assert.match(integrity, /position-level[\s\S]*reverse chronological[\s\S]*date\s+precision/i);
   assert.match(upload, /final sweep[\s\S]*attachment is still committed/i);
-  assert.match(upload, /only chooser arming[\s\S]*file attachment[\s\S]*hand the upload to the user/i);
-  assert.match(upload, /verification capabilities is unavailable[\s\S]*do not route it into `manual_unbound`/i);
+  assert.match(upload, /neither chooser arming nor direct file setting[\s\S]*file attachment[\s\S]*hand attachment to the user/i);
+  assert.match(upload, /verification\s+capability is unavailable[\s\S]*do not route it into\s+`manual_unbound`/i);
   assert.match(handoff, /Employer application state[\s\S]*Trackly state[\s\S]*Browser state/);
   assert.match(handoff, /No state in one[\s\S]*implies[\s\S]*another/i);
 });

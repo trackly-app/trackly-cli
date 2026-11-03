@@ -815,7 +815,7 @@ function registerApplyTools(
         'Idempotency-Key': idempotencyKey,
         ...(method === 'POST' && (path === '/api/jobscout/apply/executions'
           || path === '/api/jobscout/apply/executions/recover')
-          ? { 'X-Trackly-Apply-Start-Contract': APPLY_CONTRACT.contractVersion } : {}),
+          ? { 'X-Trackly-Apply-Start-Contract': APPLY_CONTRACT.sharedContractVersion || APPLY_CONTRACT.contractVersion } : {}),
       } : undefined,
     )
   );
@@ -1942,6 +1942,7 @@ function registerApplyTools(
       capabilities: z.object({
         semanticControlDiscovery: z.boolean(),
         chooserArming: z.boolean(),
+        directFileSet: z.boolean().optional(),
         fileAttachment: z.boolean(),
         committedFilenameInspection: z.boolean(),
         parserFieldRecheck: z.boolean(),

@@ -1,5 +1,6 @@
 {
-  "contractVersion": "3.9.3",
+  "contractVersion": "3.9.4",
+  "sharedContractVersion": "3.9.3",
   "constants": {
     "applyExecutionProtocolVersion": "trackly-apply-execution/v3",
     "applyAccessKnowledgeOrderingVersion": 3,
@@ -111,7 +112,7 @@
     "trackly_lint_application_text": "{text:z.string().max(20000),emDashPolicy:z.enum(['forbid','allow_if_voice_sample','allow']).optional(),voiceSampleAllowsEmDash:z.boolean().optional(),prohibitedPhrases:z.array(z.string().min(1).max(200)).max(50).optional(),minLength:z.number().int().min(0).max(20000).optional(),maxLength:z.number().int().min(0).max(20000).optional(),claims:z.array(z.object({claimFingerprint:z.string().regex(/^[a-f0-9]{64}$/),evidenceRefs:z.array(z.string().regex(SAFE_OBSERVATION_CODE)).max(20)}).strict()).max(100),claimsComplete:z.literal(true)}",
     "trackly_diagnose_local_path": "{exactPath:z.string().min(1).max(4096),originalErrno:z.string().regex(ERRNO_PATTERN).optional()}",
     "trackly_validate_apply_tab_keep_set": "{expectedTabIds:z.array(opaqueTabIdSchema).min(1).max(100),keepTabIds:z.array(opaqueTabIdSchema).max(100),controllerInventory:z.object({complete:z.boolean(),tabIds:z.array(opaqueTabIdSchema).max(1000)}).strict(),userInventory:z.object({complete:z.boolean(),tabIds:z.array(opaqueTabIdSchema).max(1000)}).strict()}",
-    "trackly_validate_apply_resume_upload": "{capabilities:z.object({semanticControlDiscovery:z.boolean(),chooserArming:z.boolean(),fileAttachment:z.boolean(),committedFilenameInspection:z.boolean(),parserFieldRecheck:z.boolean()}).strict(),events:z.array(z.object({stage:z.enum(APPLY_UPLOAD_STAGES),outcome:z.enum(['passed','failed']),failureCode:z.enum(APPLY_UPLOAD_FAILURE_CODES).optional()}).strict()).max(APPLY_UPLOAD_STAGES.length)}",
+    "trackly_validate_apply_resume_upload": "{capabilities:z.object({semanticControlDiscovery:z.boolean(),chooserArming:z.boolean(),directFileSet:z.boolean().optional(),fileAttachment:z.boolean(),committedFilenameInspection:z.boolean(),parserFieldRecheck:z.boolean()}).strict(),events:z.array(z.object({stage:z.enum(APPLY_UPLOAD_STAGES),outcome:z.enum(['passed','failed']),failureCode:z.enum(APPLY_UPLOAD_FAILURE_CODES).optional()}).strict()).max(APPLY_UPLOAD_STAGES.length)}",
     "trackly_verify_prepared_resume": {
       "local": "{runId:z.number().int().min(1),resumeId:z.number().int().min(1),confirmationId:z.string().min(1).max(200),exactLocalPath:z.string().min(1).max(4096),sha256:z.string().regex(/^[a-f0-9]{64}$/i),sizeBytes:z.number().int().min(1),expiresAt:z.string().datetime()}",
       "hosted": "{runId:z.number().int().min(1),confirmationId:z.string().min(1).max(200)}"

@@ -1,4 +1,4 @@
-> Read [handoff-compatibility.md](handoff-compatibility.md): its documented markHandoff path supersedes returned-receipt/finalizer requirements below. Actual visibility and other review gates remain in force.
+> Read [handoff-compatibility.md](handoff-compatibility.md): its documented markHandoff and Claude in Chrome paths supersede returned-receipt/finalizer requirements below. Actual visibility and other review gates remain in force.
 
 # Browser lifecycle and recovery
 
@@ -282,3 +282,15 @@ mapped tab in the user-visible browser, remove it from any active mutation keep
 set, and never continue filling it after cancellation. Close it only when the
 user explicitly requests cleanup and the normal controller/user inventory
 absence proof succeeds. Cancellation is never submission evidence.
+
+## Claude in Chrome bindings
+
+For `trackly_bind_apply_surface`, `adapterCode` must be a published
+`<provider>:<major>` code, for example `ashby:1`, from the protocol-supported
+adapter set. A bare provider or browser-surface name is invalid. Use
+`browserSurface: claude_in_chrome` for Claude's browser control, independently
+of that ATS adapter code. Follow the persistent MCP-group preservation path in
+[handoff compatibility](handoff-compatibility.md); refresh `tabs_context_mcp`
+before mutation, at turn end, and on reclaim. Its MCP-group inventory cannot
+prove absence from all of Chrome; retain `closure_unverified` without a complete
+controller/user union and the normal close proof.

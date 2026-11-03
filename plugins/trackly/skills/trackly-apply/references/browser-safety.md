@@ -1,6 +1,6 @@
 # Browser safety
 
-Read [handoff-compatibility.md](handoff-compatibility.md) before browser readiness. Its documented markHandoff path supersedes contradictory receipt/finalizer wording below.
+Read [handoff-compatibility.md](handoff-compatibility.md) before browser readiness. Its documented markHandoff and Claude in Chrome paths supersede contradictory receipt/finalizer wording below.
 
 
 Contact and address values come only from the current requested canonical
@@ -55,3 +55,9 @@ If the host cannot return a downloaded file artifact or verify its bytes, report
 ## Challenges and final boundary
 
 Do not solve or bypass CAPTCHA, OTP, email verification, credentials, or account creation. Preserve the page for the user. The final Submit control is always a manual boundary, even when the user previously approved filling the application.
+
+For Claude Code with Claude in Chrome, the persistent MCP-group path in
+[handoff compatibility](handoff-compatibility.md) also satisfies preservation.
+Refresh `tabs_context_mcp` before mutation and at turn end and reclaim on the
+next turn. This supersedes the receipt/finalizer-only readiness and turn-end
+wording above, without changing visibility, closure, or form-integrity gates.

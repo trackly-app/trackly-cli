@@ -1150,3 +1150,41 @@ test('sensitive consent revocation forwards the token and relays the service cha
   assert.ok(!optInResult.isError);
   assert.equal(requests.length, 3, 'opt-in stays single-call with no preflight reads');
 });
+
+test('local MCP accepts direct file upload proofs and retains chooser compatibility', async (t) => {
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const server = new McpServer({ name: 'upload-schema-test', version: '1.0.0' });
+  registerApplyTools(server, {
+    applyApiRequest: async () => { throw new Error('Upload proof must stay local'); },
+    mcpUserAgent: 'trackly-mcp/test',
+    throwMcpResourceError: (error) => { throw error; },
+    wrapTool: (handler) => async (params) => ({
+      content: [{ type: 'text', text: JSON.stringify(await handler(params)) }],
+    }),
+  });
+  const client = new Client({ name: 'upload-schema-test', version: '1.0.0' });
+  t.after(async () => {
+    await client.close();
+    await server.close();
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const capabilities = {
+    semanticControlDiscovery: true, chooserArming: false, directFileSet: true,
+    fileAttachment: true, committedFilenameInspection: true, parserFieldRecheck: true,
+  };
+  const stages = ['semantic_control_discovered', 'set_files_succeeded',
+    'user_facing_filename_committed', 'parser_fields_rechecked'];
+  const call = async (caps, sequence) => {
+    const result = await client.callTool({ name: 'trackly_validate_apply_resume_upload', arguments: {
+      capabilities: caps, events: sequence.map((stage) => ({ stage, outcome: 'passed' })),
+    } });
+    assert.ok(!result.isError);
+    return JSON.parse(result.content[0].text);
+  };
+  assert.equal((await call(capabilities, stages)).safeToClaimAttachment, true);
+  const { directFileSet, ...legacy } = capabilities;
+  assert.equal((await call(legacy, stages)).safeToClaimAttachment, false);
+  assert.equal((await call({ ...legacy, chooserArming: true }, [stages[0],
+    'file_chooser_armed', 'file_chooser_opened', ...stages.slice(1)])).safeToClaimAttachment, true);
+});

@@ -95,7 +95,8 @@ function verifyCandidateContract({ cliRoot = path.join(__dirname, '..'), backend
   };
   const local = JSON.parse(read(cliRoot, 'contracts/trackly-apply-tools.json'));
   const hosted = JSON.parse(readBackend('contracts/trackly-apply-tools.json'));
-  const { schemaDigests, ...shared } = local;
+  const { schemaDigests, sharedContractVersion, ...shared } = local;
+  shared.contractVersion = sharedContractVersion || local.contractVersion;
   assert.ok(schemaDigests, 'Local helper schema digests are required');
   shared.tools = Object.fromEntries(Object.entries(shared.tools).filter(([name]) => !LOCAL_ONLY.has(name)));
   assert.deepEqual(hosted, shared, 'Candidate shared contract drifted');
@@ -159,7 +160,7 @@ function verifyCandidateContract({ cliRoot = path.join(__dirname, '..'), backend
   };
   assertSurfaceEnumBindings(localSource, hostedSource, fixture.hostedBatchServiceSource, local.constants);
   verifyCoordinatedBackendCore(fixture, { expectedPluginWrapperSource: CANDIDATE_PLUGIN_WRAPPER_SOURCE });
-  assertCandidateCheckpointActionSchema(hostedSource, local.contractVersion);
+  assertCandidateCheckpointActionSchema(hostedSource, hosted.contractVersion);
   assertCoordinatedCheckpointHelperSemantics({
     ...fixture,
     checkpointWriterGeneration: 'candidate-3.9.2',

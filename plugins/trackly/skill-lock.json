@@ -1,14 +1,14 @@
 {
   "formatVersion": 1,
-  "adaptationVersion": "1.1.3",
+  "adaptationVersion": "1.1.4",
   "source": {
     "path": "skills/trackly-apply",
-    "skillVersion": "4.9.3",
-    "treeSha256": "52f9f3986da4db8429e30c1dc499200ef7fd6480258d445f30386a0fd98d706b"
+    "skillVersion": "4.9.4",
+    "treeSha256": "47d56633fb02bc8f9032c3fd7bf1783839f5e0fb9ba1b538fb146e1b629607bf"
   },
   "adapted": {
     "path": "plugins/trackly/skills/trackly-apply",
-    "treeSha256": "7f831f3139dfbd57e2d005795f9e82bbc89059525178ab4aa2ad7a17ef235d9a"
+    "treeSha256": "7a4f373832b7dd75629d64a038f0d9f4c30a2bc340f7d6b02f40a4b31704d816"
   },
   "adaptation": {
     "reason": "The public plugin facade intentionally exposes a smaller stable tool vocabulary than the full local trackly Apply MCP contract.",
