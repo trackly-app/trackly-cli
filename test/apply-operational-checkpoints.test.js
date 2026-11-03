@@ -1680,3 +1680,37 @@ test('MCP reliability prompt surfaces the new operating gates before execution',
   assert.match(tools, /run the skill 4\.9\.1 deterministic answer resolver/i);
   assert.doesNotMatch(tools, /run the skill 4\.7\.1 deterministic answer resolver/i);
 });
+
+test('Claude local closeout persists close receipts before final outcomes release the lease', () => {
+  const handoff = read('skills/trackly-apply/references/review-handoff.md');
+  const section = handoff.split('## Claude in Chrome post-submit closeout (local MCP)')[1];
+  assert.ok(section, 'Claude closeout must be explicit');
+  const steps = section.split(/\n[1-6]\. /).slice(1).map(text => text.replace(/\s+/g, ' '));
+  assert.equal(steps.length, 6);
+  assert.match(steps[0], /Verify the success page.*Never activate Submit/);
+  assert.match(steps[1], /trackly_record_apply_submission_evidence.*Require accepted evidence before closing/);
+  assert.match(steps[2], /tabs_close_mcp.*trackly_record_apply_surface_evidence.*surface_close_receipt/);
+  assert.match(steps[2], /completeInventory: false/);
+  assert.match(steps[3], /tabs_context_mcp.*MCP tab group only/);
+  assert.match(steps[3], /Preserve every unsubmitted sibling/);
+  assert.match(steps[3], /Never send `surface_post_close_absent`/);
+  assert.match(steps[4], /trackly_record_application_outcomes.*complete the batch and release its lease/);
+  assert.match(steps[5], /applied_confirmed.*Applications rows.*read them back/);
+  assert.match(section, /consent\.apply_tab_cleanup = submitted_only/);
+  assert.match(section, /completed-batch,[\s\S]*submitted-member evidence path/);
+  for (const name of ['SKILL.md', 'references/browser-lifecycle.md']) {
+    assert.match(read(`skills/trackly-apply/${name}`), /supersedes[\s\S]*outcome-before-close/);
+  }
+});
+
+test('Claude facade closeout keeps atomic reconciliation distinct from native receipt operations', () => {
+  const handoff = read('plugins/trackly/skills/trackly-apply/references/review-handoff.md');
+  const section = handoff.split('## Claude in Chrome post-submit closeout')[1];
+  assert.match(section, /consent\.apply_tab_cleanup = submitted_only/);
+  assert.match(section, /tabs_close_mcp[\s\S]*tabs_context_mcp/);
+  assert.match(section, /MCP group only, not all Chrome/);
+  assert.match(section, /no separate surface-close receipt operation/);
+  assert.match(section, /trackly_reconcile_manual_submission[\s\S]*atomically/);
+  assert.match(section, /applied_confirmed[\s\S]*Applications rows[\s\S]*read them back/);
+  assert.match(section, /unavailable[\s\S]*Applications readback pending/);
+});

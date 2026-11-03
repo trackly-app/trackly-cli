@@ -192,3 +192,7 @@ REST, refresh, download, CLI, and local/hosted MCP surfaces use canonical `code:
 - "Mark job 1234 as applied"
 - "Show my Trackly preferences, then set Product to up to 2 years and Strategy to up to 5 years"
 - "Use Trackly Apply to fill my next saved application and stop before Submit"
+
+### Local and shared Apply contract versions
+
+`contractVersion` identifies the complete local Apply schema, including local-only helpers. Optional `sharedContractVersion` identifies the unchanged hosted projection used for wire headers and backend compatibility; when absent it defaults to `contractVersion`. A local-only helper change may bump the local revision while pinning the unchanged shared projection. Shared tool or constant changes require the coordinated hosted contract review and version update; never relabel the captured hosted fixture as newer deployment evidence. Doctor JSON reports both identities.

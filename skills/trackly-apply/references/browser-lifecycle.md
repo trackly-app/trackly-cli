@@ -113,7 +113,11 @@ Never make a closure claim from one inventory surface.
 
 ## Close proof
 
-For a submitted application, do not begin tab closure until Trackly has
+For local MCP Claude in Chrome, use the success-evidence-before-close and
+close-receipts-before-final-outcomes sequence in
+[post-submit closeout](review-handoff.md#claude-in-chrome-post-submit-closeout-local-mcp).
+It supersedes the outcome-before-close order below only for that supported path.
+For other submitted applications, do not begin tab closure until Trackly has
 durably reconciled both the batch member to `submitted` and the saved job to
 `applied_confirmed`. A success page or explicit user confirmation authorizes
 the outcome write; it does not prove that the write committed. On a conflict,
@@ -302,3 +306,10 @@ established, preserve the tab and stop binding; never invent an adapter or
 substitute `generic_web_form:1` for a known ATS. An inventory failure or an
 unverifiable mapped tab mid-turn or at turn end stops mutation; follow
 existing-run recovery without claiming preservation.
+
+Claude post-submit cleanup uses `tabs_close_mcp` only for success-confirmed
+submitted tabs under `consent.apply_tab_cleanup = submitted_only`, then refreshes
+`tabs_context_mcp`. Empty means only the MCP tab group is empty; preserve
+unsubmitted siblings and retain `closure_unverified` without complete union
+proof. Finish the same closeout with Trackly `applied_confirmed` readback and
+the existing outreach-tracker Applications rows, as specified in review handoff.

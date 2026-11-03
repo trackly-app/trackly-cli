@@ -40,3 +40,11 @@ Verification: `node --test test/apply-upload.test.js test/mcp-schema.test.js`,
 This extends [exact recovery after browser state loss](durable-exact-recovery-after-browser-state-loss.md).
 The versioned adapter and resolution-code rules were confirmed in the
 2026-11-02 macOS pilot; the backend remains authoritative for acceptance.
+
+The second 2026-11-02 pilot exposed post-submit closeout ordering: final
+outcomes may complete the batch and clear the lease. The native Claude path
+now records success evidence and authorized submitted-only close receipts
+before final outcomes, then reads back applied status and existing Applications
+rows. The backend also admits narrowly fenced completed/submitted close
+evidence, so a 409 is not proof of lease release as the sole cause. MCP-group
+emptiness remains limited inventory, never complete-union closure proof.

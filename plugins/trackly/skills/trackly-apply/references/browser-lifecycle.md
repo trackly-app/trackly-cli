@@ -33,3 +33,12 @@ established, preserve the tab and stop binding; never invent an adapter or
 substitute `generic_web_form:1` for a known ATS. An inventory failure or an
 unverifiable mapped tab mid-turn or at turn end stops mutation; follow
 existing-run recovery without claiming preservation.
+
+After manual submission, follow [Claude post-submit closeout](review-handoff.md#claude-in-chrome-post-submit-closeout).
+Close only success-confirmed submitted tabs under the confirmed
+`consent.apply_tab_cleanup = submitted_only` preference, use `tabs_close_mcp`,
+and refresh `tabs_context_mcp`. Empty inventory means only the MCP group is
+empty; preserve unsubmitted siblings. Read back exact `applied_confirmed` jobs
+and the existing outreach-tracker Applications rows in the same closeout.
+The native local MCP receipt-before-final-outcome sequence and hosted atomic
+reconciliation are separate paths; never mix their tools or private lease state.

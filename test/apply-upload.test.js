@@ -114,3 +114,13 @@ test('direct setting still requires every shared verification capability', () =>
     assert.ok(result.failureCodes.includes('upload_capability_unavailable'));
   }
 });
+
+test('direct proof requires chooser arming to be explicitly inapplicable', () => {
+  for (const chooserArming of [true, undefined]) {
+    const result = validateApplyResumeUpload({
+      capabilities: { ...directCapabilities, chooserArming }, events: directEvents,
+    });
+    assert.equal(result.safeToClaimAttachment, false);
+    assert.ok(result.failureCodes.includes('upload_capability_unavailable'));
+  }
+});

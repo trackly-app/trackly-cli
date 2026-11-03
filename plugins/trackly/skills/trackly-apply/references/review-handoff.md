@@ -33,3 +33,43 @@ Show the employer and role, the exact browser tab or surface, its verified prese
 Call `trackly_certify_review_ready` with the exact current binding and value-free fingerprints described in [lifecycle-contract.md](lifecycle-contract.md). Use the `approved` resume branch only for a current exact approval plus matching committed attachment evidence; otherwise use `not_applicable` and omit resume identity. It atomically persists the review checkpoint, truth certification, and review-ready outcome. Any manual resume upload remains unbound and unattested. Certification of one member is not permission to stop: certify every ready mutable member in the current bound wave, refetching after each mutation and obeying authoritative blockers and allowed operations. Before manual submission, after every currently ready member has durable review-ready certification, leave only those certified tabs at review and tell the user that they—not trackly—must submit. Do not describe review-ready as submitted.
 
 After manual submission, call `trackly_reconcile_manual_submission` with the exact current binding and matching typed confirmation evidence described in [lifecycle-contract.md](lifecycle-contract.md). Reconcile only from a visible success state or the user's explicit confirmation. Preserve each confirmation surface until a fresh work response proves the durable submitted state, then exclude that reconciled member from any later review handoff while continuing through every remaining ready sibling. Process every ready member in the bound wave; never abandon ready siblings because one member certified or reconciled. Never tell the user to submit an already reconciled member.
+
+
+## Claude in Chrome post-submit closeout
+
+Complete employer submission, Trackly status, MCP-group cleanup and the user's
+existing outreach-tracker Applications rows as one closeout, reporting each
+state separately. The user still performs Submit. Require current exact-tab
+success proof and confirmed `consent.apply_tab_cleanup = submitted_only` before
+closing only success-confirmed submitted tabs with `tabs_close_mcp`. Preserve
+unsubmitted review tabs, drafts, unresolved members and unrelated tabs. A
+rejected close remains cleanup pending.
+
+Refresh `tabs_context_mcp` afterward and report the MCP tab group empty only
+when observed empty. Preserve unsubmitted siblings even when that leaves the
+group nonempty. This inventory covers the MCP group only, not all Chrome;
+a dragged-out tab is not proven absent. Keep `closure_unverified` without the
+complete controller/user union and normal close proof; group absence never
+supplies a fabricated complete-union receipt.
+
+For local MCP, use the [native closeout sequence](https://github.com/trackly-app/trackly-cli/blob/main/skills/trackly-apply/references/review-handoff.md#claude-in-chrome-post-submit-closeout-local-mcp):
+success proof, durable submission evidence, authorized closes and close receipts
+while the lease is held, group inventory, then final submitted outcomes. The
+last outcome can complete the batch and release its lease. Do not mix local
+lease-bearing operations with this hosted facade. The facade instead uses
+`trackly_reconcile_manual_submission` to atomically record evidence and outcome;
+it exposes no separate surface-close receipt operation. Retain its documented
+reconcile/refetch gate before browser cleanup, and report any unavailable close
+receipt as unverified rather than inventing an operation or private lease.
+Batch completion neither supplies nor waives close proof. Never reopen a
+completed batch or reapply to repair a missing receipt.
+
+Refetch bound work and verify member `submitted` plus exact job
+`applied_confirmed`, using `trackly_search_jobs` with `status: applied_confirmed`
+and backend pagination for the exact IDs. Upsert the matching existing
+outreach-tracker Applications rows idempotently and read them back by exact
+job/requisition identity. Preserve notes/history; record only supported dates
+and observed status. Applications do not increment message or follow-up counts.
+Do not create another tracker or infer private-sheet access. If the configured
+tracker is unavailable, report Applications readback pending rather than claim
+complete closeout. Cleanup failure must not erase a confirmed submission.

@@ -192,7 +192,9 @@ consented external-agent preflight in
 the mailbox. Hash the proof locally and never send confirmation text, page text,
 receipt identifiers, message metadata, or URLs as evidence.
 
-After either success-page evidence or explicit confirmation, record
+For the local MCP `claude_in_chrome` path, follow the post-submit closeout
+sequence below instead of the outcome-before-close ordering in this paragraph.
+For other paths, after either success-page evidence or explicit confirmation, record
 `submitted`, refetch, and require both member `submitted` and job
 `applied_confirmed`. Only then may the saved cleanup preference authorize
 closing the exact mapped tab. Verify controller/user inventory absence and
@@ -251,3 +253,71 @@ tab without an outcome. Refetch and require member `submitted` plus job
 
 Do not include restricted answers in chat unless needed for the user’s review.
 Never include credentials, an OTP, or a CAPTCHA response.
+
+
+## Claude in Chrome post-submit closeout (local MCP)
+
+This sequence supersedes outcome-before-close wording for local MCP Claude
+runs with confirmed `consent.apply_tab_cleanup = submitted_only`. The user
+still performs Submit. A success-confirmed submitted tab is eligible for this
+cleanup even while its Trackly member awaits the final submitted outcome.
+Never close an unsubmitted review tab, unresolved draft, unrelated tab, or tab
+whose exact binding or success state is uncertain. Unknown consent requires a
+user decision; declined cleanup preserves tabs and does not prevent truthful
+submission reconciliation.
+
+1. Verify the success page for every exact submitted job/run/tab and preserve
+   its current-epoch, value-free proof locally. Reclaim or renew the existing
+   batch lease if needed while the batch is active; use fresh returned member
+   versions and inspection epochs. Never activate Submit.
+2. Record each success proof with `trackly_record_apply_submission_evidence`,
+   using `evidenceType: confirmation_detected` and `evidenceSource: success_page`.
+   Require accepted evidence before closing its confirmation tab. A click,
+   intent to submit, or ambiguous page never permits closure.
+3. With the same current binding and valid lease, call `tabs_close_mcp` only
+   for those success-confirmed submitted tabs. Record each actual close result
+   immediately with `trackly_record_apply_surface_evidence` and
+   `evidenceType: surface_close_receipt`. Use `ownershipState: controller_owned`
+   and `completeInventory: false` when only the MCP group is observable. A
+   failed close or rejected receipt remains cleanup pending, never a made-up
+   receipt. Do not close again just to repair bookkeeping.
+4. Refresh `tabs_context_mcp` after cleanup. Confirm the MCP tab group is empty
+   only when it actually is; otherwise list the remaining bound tabs and their
+   pending actions. Preserve every unsubmitted sibling, so a nonempty group
+   can be the correct result. This inventory covers the MCP tab group only,
+   not all Chrome tabs: a dragged-out tab is not proven absent. Keep
+   `closure_unverified` unless a complete controller/user union and the normal
+   close proof genuinely exist. Never send `surface_post_close_absent` or
+   `surface_missing` based only on the MCP group.
+5. Only after authorized close attempts and receipt recording, record the final
+   `submitted` outcomes through `trackly_record_application_outcomes` (or the
+   existing singular outcome tool for an isolated run), with `confirmation:
+   success_page` and the exact current batch/member/epoch/lease binding. The
+   final outcome can complete the batch and release its lease. Cleanup failure
+   does not erase real submission evidence: reconcile confirmed submissions
+   and report closure separately rather than withholding or falsifying outcomes.
+6. Refetch the exact batch/execution and use `trackly_search_jobs` with
+   `status: applied_confirmed`, following pagination for every exact job ID.
+   Require member `submitted` and job `applied_confirmed` before claiming
+   Trackly closeout. In the user's existing authorized outreach-tracker,
+   upsert the matching Applications rows idempotently and read them back by
+   exact job/requisition identity, preserving existing notes and history.
+   Record only the observed application status and supported submission date;
+   an application is not an outreach message or follow-up. Do not create a
+   parallel tracker or infer access to a private sheet. If the tracker is
+   unavailable, leave Applications readback pending and report the precise gap.
+
+Report employer submission, Trackly status, MCP-group cleanup and Applications
+row readback independently in the same closeout. Group emptiness never proves
+an application was submitted or that every Chrome tab is closed.
+
+Backend verification on 2026-11-02 confirmed that final outcomes can complete
+a batch and clear its lease, while the surface-evidence writer accepts current
+leased pre-completion evidence. It also has a narrowly fenced completed-batch,
+submitted-member evidence path. Completion does not waive close proof or
+promise that stale bindings will work; a `409 state_changed` does not by itself
+prove lease release was the sole cause. Prefer the sequence above. If outcomes
+were already recorded, refetch current state and use only explicitly allowed
+operations; never recreate a batch or lease, reapply, invent receipts, or
+blindly retry to repair cleanup. Existing submission remains recorded even if
+closure stays unverified.

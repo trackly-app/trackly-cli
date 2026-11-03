@@ -706,6 +706,7 @@ test('agent doctor does not infer controller and user tab union inventory from p
     const report = await agent.doctorAgent();
     assert.equal(report.cliVersion, packageManifest.version);
     assert.equal(report.mcpContractVersion, '3.9.4');
+    assert.equal(report.sharedMcpContractVersion, '3.9.3');
     assert.match(report.skillPackIntegrity.expectedDigest, /^[a-f0-9]{64}$/);
     assert.deepEqual(report.browserControl.tabInventory, {
       controllerOwnedTabs: 'runtime_verification_required',
