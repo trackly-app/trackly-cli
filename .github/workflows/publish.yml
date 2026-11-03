@@ -83,6 +83,8 @@ jobs:
     if: needs.gate.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # One click by any maintainer, self-approval allowed, before anything reaches npm.
+    environment: npm-publish
 
     permissions:
       id-token: write
