@@ -1685,8 +1685,8 @@ test('Claude local closeout persists close receipts before final outcomes releas
   const handoff = read('skills/trackly-apply/references/review-handoff.md');
   const section = handoff.split('## Claude in Chrome post-submit closeout (local MCP)')[1];
   assert.ok(section, 'Claude closeout must be explicit');
-  const steps = section.split(/\n[1-6]\. /).slice(1).map(text => text.replace(/\s+/g, ' '));
-  assert.equal(steps.length, 6);
+  const steps = section.split(/\n[1-8]\. /).slice(1).map(text => text.replace(/\s+/g, ' '));
+  assert.equal(steps.length, 8);
   assert.match(steps[0], /Verify the success page.*Never activate Submit/);
   assert.match(steps[1], /trackly_record_apply_submission_evidence.*Require accepted evidence before closing/);
   assert.match(steps[2], /tabs_close_mcp.*trackly_record_apply_surface_evidence.*surface_close_receipt/);
@@ -1695,7 +1695,9 @@ test('Claude local closeout persists close receipts before final outcomes releas
   assert.match(steps[3], /Preserve every unsubmitted sibling/);
   assert.match(steps[3], /Never send `surface_post_close_absent`/);
   assert.match(steps[4], /trackly_record_application_outcomes.*complete the batch and release its lease/);
-  assert.match(steps[5], /applied_confirmed.*Applications rows.*read them back/);
+  assert.match(steps[5], /applied_confirmed.*Trackly closeout/);
+  assert.match(steps[6], /post-submission-email-cleanup\.md.*Superhuman.*disposition/);
+  assert.match(steps[7], /Applications rows.*read them back/);
   assert.match(section, /consent\.apply_tab_cleanup = submitted_only/);
   assert.match(section, /completed-batch,[\s\S]*submitted-member evidence path/);
   for (const name of ['SKILL.md', 'references/browser-lifecycle.md']) {
@@ -1713,4 +1715,23 @@ test('Claude facade closeout keeps atomic reconciliation distinct from native re
   assert.match(section, /trackly_reconcile_manual_submission[\s\S]*atomically/);
   assert.match(section, /applied_confirmed[\s\S]*Applications rows[\s\S]*read them back/);
   assert.match(section, /unavailable[\s\S]*Applications readback pending/);
+});
+
+
+test('Claude Superhuman cleanup documents bounded discovery, guarded Done and fresh inbox verification', () => {
+  for (const root of ['skills/trackly-apply', 'plugins/trackly/skills/trackly-apply']) {
+    const reference = read(`${root}/references/post-submission-email-cleanup.md`);
+    const rawSection = reference.split('## Claude Code with Superhuman')[1];
+    const section = rawSection && rawSection.replace(/\s+/g, ' ');
+    assert.ok(section, `${root} must document the verified connector path`);
+    assert.match(section, /list_threads[\s\S]*acting_email[\s\S]*start_date/);
+    assert.match(section, /no free-text `query`[\s\S]*`to`[\s\S]*`from`[\s\S]*arrays/);
+    assert.match(section, /message_count[\s\S]*1[\s\S]*drafts[\s\S]*INBOX/);
+    assert.match(section, /starred[\s\S]*Confirm your application[\s\S]*recruiter replies[\s\S]*job alerts/);
+    assert.match(section, /update_thread[\s\S]*thread_id[\s\S]*last_message_id[\s\S]*mark_done: true/);
+    assert.match(section, /current_state[\s\S]*is_done: true[\s\S]*folder: "archive"/);
+    assert.match(section, /fresh `list_threads`[\s\S]*labels: \["INBOX"\][\s\S]*same `start_date`[\s\S]*targeted thread IDs/);
+    assert.match(section, /already archived[\s\S]*no-op[\s\S]*never toggle/);
+    assert.match(read(`${root}/SKILL.md`), /applied_confirmed[\s\S]*post-submission-email-cleanup\.md[\s\S]*Applications row/);
+  }
 });

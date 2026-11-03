@@ -299,17 +299,23 @@ submission reconciliation.
 6. Refetch the exact batch/execution and use `trackly_search_jobs` with
    `status: applied_confirmed`, following pagination for every exact job ID.
    Require member `submitted` and job `applied_confirmed` before claiming
-   Trackly closeout. In the user's existing authorized outreach-tracker,
-   upsert the matching Applications rows idempotently and read them back by
-   exact job/requisition identity, preserving existing notes and history.
+   Trackly closeout.
+7. Then follow [post-submission email cleanup](post-submission-email-cleanup.md),
+   including its Claude/Superhuman procedure when applicable. Use only the
+   authorized account and receipt scope; verify fresh inbox readback. If email
+   cleanup is unauthorized, unavailable or incomplete, report its actual
+   disposition and continue to the tracker step.
+8. In the user's existing authorized outreach-tracker, upsert the matching
+   Applications rows idempotently and read them back by exact job/requisition
+   identity, preserving existing notes and history.
    Record only the observed application status and supported submission date;
    an application is not an outreach message or follow-up. Do not create a
    parallel tracker or infer access to a private sheet. If the tracker is
    unavailable, leave Applications readback pending and report the precise gap.
 
-Report employer submission, Trackly status, MCP-group cleanup and Applications
-row readback independently in the same closeout. Group emptiness never proves
-an application was submitted or that every Chrome tab is closed.
+Report employer submission, Trackly status, MCP-group cleanup, email cleanup
+and Applications row readback independently in the same closeout. Group
+emptiness never proves an application was submitted or that every Chrome tab is closed.
 
 Backend verification on 2026-11-02 confirmed that final outcomes can complete
 a batch and clear its lease, while the surface-evidence writer accepts current

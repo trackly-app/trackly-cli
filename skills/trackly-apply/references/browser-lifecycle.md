@@ -311,5 +311,6 @@ Claude post-submit cleanup uses `tabs_close_mcp` only for success-confirmed
 submitted tabs under `consent.apply_tab_cleanup = submitted_only`, then refreshes
 `tabs_context_mcp`. Empty means only the MCP tab group is empty; preserve
 unsubmitted siblings and retain `closure_unverified` without complete union
-proof. Finish the same closeout with Trackly `applied_confirmed` readback and
+proof. Finish the same closeout with Trackly `applied_confirmed` readback,
+then [post-submission email cleanup](post-submission-email-cleanup.md), then
 the existing outreach-tracker Applications rows, as specified in review handoff.

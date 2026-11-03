@@ -48,3 +48,13 @@ before final outcomes, then reads back applied status and existing Applications
 rows. The backend also admits narrowly fenced completed/submitted close
 evidence, so a 409 is not proof of lease release as the sole cause. MCP-group
 emptiness remains limited inventory, never complete-union closure proof.
+
+The Claude closeout continues from applied-status readback to the existing
+post-submission email-cleanup procedure, then authorized Applications rows.
+Superhuman discovery uses a bounded `start_date`, exact acting account and
+optional recruiting label; it has no free-text query. Only harmless, unstarred,
+single-message ATS receipts in INBOX qualify for this path. Done uses the fresh
+last-message consistency check; a fresh bounded INBOX listing must exclude the
+target IDs. Action mail and already-archived receipts remain untouched. Email
+proof stays outside Trackly, and a pending cleanup never suppresses a truthful
+application or tracker update.

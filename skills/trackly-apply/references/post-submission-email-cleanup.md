@@ -128,6 +128,56 @@ do not install a background watcher or keep polling to reach an expected count.
   archive leaves other INBOX messages, report archived emails and a still-open
   thread; do not count it as a verified Done thread.
 
+## Claude Code with Superhuman
+
+After the Claude browser closeout and durable Trackly `applied_confirmed`
+readback, perform the authorized email cleanup here before updating the existing
+Applications rows. The authorization, account, consistency and privacy rules
+above still apply; these calls do not grant mailbox access. This path was
+verified on 2026-11-02 PST. Discover the current connector schema first and stop
+if it cannot express these checks; do not guess parameters.
+
+1. Discover candidates with `list_threads`, the exact authorized `acting_email`,
+   and `start_date` set a few minutes before the first confirmed submission.
+   Use `labels: ["[Superhuman]/AI/recruiting"]` when that label is appropriate,
+   or omit the label filter within the same bounded window. There is no
+   free-text `query` parameter; any `to` or `from` filters must be arrays.
+   Always bound discovery by `start_date`: unbounded windows can overflow the
+   tool output. Follow available pagination and inspect complete candidates;
+   truncated or incomplete results never prove absence or authorize mutation.
+2. Classify only in-scope acknowledgment threads whose complete messages are
+   all from the verified ATS sender (for example `no-reply@ashbyhq.com`) or
+   the verified employer no-reply sender. For this Claude path require
+   `message_count` equal to 1, no drafts, and a current `INBOX` label. Leave
+   multi-message or mixed-sender threads untouched under this path; do not
+   assume the sender alone proves a harmless receipt. Generic `Thanks for
+   applying to <Company>!` receipts qualify only when the user's request
+   covers receipt cleanup; report them as generic, never exact-role evidence.
+   Leave starred or action-required mail alone, including “Confirm your
+   application” tasks, interview threads, recruiter replies, and job alerts.
+   An already archived receipt without `INBOX` is a no-op; never toggle it back.
+3. Recheck the thread and use `update_thread` for the same `acting_email` with
+   its exact `thread_id`, freshly read `last_message_id` consistency check,
+   and `mark_done: true`. Inspect `current_state` for `is_done: true` and
+   `folder: "archive"`. The verified operation preserved unread state and
+   labels; preserve those properties and report unexpected changes. A conflict
+   requires same-connector refetch and reclassification, never blind retry or
+   switching connectors to repeat an uncertain mutation.
+4. Verify with a fresh `list_threads` for the same acting account, with
+   `labels: ["INBOX"]` and the same `start_date`. Follow all pagination and
+   ensure none of the targeted thread IDs appear. Pair that absence with the
+   fresh per-thread/message state checks above; a success response alone is
+   not proof. Incomplete, truncated or failed readback remains pending.
+   Report verified Done receipts, generic receipts and already-archived no-ops
+   separately from untouched action mail and failures, then continue to the
+   existing authorized tracker rows. Pending email cleanup never undoes a
+   confirmed application or silently suppresses its tracker update.
+
+Keep the calls and receipt details within the authorized mail connector and
+local closeout context. Do not send mailbox data or IDs to Trackly, broaden the
+window to manufacture a count, install a watcher, or change application dates
+from receipt arrival times.
+
 ## Closeout and privacy
 
 Report the number of verified Done threads and acknowledgment emails, already

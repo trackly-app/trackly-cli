@@ -66,7 +66,11 @@ completed batch or reapply to repair a missing receipt.
 
 Refetch bound work and verify member `submitted` plus exact job
 `applied_confirmed`, using `trackly_search_jobs` with `status: applied_confirmed`
-and backend pagination for the exact IDs. Upsert the matching existing
+and backend pagination for the exact IDs. Then follow
+[post-submission email cleanup](post-submission-email-cleanup.md), including
+the Claude/Superhuman bounded discovery and fresh inbox verification when
+applicable. Report unauthorized, unavailable or incomplete cleanup separately
+and continue to the tracker step. Only after that email step, upsert the matching existing
 outreach-tracker Applications rows idempotently and read them back by exact
 job/requisition identity. Preserve notes/history; record only supported dates
 and observed status. Applications do not increment message or follow-up counts.

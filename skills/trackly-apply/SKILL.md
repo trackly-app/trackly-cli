@@ -160,7 +160,7 @@ Every required scenario and both universal evidence scenarios must have correspo
 
 ## Review handoff
 
-For local MCP Claude in Chrome, follow [post-submit closeout](references/review-handoff.md#claude-in-chrome-post-submit-closeout-local-mcp): verify success, persist submission evidence, close only success-confirmed submitted tabs and record their close receipts while the lease is held, inspect the MCP group, then record final submitted outcomes. This path supersedes outcome-before-close wording below. Finish with `applied_confirmed` status readback and the existing outreach-tracker Applications rows; keep submission, Trackly state, group-limited cleanup and row readback separate.
+For local MCP Claude in Chrome, follow [post-submit closeout](references/review-handoff.md#claude-in-chrome-post-submit-closeout-local-mcp): verify success, persist submission evidence, close only success-confirmed submitted tabs and record their close receipts while the lease is held, inspect the MCP group, then record final submitted outcomes. This path supersedes outcome-before-close wording below. Finish with `applied_confirmed` status readback, then [post-submission email cleanup](references/post-submission-email-cleanup.md), then the existing outreach-tracker Applications rows. Keep submission, Trackly state, group-limited cleanup, email cleanup and row readback separate.
 
 After context loss, call `trackly_list_apply_review_handoffs` for the execution
 before interpreting any grouped submission statement. Use the named receipt or
