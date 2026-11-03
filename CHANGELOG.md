@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-02
+
 ### Fixed
 
 - Support Claude Code with Claude in Chrome in Apply skill 4.9.4 and plugin 1.1.4: direct file-input upload proofs, persistent MCP-group tabs with explicit inventory limits, versioned ATS binding codes, strict scenario observation results, saved-job prerequisites, and semantic Ashby Yes/No targeting. Local contract 3.9.4 retains shared hosted contract 3.9.3; the local validator accepts explicit direct-file support while preserving chooser proofs and all review gates.
