@@ -8,6 +8,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fmt = require('../lib/formatters');
+const { planRefusalMessage } = fmt;
 
 // Capture console.log output. tty=true → human/colored branch; tty=false → JSON branch.
 function capture(fn, { tty = false } = {}) {
@@ -264,4 +265,36 @@ test('shouldColor honors NO_COLOR / FORCE_COLOR / TTY', () => {
   } finally {
     set('NO_COLOR', saved.NO_COLOR); set('FORCE_COLOR', saved.FORCE_COLOR);
   }
+});
+
+test('planRefusalMessage explains a plan limit and when it resets', () => {
+  assert.equal(
+    planRefusalMessage({ status: 429, error: 'limit_reached', limit: 30, used: 30, resetsAt: '2026-12-01T00:00:00.000Z' }),
+    "You've used all 30 applications your Trackly plan includes for this period. It resets on 2026-12-01.",
+  );
+});
+
+test('planRefusalMessage still explains a limit with a missing count or reset date', () => {
+  assert.equal(
+    planRefusalMessage({ status: 429, error: 'limit_reached', resetsAt: 'not a date' }),
+    "You've used all the applications your Trackly plan includes for this period.",
+  );
+});
+
+test('planRefusalMessage explains a plan without this feature', () => {
+  assert.equal(
+    planRefusalMessage({ status: 404, error: 'feature_disabled' }),
+    "Your Trackly plan doesn't include this.",
+  );
+});
+
+test('planRefusalMessage leaves every other error alone', () => {
+  for (const error of [
+    { status: 429, error: 'Too many Trackly Apply requests. Try again shortly.' },
+    { status: 400, error: 'limit_reached' },
+    { status: 404, error: 'Job not found' },
+    { status: 429 },
+    null,
+    undefined,
+  ]) assert.equal(planRefusalMessage(error), null);
 });

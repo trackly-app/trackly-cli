@@ -15,7 +15,7 @@ const {
   removeCredentials,
   saveConfig,
 } = require('../lib/client');
-const { color, isJSON, jobDateDetailLines, outputJobs, outputCompanies, outputStats, outputContacts, outputReferralCampaign, outputNetworkBrief, outputCompanyBrief, outputCompanyWorkspace, outputError } = require('../lib/formatters');
+const { color, isJSON, jobDateDetailLines, outputJobs, outputCompanies, outputStats, outputContacts, outputReferralCampaign, outputNetworkBrief, outputCompanyBrief, outputCompanyWorkspace, outputError, planRefusalMessage } = require('../lib/formatters');
 const http = require('http');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
@@ -269,7 +269,7 @@ function setApiErrorExit(error, fallbackMessage, exitCode = 1) {
   } else if (maintenance) {
     outputError(formatMaintenanceForHuman(maintenance));
   } else {
-    outputError(error?.error || error?.message || fallbackMessage);
+    outputError(planRefusalMessage(error) || error?.error || error?.message || fallbackMessage);
   }
   process.exitCode = exitCode;
 }

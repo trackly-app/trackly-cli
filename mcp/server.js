@@ -10,6 +10,7 @@ const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 const { registerApplyTools } = require('./apply-tools');
 const { configureMcpAnalytics, shutdownMcpAnalytics } = require('./analytics');
 const { normalizeJobResult, unavailableJobFromError, jobFailureGuidance } = require('../lib/job-result');
+const { planRefusalMessage } = require('../lib/formatters');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
 const MCP_SHUTDOWN_TIMEOUT_MS = 2_000;
@@ -169,6 +170,13 @@ function createErrorResult(error, fallbackMessage, extra = {}) {
   ) {
     payload.code = error.error;
     payload.retryable = true;
+  }
+
+  const planRefusal = planRefusalMessage(error);
+  if (planRefusal) {
+    payload.code = error.error;
+    payload.retryable = false;
+    payload.hint = planRefusal;
   }
 
   if (error?.status === 429 && !payload.hint) {

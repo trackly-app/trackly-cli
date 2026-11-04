@@ -93,6 +93,33 @@ test('local MCP preserves retryable application-profile schema rollout errors', 
   assert.equal(payload.retryable, true);
 });
 
+test('local MCP explains a plan limit, marks it not retryable and drops the daily query hint', () => {
+  const payload = JSON.parse(createErrorResult({
+    status: 429,
+    error: 'limit_reached',
+    limit: 30,
+    used: 30,
+    resetsAt: '2026-12-01T00:00:00.000Z',
+  }, 'Failed to start').content[0].text);
+
+  assert.equal(payload.status, 429);
+  assert.equal(payload.code, 'limit_reached');
+  assert.equal(payload.retryable, false);
+  assert.match(payload.hint, /30 applications.*2026-12-01/);
+  assert.doesNotMatch(payload.hint, /natural language/);
+});
+
+test('local MCP explains a plan without this feature, and keeps the daily hint for other 429s', () => {
+  const disabled = JSON.parse(createErrorResult({ status: 404, error: 'feature_disabled' }, 'Failed to start').content[0].text);
+  assert.equal(disabled.code, 'feature_disabled');
+  assert.equal(disabled.retryable, false);
+  assert.match(disabled.hint, /plan/);
+
+  const other = JSON.parse(createErrorResult({ status: 429, error: 'Too many requests' }, 'Failed').content[0].text);
+  assert.equal(other.code, undefined);
+  assert.match(other.hint, /natural language/);
+});
+
 test('local MCP preserves only versioned Apply batch conflict codes', () => {
   for (const conflictCode of [
     'submission_in_progress',
