@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-11-04
+
+### Added
+
+- Add the role type filter to job search: `trackly_search_jobs` accepts `roleTypes` (`corporate`, `frontline`, or both) and `trackly jobs` accepts `--role-types`. Omitted uses the student's saved preference (corporate by default). It applies to status `new` and `all`; pipeline views are never filtered by role type. The hosted MCP carries the identical parameter.
+
 ## [0.24.0] - 2026-11-02
 
 ### Fixed
