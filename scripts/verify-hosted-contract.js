@@ -13,7 +13,7 @@ const { HOSTED_RESUME_SECURITY_SOURCE_SHA256, assertHostedResumeSecuritySourceSn
 const assertResumeGlobalParserCarveout = createResumeParserVerifier({ activeNamedDefinitionAst, staticMemberName, parseFullSource, canonicalSchemaAst });
 
 const sha256ExactBytes = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-const CHECKED_IN_HOSTED_FIXTURE_SHA256 = 'a87e3c8f9febf140d64bfcc9074e96c706d2db84215a1c70848c5c3ef06c1c27';
+const CHECKED_IN_HOSTED_FIXTURE_SHA256 = 'c2656c0da385e5b6a755367690f474dbb9c2d7dc393ef53251a185ebc07e5694';
 const HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256 = Object.freeze({
   applyCheckpointActionVariant: '6d83fd691e69b578f683c5e367cc1706a8f74b336e0ff435195f580c2350587c',
   applyCheckpointActionSchema: '6f0b0698b13997eda7100ec00720fff199d936270d232c7de5f55a8fcef2c2ab',
@@ -47,6 +47,8 @@ const HOSTED_GENERAL_RATE_LIMIT_SHA256 = 'c724c5215e1014a5e4cb598cb8487a4524e51e
 // the empty prompt handler, the shared search request, Claude's search wrapper
 // and the per-surface registerPluginTool helper. Scope enforcement stays in
 // plugin-scopes; this helper only shapes the published descriptors.
+// close-ai #3325 (recaptured at 7c7032c87): OpenAI search results drop only the
+// retired autoApplySupported flag; every other surface returns the response unchanged.
 const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' && options.surface !== 'openai' && options.surface !== 'muse'
     && options.surface !== 'claude') {
     throw new Error('Unknown plugin tool surface');
@@ -77,7 +79,18 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
     if (params.sort) query.set('sort', params.sort);
     if (params.limit) query.set('limit', String(params.limit));
     if (params.offset !== undefined) query.set('offset', String(params.offset));
-    return requestApi('GET', \`/api/jobscout/jobs?\${query}\`, authToken);
+    const response = await requestApi('GET', \`/api/jobscout/jobs?\${query}\`, authToken);
+    if (options.surface !== 'openai' || !Array.isArray(response?.jobs)) return response;
+    return {
+      ...response,
+      jobs: response.jobs.map((job: unknown) => {
+        if (!job || typeof job !== 'object' || Array.isArray(job)) return job;
+        // The REST compatibility flag describes retired full auto-apply,
+        // not whether a controlled browser can prepare this application.
+        const { autoApplySupported: _retiredFullAutoApply, ...publicJob } = job as Record<string, unknown>;
+        return publicJob;
+      }),
+    };
   };
   const claudeSearchJobs = async (params: any) => {
     try {
@@ -807,9 +820,18 @@ const HOSTED_DEPLOYABLE_PATHS = Object.freeze([
   'src/routes/admin-read-query.ts',
 ]);
 
-// Recaptured from reviewed source 3d479b94 and ordinary deployed merge 71e7f9bf.
-// All 49 deployable paths preserve the reviewed bytes; no inherited exception applies.
-const REVIEWED_INHERITED_BASELINE = Object.freeze([]);
+// Recaptured from reviewed source 1a0474f4 (close-ai #3433 head) and deployed merge
+// 7c7032c87. #3433 branched before #3429 landed on main, so the merge inherits only
+// src/mcp/server.ts from its first parent 917a99a4; the other 48 paths keep source bytes.
+const REVIEWED_INHERITED_BASELINE = Object.freeze([Object.freeze({
+  sourceCommit: '1a0474f4e1ef04fa0d54d0d6e47178cc7f43eff7',
+  mergeCommit: '7c7032c87d97b3270681281ff33fa3d8887259c9',
+  firstParent: '917a99a49b7de9157643bb6fb388f29173f4d2d0',
+  relativePath: 'src/mcp/server.ts',
+  sourceSha256: 'cbbb22a883a29ad6554bbd523812bc08c880c85f589bcf6e52f0f4bcb0b312e8',
+  inheritedSha256: 'ee73ce10237b11650560ba8f800f344f34767a942145d0079f9ef83bb573ae96',
+  originCommit: 'bbe78d70e0b49dc5af3a47df00dcb648a82ac26d', // close-ai PR #3429 head (roleTypes search filter)
+})]);
 
 function assertMergeCommitPreservesPaths(repository, sourceCommit, mergeCommit, relativePaths, inheritedBaseline = []) {
   const unused = new Set(inheritedBaseline);
@@ -870,13 +892,15 @@ function verifyHostedSnapshotGitProvenance(cliRoot, backendRoot) {
     mergeCommit,
     `${backendRoot} must be checked out at the exact deployed runtime merge commit`,
   );
-  for (const commit of [sourceCommit, fixture.sourceRuntime.parent, mergeCommit, ...fixture.mergedRuntime.parents]) {
+  for (const commit of [sourceCommit, ...fixture.sourceRuntime.parents, mergeCommit, ...fixture.mergedRuntime.parents]) {
     gitOutput(backendRoot, ['cat-file', '-e', `${commit}^{commit}`]);
   }
+  // The reviewed head may itself merge main (close-ai #3433 head 1a0474f4), so its
+  // parents are recorded as an exact ordered list, like the deployed merge's.
   assert.deepEqual(
     gitOutput(backendRoot, ['show', '-s', '--format=%P', sourceCommit]).trim().split(/\s+/),
-    [fixture.sourceRuntime.parent],
-    `${sourceCommit} must have the recorded reviewed parent`,
+    fixture.sourceRuntime.parents,
+    `${sourceCommit} must have the recorded reviewed parents in order`,
   );
   assert.deepEqual(
     gitOutput(backendRoot, ['show', '-s', '--format=%P', mergeCommit]).trim().split(/\s+/),
@@ -7252,7 +7276,11 @@ function verifyCheckedInHostedContractFixture(
   assert.equal(fixture.formatVersion, 3);
   const commitPattern = /^[a-f0-9]{40}$/;
   assert.match(fixture.sourceRuntime.commit, commitPattern);
-  assert.match(fixture.sourceRuntime.parent, commitPattern);
+  assert.ok(
+    Array.isArray(fixture.sourceRuntime.parents) && [1, 2].includes(fixture.sourceRuntime.parents.length),
+    `${fixturePath} must record the reviewed runtime commit's one or two parents`,
+  );
+  for (const commit of fixture.sourceRuntime.parents) assert.match(commit, commitPattern);
   assert.match(fixture.mergedRuntime.commit, commitPattern);
   assert.deepEqual(
     fixture.mergedRuntime.parents.filter((commit) => commit === fixture.sourceRuntime.commit),
@@ -9762,7 +9790,8 @@ const applyOutputContract = {
   batchId: 'nullableCountSchema',
   memberIds: 'z.array(z.number().int().min(1)).max(APPLY_EXECUTION_MAX_TARGET)',
   proposedWave: 'applyProposedWaveOutputSchema.optional()',
-  nextAction: "z.enum(['work_ready', 'use_active_target', 'advance_or_refresh', 'restart_after_reauthorization', 'access_review', 'complete', 'manual_review', 'capability_disabled'])",
+  // close-ai #3413/#3418: a plan refusal with no prepared work reports limit_reached.
+  nextAction: "z.enum(['work_ready', 'use_active_target', 'advance_or_refresh', 'restart_after_reauthorization', 'access_review', 'complete', 'manual_review', 'capability_disabled', 'limit_reached'])",
   noSubmit: 'z.literal(true)',
 };
 assert.deepEqual(
@@ -10223,7 +10252,8 @@ const progressOutputContract = {
     replay: z.boolean(),
   }).strict().optional()`,
   proposedWave: 'applyProposedWaveOutputSchema.optional()',
-  nextAction: "z.enum(['work_ready', 'access_review', 'advance_or_refresh', 'capability_disabled']).optional()",
+  // close-ai #3413/#3418: a plan refusal with no prepared work reports limit_reached.
+  nextAction: "z.enum(['work_ready', 'access_review', 'advance_or_refresh', 'capability_disabled', 'limit_reached']).optional()",
   noSubmit: 'z.literal(true)',
 };
 assert.deepEqual(

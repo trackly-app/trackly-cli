@@ -469,7 +469,7 @@ test('coordinated hosted provenance rejects a dirty reviewed-runtime checkout', 
   fs.writeFileSync(
     path.join(cliRoot, 'plugins', 'trackly', 'hosted-contract-fixture.json'),
     JSON.stringify({
-      sourceRuntime: { commit: sourceCommit, parent: '0'.repeat(40) },
+      sourceRuntime: { commit: sourceCommit, parents: ['0'.repeat(40)] },
       mergedRuntime: { commit: '1'.repeat(40), parents: [sourceCommit] },
       sourceSha256: {},
     }),

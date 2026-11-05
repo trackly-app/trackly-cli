@@ -2881,6 +2881,16 @@ test('standalone hosted verifier executes tool, schema, and handler snapshot wir
   assert.notEqual(sourceParentIndex, -1);
   ancestryDrift.mergedRuntime.parents[sourceParentIndex] = 'a'.repeat(40);
   assert.throws(verifyFixture(ancestryDrift), /must prove the reviewed runtime commit is a direct parent/);
+  for (const [parents, message] of [
+    [undefined, /must record the reviewed runtime commit's one or two parents/],
+    [[], /must record the reviewed runtime commit's one or two parents/],
+    [['a'.repeat(40), 'b'.repeat(40), 'c'.repeat(40)], /must record the reviewed runtime commit's one or two parents/],
+    [['not-a-commit'], /did not match the regular expression/],
+  ]) {
+    const parentDrift = structuredClone(originalFixture);
+    parentDrift.sourceRuntime.parents = parents;
+    assert.throws(verifyFixture(parentDrift), message);
+  }
   const staleCapture = structuredClone(originalFixture);
   staleCapture.capturedAt = new Date(
     Date.parse(staleCapture.mergedRuntime.committedAt) + (25 * 60 * 60 * 1000),

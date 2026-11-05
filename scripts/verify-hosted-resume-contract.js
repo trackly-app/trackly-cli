@@ -12,7 +12,7 @@ const HOSTED_RESUME_SECURITY_SOURCE_SHA256 = Object.freeze({
   'src/mcp/plugin-resume-router.ts': '3d927aa94a019c45fc302d5d148da99ee6a2045a72efb73ef34d022102ebac30',
   'src/mcp/plugin-resume-store.ts': '2cadf97d3e9211b6c88f1894312bc0a40a36bff887b68981431735aab33ee43c',
   'src/services/application-profile/plugin-resume-attachment.ts': '29e206e0439719418f33124d61630bf7feeca3204f664c645511849faa80f64c',
-  'src/index.ts': '0bbb96757a6f54cc682410c76a03a562b185a5b7f5309fcdde5e818eaed7ff34',
+  'src/index.ts': 'cc893666019860c9df1aa43b8bf0a33dc5f4a0cbb8c2b155745f9334a6a6311e',
 });
 
 function assertHostedResumeSecuritySourceSnapshots(
