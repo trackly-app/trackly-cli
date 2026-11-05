@@ -1386,7 +1386,8 @@ ${color('bold', 'Filter values:')}
   --role-types     corporate, frontline (comma-separated). corporate (the default) hides
                    store, warehouse, food service, driving, security, skilled trades and
                    care-aide jobs; frontline alone shows only those; corporate,frontline
-                   shows every role. Omitted uses your saved preference.
+                   shows every role. Omitted uses your saved preference. Your own
+                   saved, applied and dismissed lists are never filtered by role type.
   --remote         Flag (no value). Filters for remote jobs (equivalent to usStates=REMOTE).
   --status         new, applied_confirmed, check_later, not_interested, all
                    (filters by YOUR application pipeline state)

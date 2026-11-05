@@ -316,7 +316,7 @@ function createServer() {
         'Work arrangement filter, independent from geography and employment type. Values: remote, hybrid, in_person, unspecified. Multiple values use OR semantics.'
       ),
       roleTypes: z.array(z.enum(ROLE_TYPES)).min(1).max(2).optional().describe(
-        "Role type filter: corporate (default), frontline (store, warehouse, food service, driving, security, skilled trades, care aides), or both. Omitted uses the student's saved preference."
+        "Role type filter: corporate (default), frontline (store, warehouse, food service, driving, security, skilled trades, care aides), or both. Omitted uses the student's saved preference. Applies to status new and all; pipeline views (applied_confirmed, check_later, not_interested) are never filtered by role type."
       ),
       remote: z.boolean().optional().describe('Filter to global remote-only jobs (maps to usStates=REMOTE). Do not combine with region/locationFilter or geographic child arrays. For remote work within a region, use workArrangements=["remote"] with region instead.'),
       status: z.enum(STATUS_VALUES).optional().describe(
