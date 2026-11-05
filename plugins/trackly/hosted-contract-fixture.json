@@ -194,7 +194,7 @@
     "reviewIdentity": "d03432434c10bbfd0e53f51b2d475f0adf3ada88ac85c2c0534791be0bf03c10",
     "azureRateLimitOptions": "f3e081d25fd066e76c5c622873622909bd6121e86845e09dd99d4cdf0b47778a",
     "authRateLimit": "ce3e53c0c7b0e9df804fb027c061e27948aff5c5b9a1d022064ed7d0a92c11a5",
-    "applicationProfileService": "1fa343df32f36c269e4f60c0dde1b50ddfa301185c0b3ff20caf7fa67b423531"
+    "applicationProfileService": "2379bf8935b3741f4d82175b0582d80613e04100c37e4fcaf159c943b2b1edcb"
   },
   "hostedPluginLifecycle": {
     "readinessMissingProfileFields": "canonical_key_and_public_label_only",
