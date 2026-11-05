@@ -617,6 +617,12 @@ test('MCP WORK_ARRANGEMENTS matches the backend filter contract', () => {
     /qs\.set\(['"]workArrangements['"],\s*params\.workArrangements\.join\(['"],['"]\)\)/,
     'trackly_search_jobs must serialize workArrangements for the backend',
   );
+  assert.match(
+    SERVER_SRC,
+    /roleTypes:\s*z\.array\(z\.enum\(ROLE_TYPES\)\)\.min\(1\)\.max\(2\)/,
+    'trackly_search_jobs must expose a typed roleTypes array',
+  );
+  assert.deepEqual(extractArrayLiteral(SERVER_SRC, 'ROLE_TYPES'), ['corporate', 'frontline']);
 });
 
 test('MCP STATUS_VALUES exposes only canonical public pipeline states', () => {
@@ -1008,7 +1014,7 @@ test('search exposes established granular filters and sends each criterion witho
     jobFunctions: ['finance', 'partnerships'], region: ['us', 'canada'],
     usStates: ['CA', 'NY'], caProvinces: ['ON', 'BC', 'REMOTE'],
     internshipLevels: ['mba', 'graduate'], jobModality: 'all',
-    workArrangements: ['hybrid', 'unspecified'], favoriteCompaniesOnly: false,
+    workArrangements: ['hybrid', 'unspecified'], roleTypes: ['corporate', 'frontline'], favoriteCompaniesOnly: false,
     postedWithinDays: 7, salaryFloorUsd: 120000, since: '2026-10-18T12:00:00-07:00',
     sponsorship: 'exclude_no', sort: 'newest', limit: 50, offset: 0, keywords: 'analyst',
   };
@@ -1019,7 +1025,7 @@ test('search exposes established granular filters and sends each criterion witho
   assert.deepEqual(Object.fromEntries(requests[0].searchParams), {
     jobFunction: 'finance,partnerships', region: 'us,canada', usStates: 'CA,NY',
     caProvinces: 'ON,BC,REMOTE', internshipLevels: 'mba,graduate', jobModality: 'all',
-    workArrangements: 'hybrid,unspecified', favoriteCompaniesOnly: 'false',
+    workArrangements: 'hybrid,unspecified', roleTypes: 'corporate,frontline', favoriteCompaniesOnly: 'false',
     postedWithinDays: '7', salaryFloorUsd: '120000', since: criteria.since,
     sponsorship: 'exclude_no', status: 'new', sort: 'newest', limit: '50', offset: '0', search: 'analyst',
   });
@@ -1028,6 +1034,7 @@ test('search exposes established granular filters and sends each criterion witho
   assert.equal(requests[1].searchParams.get('salaryFloorUsd'), '0');
   assert.equal(requests[1].searchParams.get('postedWithinDays'), '0', 'callers can disable saved posting windows');
   assert.notEqual((await call({})).isError, true);
+  assert.equal(requests[2].searchParams.get('roleTypes'), null, 'omitted roleTypes defers to the saved preference');
   assert.equal(requests[2].searchParams.get('jobFunction'), extractArrayLiteral(SERVER_SRC, 'JOB_FUNCTIONS').join(','));
   assert.equal(requests[2].searchParams.get('limit'), '20', 'agent searches default to a concise page');
   assert.notEqual((await call({ limit: 100 })).isError, true, 'the full public API page size is available');
@@ -1037,6 +1044,7 @@ test('search exposes established granular filters and sends each criterion witho
   const invalidCases = [
     { unsupportedFocus: 'private-value' }, { jobFunctions: [] }, { usStates: ['XX'] },
     { caProvinces: ['CA'] }, { internshipLevels: ['phd'] }, { postedWithinDays: 2 },
+    { roleTypes: [] }, { roleTypes: ['retail'] }, { roleTypes: ['corporate', 'frontline', 'corporate'] },
     { salaryFloorUsd: -1 }, { limit: 0 }, { limit: 1.5 }, { limit: 101 }, { offset: -1 }, { offset: 0.5 },
     { since: 'yesterday' }, { function: 'product', jobFunctions: ['data'] },
     { region: ['us'], locationFilter: 'europe' }, { remote: true, usStates: ['CA'] },

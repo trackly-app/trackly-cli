@@ -82,6 +82,20 @@ test('jobs maps every filter flag to the right query param', async (t) => {
   assert.equal(q.get('search'), 'fintech');
 });
 
+test('jobs maps --role-types to the roleTypes query parameter', async (t) => {
+  const { requests, result } = await runAgainstMock(t, ['jobs', '--role-types', 'corporate,frontline,corporate'], () => ({ status: 200, json: { jobs: [] } }));
+  assert.equal(result.code, 0, result.stderr);
+  const url = new URL(requests[0].url, 'http://localhost');
+  assert.equal(url.searchParams.get('roleTypes'), 'corporate,frontline');
+});
+
+test('jobs rejects invalid role-types values before making a request', async (t) => {
+  const { requests, result } = await runAgainstMock(t, ['jobs', '--role-types', 'retail']);
+  assert.notEqual(result.code, 0);
+  assert.equal(requests.length, 0);
+  assert.match(result.stderr, /Invalid --role-types value "retail"/);
+});
+
 test('jobs rejects invalid work-arrangement values before making a request', async (t) => {
   const { requests, result } = await runAgainstMock(t, ['jobs', '--work-arrangement', 'onsite']);
   assert.notEqual(result.code, 0);

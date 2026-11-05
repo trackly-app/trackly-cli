@@ -37,6 +37,7 @@ const VALUE_FLAGS = new Set([
   'notes',
   'offset',
   'region',
+  'role-types',
   'search',
   'sort',
   'sponsorship',
@@ -63,7 +64,7 @@ const COMMAND_FLAGS = {
   login: [],
   logout: [],
   whoami: [],
-  jobs: ['function', 'company', 'region', 'job-type', 'work-arrangement', 'remote', 'status', 'sort', 'sponsorship', 'limit', 'offset', 'keywords', 'location', 'modality'],
+  jobs: ['function', 'company', 'region', 'job-type', 'work-arrangement', 'role-types', 'remote', 'status', 'sort', 'sponsorship', 'limit', 'offset', 'keywords', 'location', 'modality'],
   job: [],
   companies: ['limit', 'offset'],
   search: [],
@@ -95,6 +96,8 @@ const STATUS_LABELS = {
   dismissed: 'dismissed',
 };
 const WORK_ARRANGEMENT_VALUES = ['remote', 'hybrid', 'in_person', 'unspecified'];
+// Role type filter. Mirrors the MCP ROLE_TYPES enum; omitted uses the saved preference.
+const ROLE_TYPE_VALUES = ['corporate', 'frontline'];
 // Discovery-only visa sponsorship filter (close-ai PR #1578). Mirrors the
 // hosted MCP enum exactly. Absent or 'all' applies no filter.
 const SPONSORSHIP_VALUES = ['all', 'exclude_no', 'only_yes'];
@@ -334,7 +337,7 @@ function hasJobListFilters(args) {
   // (which then raises the migration error) instead of cmdJob(42) silently ignoring
   // the filter. See PR #13 Cursor Bugbot finding.
   const deprecated = Object.keys(DEPRECATED_JOB_FLAGS);
-  const active = ['function', 'company', 'keywords', 'limit', 'region', 'job-type', 'work-arrangement', 'remote', 'offset', 'sort', 'sponsorship', 'status'];
+  const active = ['function', 'company', 'keywords', 'limit', 'region', 'job-type', 'work-arrangement', 'role-types', 'remote', 'offset', 'sort', 'sponsorship', 'status'];
   return [...active, ...deprecated].some((key) => args[key] !== undefined);
 }
 
@@ -608,6 +611,18 @@ async function cmdJobs(args) {
     }
   }
 
+  let roleTypes;
+  if (args['role-types'] !== undefined) {
+    if (typeof args['role-types'] !== 'string' || !args['role-types'].trim()) {
+      failNow('--role-types requires a comma-separated value: corporate, frontline.');
+    }
+    roleTypes = [...new Set(args['role-types'].split(',').map((value) => value.trim()))];
+    const invalid = roleTypes.filter((value) => !ROLE_TYPE_VALUES.includes(value));
+    if (invalid.length > 0) {
+      failNow(`Invalid --role-types value "${invalid.join(',')}". Use: ${ROLE_TYPE_VALUES.join(', ')}.`);
+    }
+  }
+
   let sponsorship;
   if (args.sponsorship !== undefined) {
     if (typeof args.sponsorship !== 'string' || !args.sponsorship.trim()) {
@@ -625,6 +640,7 @@ async function cmdJobs(args) {
   if (args.region) params.set('locationFilter', args.region);
   if (args['job-type']) params.set('jobModality', args['job-type']);
   if (workArrangements) params.set('workArrangements', workArrangements.join(','));
+  if (roleTypes) params.set('roleTypes', roleTypes.join(','));
   if (args.remote) params.set('usStates', 'REMOTE');
   if (args.status) params.set('status', args.status);
   if (args.sort) params.set('sort', args.sort);
@@ -1315,7 +1331,7 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'login')}                Authenticate via Google OAuth
   ${color('cyan', 'logout')}               Clear credentials
   ${color('cyan', 'whoami')}               Show current user
-  ${color('cyan', 'jobs')}                 List jobs (--function, --company <id>, --region <tag>, --job-type <type>, --work-arrangement <values>, --remote, --status, --sort, --sponsorship, --limit, --offset, --keywords)
+  ${color('cyan', 'jobs')}                 List jobs (--function, --company <id>, --region <tag>, --job-type <type>, --work-arrangement <values>, --role-types <values>, --remote, --status, --sort, --sponsorship, --limit, --offset, --keywords)
   ${color('cyan', 'job <id>')}             Get full job detail
   ${color('cyan', 'jobs <id>')}            Alias for job <id>
   ${color('cyan', 'companies')}            List companies
@@ -1367,6 +1383,11 @@ ${color('bold', 'Filter values:')}
   --job-type       full_time, internship, all  (employment type, not work-location)
   --work-arrangement
                    remote, hybrid, in_person, unspecified (comma-separated)
+  --role-types     corporate, frontline (comma-separated). corporate (the default) hides
+                   store, warehouse, food service, driving, security, skilled trades and
+                   care-aide jobs; frontline alone shows only those; corporate,frontline
+                   shows every role. Omitted uses your saved preference. Your own
+                   saved, applied and dismissed lists are never filtered by role type.
   --remote         Flag (no value). Filters for remote jobs (equivalent to usStates=REMOTE).
   --status         new, applied_confirmed, check_later, not_interested, all
                    (filters by YOUR application pipeline state)
