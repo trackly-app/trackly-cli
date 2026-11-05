@@ -164,6 +164,7 @@ test('COMMAND_FLAGS keeps deprecated jobs flags so they reach the migration mess
   assert.ok(cli.COMMAND_FLAGS.jobs.includes('modality'));
   assert.ok(cli.COMMAND_FLAGS.jobs.includes('region'));
   assert.ok(cli.COMMAND_FLAGS.jobs.includes('work-arrangement'));
+  assert.ok(cli.COMMAND_FLAGS.jobs.includes('role-types'));
   assert.deepEqual(cli.COMMAND_FLAGS.job, [], 'job detail accepts no filter flags');
 });
 

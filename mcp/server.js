@@ -53,6 +53,10 @@ const JOB_MODALITIES = ['full_time', 'internship', 'all'];
 // Independent from geography and employment type. Matches the backend's
 // workArrangements query contract and job_postings constraint.
 const WORK_ARRANGEMENTS = ['remote', 'hybrid', 'in_person', 'unspecified'];
+// Role type filter (backend role-types contract, 2026-11-04). corporate is the
+// default; frontline is store, warehouse, food service, driving, security,
+// skilled trades and care aides. Omitted uses the student's saved preference.
+const ROLE_TYPES = ['corporate', 'frontline'];
 const US_STATES = [
   'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DC', 'DE', 'FL', 'GA', 'HI', 'ID',
   'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO',
@@ -311,6 +315,9 @@ function createServer() {
       workArrangements: z.array(z.enum(WORK_ARRANGEMENTS)).min(1).max(4).optional().describe(
         'Work arrangement filter, independent from geography and employment type. Values: remote, hybrid, in_person, unspecified. Multiple values use OR semantics.'
       ),
+      roleTypes: z.array(z.enum(ROLE_TYPES)).min(1).max(2).optional().describe(
+        "Role type filter: corporate (default), frontline (store, warehouse, food service, driving, security, skilled trades, care aides), or both. Omitted uses the student's saved preference."
+      ),
       remote: z.boolean().optional().describe('Filter to global remote-only jobs (maps to usStates=REMOTE). Do not combine with region/locationFilter or geographic child arrays. For remote work within a region, use workArrangements=["remote"] with region instead.'),
       status: z.enum(STATUS_VALUES).optional().describe(
         'Filter by YOUR application pipeline state. Not a generic job-posting status. Values: ' + STATUS_VALUES.join(', ')
@@ -365,6 +372,7 @@ function createServer() {
       }
       if (params.jobModality !== undefined) qs.set('jobModality', params.jobModality);
       if (params.workArrangements !== undefined) qs.set('workArrangements', params.workArrangements.join(','));
+      if (params.roleTypes !== undefined) qs.set('roleTypes', [...new Set(params.roleTypes)].join(','));
       if (params.remote === true) qs.set('usStates', 'REMOTE');
       if (params.status !== undefined) qs.set('status', params.status);
       if (params.sort !== undefined) qs.set('sort', params.sort);

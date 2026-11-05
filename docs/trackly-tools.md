@@ -88,6 +88,7 @@ API-key creation attempts.
     - an array of region tags for multi-region (e.g. `["europe", "canada"]`). The array form excludes `us` — combining `us` with other tags in an array causes the backend to silently drop the others. To get "not US" use the scalar `non_us` alone.
   - `jobModality`: `full_time`, `internship`, `all` — employment type, NOT work arrangement.
   - `workArrangements`: one or more of `remote`, `hybrid`, `in_person`, `unspecified`. This is an independent axis and combines with region, employment type, and function filters.
+  - `roleTypes`: one or both of `corporate`, `frontline`. `corporate` (the default) hides store, warehouse, food service, driving, security, skilled trades and care-aide jobs; `frontline` shows only those; both show every role. Omitted uses the student's saved preference.
   - `remote` (boolean): filter to remote jobs only. Maps to `usStates=REMOTE`. Do not combine `remote=true` with geographic child arrays; use their `REMOTE` token for alternatives. Do not combine a parent region with `remote=true` or only `REMOTE` children: that backend form overrides the parent. Use `workArrangements:["remote"]` plus your region for remote work within that geography.
   - `status`: your application pipeline state. Values: `new`, `applied_confirmed`, `check_later`, `not_interested`, `all`.
   - `sort`: `newest` (default) or `match` (highest match score first; requires a resume on file). Backend rejects the deprecated values `oldest` and `company` with HTTP 400.
