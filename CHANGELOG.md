@@ -1,9 +1,5 @@
 # Changelog
 
-## [0.20.1] - 2026-10-10
-
-- Ship Trackly Apply 4.9.1 and plugin 1.1.1: resolve profile-lookup validators from the loaded skill directory, require explicit work mode with revision-zero support only for fixed inspection, and reject empty fixed-inspection selections. Behavioral regressions cover both native and plugin lookup gates and preserve the exhausted accessible-execution exception.
-
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -96,6 +92,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make the advertised 20-result MCP default explicit, allow the API's full 100-result page, and validate integer pagination. Protocol telemetry is covered through real initialization; no client model identifier is inferred.
 
 The industry/literal-discovery candidate remains unreleased until its backend capability is available. Hosted MCP and client installations follow separate update and verification lifecycles.
+
+## [0.20.1] - 2026-10-10
+
+- Ship Trackly Apply 4.9.1 and plugin 1.1.1: resolve profile-lookup validators from the loaded skill directory, require explicit work mode with revision-zero support only for fixed inspection, and reject empty fixed-inspection selections. Behavioral regressions cover both native and plugin lookup gates and preserve the exhausted accessible-execution exception.
 
 ## [0.20.0] - 2026-10-10
 
