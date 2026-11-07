@@ -294,6 +294,21 @@ test('auto-apply preserves JSON and non-JSON 404 diagnostics without raw bodies'
   }
 });
 
+test('auto-apply 404 diagnostics strip terminal controls', async (t) => {
+  for (const args of [['apply', '42'], ['apply', '--status']]) {
+    for (const env of [HUMAN_ENV, {}]) {
+      const { result } = await runAgainstMock(t, args,
+        () => ({ status: 404, json: { error: 'Not found\u001b[31m\u0007\r\n\u007f' } }), env);
+      assert.equal(result.code, 1);
+      const payload = env === HUMAN_ENV ? null : JSON.parse(result.stdout);
+      const text = payload ? payload.message : result.stderr.trim();
+      assert.match(text, /API diagnostic: Not found\[31m$/);
+      assert.doesNotMatch(text, /[\u0000-\u001f\u007f]/);
+      if (payload) assert.equal(payload.diagnostic, 'Not found[31m');
+    }
+  }
+});
+
 test('jobs maps every filter flag to the right query param', async (t) => {
   const { requests, result } = await runAgainstMock(
     t,
