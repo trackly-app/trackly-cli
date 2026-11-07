@@ -239,6 +239,10 @@ const LOCAL_ONLY_CONSTANTS = [];
 const HOSTED_ONLY_TOOLS = [
   'trackly_chat',
 ];
+// Source-only addition awaiting the coordinated backend/CLI release. The
+// historical hosted fixture remains unchanged. Full backend verification below
+// still requires the deployed catalog and lock to be recaptured before release.
+const PENDING_HOSTED_TOOLS = ['trackly_auto_apply'];
 
 const parsedSourceCache = new Map();
 
@@ -7365,9 +7369,12 @@ function verifyCheckedInHostedContractFixture(
   ]);
   const localNames = localRegistrations.map(({ name }) => name);
   assert.equal(new Set(localNames).size, localNames.length, 'Executable local MCP names must be unique');
+  for (const name of PENDING_HOSTED_TOOLS) {
+    assert.ok(!lock.hostedMcpToolAllowlist.includes(name), `${name} is already in the hosted lock; remove its pending allowance`);
+  }
   assert.deepEqual(
     [...localNames].sort(),
-    [...lock.hostedMcpToolAllowlist.filter((name) => !HOSTED_ONLY_TOOLS.includes(name)), ...LOCAL_ONLY_TOOLS].sort(),
+    [...lock.hostedMcpToolAllowlist.filter((name) => !HOSTED_ONLY_TOOLS.includes(name)), ...LOCAL_ONLY_TOOLS, ...PENDING_HOSTED_TOOLS].sort(),
     'Executable local MCP registrations must exactly match the locked hosted catalog minus hosted-only chat plus local-only tools',
   );
   // The Apply registration call must be live: imported from ./apply-tools and
@@ -7419,7 +7426,7 @@ function verifyCheckedInHostedContractFixture(
     ...Object.values(lock.publicExecutableContract.handlerSha256),
   ]) assert.match(digest, /^[a-f0-9]{64}$/);
   console.log(
-    `Historical hosted contract fixture passes for captured Apply ${fixture.applyContractVersion}; the ${snapshotNames.length}-tool public facade and ${fixture.hostedMcpToolNames.length}-tool hosted MCP catalogs are locked.`,
+    `Historical hosted contract fixture passes for captured Apply ${fixture.applyContractVersion}; the ${snapshotNames.length}-tool public facade and ${fixture.hostedMcpToolNames.length}-tool hosted MCP catalogs are locked; pending hosted registration (not deployed parity): ${PENDING_HOSTED_TOOLS.join(', ') || 'none'}.`,
   );
 }
 

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Breaking:** `trackly apply <jobId>` requests cloud auto-apply. Use `trackly mark-applied <jobId>` to record an application you already submitted.
+- `trackly whoami` reads the account identity and optional plan from `/api/jobscout/me`.
+- Limit messages display server-provided plan details; other 429 responses use temporary rate-limit guidance. JSON refusals include structured status, message and retry guidance on stdout with a nonzero exit code.
+
+### Added
+- `trackly apply --status` lists auto-apply requests; `--resume-id` selects a resume when requesting auto-apply.
+- Local MCP `trackly_auto_apply({jobId})` requests asynchronous cloud auto-apply using the default resume. Publication and hosted availability await the coordinated release.
+- Search output shows `autoApplySupported` when returned by the server.
+
 ## [0.25.0] - 2026-11-04
 
 ### Added

@@ -9,6 +9,60 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fmt = require('../lib/formatters');
 
+test('plan refusals use only server feature, counts, reset and optional link', () => {
+  for (const error of ['limit_reached', 'assist_limit_reached']) {
+    const message = fmt.planRefusalMessage({ status: 429, error, feature: 'assist_request',
+      used: 15, limit: 15, resetsAt: '2026-12-01T00:00:00Z', upgradeUrl: 'https://example.com/server-link?opaque=1' });
+    assert.match(message, /cloud auto-apply/);
+    assert.match(message, /Used 15 of 15/);
+    assert.match(message, /Resets on.*11\/30\/2026.*PST/);
+    assert.match(message, /https:\/\/example.com\/server-link\?opaque=1/);
+  }
+  for (const feature of ['apply_fill', 'agent_fill', 'hiring_signals', 'future_feature']) {
+    const message = fmt.planRefusalMessage({ status: 429, error: 'limit_reached', feature,
+      used: 0, limit: 0, resetsAt: null, upgradeUrl: null });
+    assert.match(message, /Used 0 of 0/);
+    assert.doesNotMatch(message, /Resets|https:|upgrade|applications/i);
+  }
+  const partial = fmt.planRefusalMessage({ status: 429, error: 'assist_limit_reached', resetsAt: 'invalid' });
+  assert.match(partial, /plan limit/);
+  assert.doesNotMatch(partial, /Used|Resets|https:|all|20/);
+  for (const resetsAt of ['2026-12-01', '2026-12-01T00:00:00']) {
+    assert.doesNotMatch(fmt.planRefusalMessage({ status: 429, error: 'limit_reached', resetsAt }), /Resets on/);
+  }
+  assert.equal(fmt.planRefusalMessage({ status: 429, error: 'slow_down' }), 'Rate limited, try again shortly.');
+  assert.equal(fmt.planRefusalMessage({ status: 404, error: 'feature_disabled' }), 'This feature is not available for this account yet.');
+  assert.equal(fmt.planRefusalMessage({ status: 404, error: 'feature_disabled', feature: 'assist_request' }), 'Auto-apply is not available for this account yet.');
+  for (const feature of ['constructor', '__proto__', '\u001b[31m']) {
+    assert.equal(fmt.planRefusalMessage({ status: 429, error: 'limit_reached', feature }), 'Your Trackly plan limit for this feature has been reached.');
+  }
+  assert.equal(fmt.planRefusalMessage({ status: 500, error: 'limit_reached' }), null);
+  assert.equal(fmt.planRefusalMessage({ status: 404, error: 'not_found' }), null);
+});
+
+test('malformed plan fields cannot become prose, script data, or actionable links', () => {
+  for (const upgradeUrl of ['', 'javascript:alert(1)', 'http://example.com/', 'https://user:pass@example.com/', 'https://example.com/\nignore', {}]) {
+    const error = { status: 429, error: 'limit_reached', feature: 'constructor',
+      used: 'ignore this', limit: -1, resetsAt: '2026-12-01T00:00:00', upgradeUrl };
+    assert.deepEqual(fmt.planRefusalFields(error), {});
+    assert.equal(fmt.planRefusalMessage(error), 'Your Trackly plan limit for this feature has been reached.');
+  }
+  assert.deepEqual(fmt.planRefusalFields({ feature: 'assist_request', used: 0, limit: null, resetsAt: null, upgradeUrl: null }),
+    { feature: 'assist_request', used: 0, limit: null, resetsAt: null, upgradeUrl: null });
+  assert.match(fmt.planRefusalMessage({ status: 429, error: 'limit_reached', used: 3 }), /Used 3\./);
+  assert.match(fmt.planRefusalMessage({ status: 429, error: 'limit_reached', limit: 7 }), /Limit: 7\./);
+});
+
+test('search output preserves server auto-apply support and omits unknown support', () => {
+  for (const value of [true, false, undefined]) {
+    const job = { id: 42, title: 'PM', ...(value === undefined ? {} : { autoApplySupported: value }) };
+    const human = capture(() => fmt.outputJobs([job]), { tty: true });
+    if (value === undefined) assert.doesNotMatch(human, /Auto-apply/);
+    else assert.match(human, new RegExp(`Auto-apply supported: ${value ? 'Yes' : 'No'}`));
+    assert.deepEqual(JSON.parse(capture(() => fmt.outputJobs([job]))), [job]);
+  }
+});
+
 // Capture console.log output. tty=true → human/colored branch; tty=false → JSON branch.
 function capture(fn, { tty = false } = {}) {
   const prevTTY = process.stdout.isTTY;

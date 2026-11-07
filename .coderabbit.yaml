@@ -17,7 +17,7 @@ reviews:
       instructions: |
         MCP (Model Context Protocol) server for AI tool integration.
         Tools expose job search, detail, and action endpoints.
-        Rate limit: 20 natural language queries per day (429 response).
+        No daily search cap. Show server plan-limit details on 429; otherwise report a temporary rate limit.
         User-Agent header: trackly-mcp/{version}.
         Error handling: 401 auth errors, 429 rate limits wrapped in JSON text responses.
         Tool parameter mapping: function→jobFunction, keywords→search.
