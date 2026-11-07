@@ -239,6 +239,10 @@ const LOCAL_ONLY_CONSTANTS = [];
 const HOSTED_ONLY_TOOLS = [
   'trackly_chat',
 ];
+// Source-only addition awaiting the coordinated backend/CLI release. The
+// historical hosted fixture remains unchanged. Full backend verification below
+// still requires the deployed catalog and lock to be recaptured before release.
+const PENDING_HOSTED_TOOLS = ['trackly_auto_apply'];
 
 const parsedSourceCache = new Map();
 
@@ -7367,7 +7371,7 @@ function verifyCheckedInHostedContractFixture(
   assert.equal(new Set(localNames).size, localNames.length, 'Executable local MCP names must be unique');
   assert.deepEqual(
     [...localNames].sort(),
-    [...lock.hostedMcpToolAllowlist.filter((name) => !HOSTED_ONLY_TOOLS.includes(name)), ...LOCAL_ONLY_TOOLS].sort(),
+    [...lock.hostedMcpToolAllowlist.filter((name) => !HOSTED_ONLY_TOOLS.includes(name)), ...LOCAL_ONLY_TOOLS, ...PENDING_HOSTED_TOOLS].sort(),
     'Executable local MCP registrations must exactly match the locked hosted catalog minus hosted-only chat plus local-only tools',
   );
   // The Apply registration call must be live: imported from ./apply-tools and

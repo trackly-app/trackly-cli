@@ -10,6 +10,7 @@ const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 const { registerApplyTools } = require('./apply-tools');
 const { configureMcpAnalytics, shutdownMcpAnalytics } = require('./analytics');
 const { normalizeJobResult, unavailableJobFromError, jobFailureGuidance } = require('../lib/job-result');
+const { planRefusalMessage } = require('../lib/formatters');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
 const MCP_SHUTDOWN_TIMEOUT_MS = 2_000;
@@ -175,8 +176,16 @@ function createErrorResult(error, fallbackMessage, extra = {}) {
     payload.retryable = true;
   }
 
-  if (error?.status === 429 && !payload.hint) {
-    payload.hint = 'Daily limit reached (20 natural language queries per day).';
+  const refusal = planRefusalMessage(error);
+  if (refusal) {
+    payload.message = refusal;
+    payload.hint = refusal;
+    payload.retryable = error.status === 429
+      && !['assist_limit_reached', 'limit_reached'].includes(error.error);
+    if (!payload.retryable) payload.code = error.error;
+    for (const key of ['feature', 'limit', 'used', 'resetsAt', 'upgradeUrl']) {
+      if (Object.prototype.hasOwnProperty.call(error, key)) payload[key] = error[key];
+    }
   }
 
   return {
@@ -235,15 +244,16 @@ function wrapTool(handler, fallbackMessage, jobIdKey) {
       if (!jobIdKey) return result;
       const payload = JSON.parse(result.content[0].text);
       const guidance = jobFailureGuidance(error);
-      if (payload.code === 'maintenance_mode' || createTracklyAccessError(error, error?.status)) {
-        guidance.category = payload.code === 'maintenance_mode' ? 'maintenance' : 'access';
+      if (payload.code === 'maintenance_mode' || createTracklyAccessError(error, error?.status)
+        || (error?.status === 429 && payload.retryable === false)) {
+        guidance.category = payload.code === 'maintenance_mode' ? 'maintenance'
+          : error?.status === 429 ? 'rate_limit' : 'access';
         guidance.error = payload.error;
         guidance.retryable = payload.retryable;
         guidance.maxRetries = payload.retryable ? 1 : 0;
         if (!payload.retryable) delete guidance.retryAfterSeconds;
         guidance.nextStep = { message: payload.guidance || payload.message || payload.error };
       }
-      if (error?.status === 429) delete payload.hint;
       return { ...result, ...successResult({ ...payload, ...guidance }) };
     };
     try {
@@ -393,6 +403,29 @@ function createServer() {
     }, 'Failed to search jobs')
   );
 
+  server.registerTool(
+    'trackly_auto_apply',
+    {
+      description: 'Request cloud auto-apply for one Trackly job at a US Greenhouse, Lever, or Ashby posting. Uses the account default resume. Call only when the user asks Trackly to apply and notify them. Returns the request and its status.',
+      inputSchema: z.object({
+        jobId: z.number().int().positive().max(2147483647).describe('Trackly job ID to apply to'),
+      }).strict(),
+    },
+    wrapTool(async ({ jobId }) => {
+      try {
+        const result = await apiRequest('POST', '/api/jobscout/apply/assist-requests', {
+          jobId, acknowledged: true,
+        }, false, false, MCP_USER_AGENT);
+        return { ...result, message: 'Trackly will apply and notify you.' };
+      } catch (error) {
+        if (error?.status === 404) {
+          throw { status: 404, error: 'feature_disabled', feature: 'assist_request' };
+        }
+        throw error;
+      }
+    }, 'Failed to request auto-apply'),
+  );
+
   server.tool(
     'trackly_get_job',
     'Get full details for a Trackly job ID returned by search or your saved queue. Missing or closed postings return availability=unavailable with retryable=false and a next step; do not retry that ID. Failures include a category and retry guidance.',
@@ -521,7 +554,7 @@ function createServer() {
 
   server.tool(
     'trackly_ask',
-    'Natural language job search. Describe what you are looking for and the AI parses it into structured filters. Limited to 20 queries per day.',
+    'Natural language job search. Describe what you are looking for and the AI parses it into structured filters.',
     {
       query: z.string().max(500).describe('Natural language search query, e.g. "PM jobs at fintech companies in SF"'),
     },

@@ -112,7 +112,8 @@ The local package and hosted service have separate release lifecycles. Refresh t
   - The tool checks `experienceFilterV2Available` immediately before writing and refuses without a PUT unless it is exactly `true`.
   - When server-side enforcement is active, a job remains visible when its stated minimum is less than or equal to that role's limit. Jobs with no stated minimum remain visible.
 - **trackly_update_status** — Mark a job as applied, saved, or dismissed
-- **trackly_ask** — Natural language job search (20/day limit)
+- **trackly_auto_apply** — Request cloud auto-apply for one US Greenhouse, Lever, or Ashby job using the account default resume. Arguments: `{jobId: number}` (positive integer, at most 2147483647). Call only when the user asks Trackly to apply and notify them. Returns the request and status. The server decides availability and limits; 404 means unavailable for this account, and 429 carries plan usage/reset details and an optional server-provided upgrade URL. Pending the coordinated hosted release.
+- **trackly_ask** — Natural language job search
 - **trackly_get_job_brief** — Get network brief for a positive numeric Trackly job ID (company signal, top contact, actions).
 
 Both job tools return JSON text and matching `structuredContent`. A recognized missing or removed posting, or an explicitly inactive posting, returns `availability: "unavailable"`, a reason, `retryable: false`, and a `nextStep` directing the agent to search for current openings. This is a normal tool result. Closed briefs retain their allowed stored company and role context, but omit stale recommended motions and application actions. A missing availability flag means unknown, not closed; detecting closed briefs requires a backend that supplies that flag.

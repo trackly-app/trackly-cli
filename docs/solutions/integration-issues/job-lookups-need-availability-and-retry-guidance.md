@@ -42,3 +42,19 @@ Carry Retry-After metadata through the HTTP client without adding retries. Parse
 only positive safe integer seconds or a standard HTTP date, choose the longer
 body/header delay, and preserve it when applying transient access guidance. Test
 these failure branches; healthy responses never exercise them.
+
+2026-11-07: HTTP 429 alone does not identify a plan refusal. Recognize the
+server's `limit_reached` and `assist_limit_reached` codes, then display its
+feature, used/limit counts, valid reset time and optional opaque upgrade URL.
+Null or missing reset and link fields authorize no prediction or generated URL.
+Other 429s get temporary rate-limit guidance; never attach a fabricated daily
+search allowance. Keep plan refusals non-retryable through the job-detail
+wrapper too: generic read-failure guidance must not overwrite that decision.
+Exercise both CLI output modes and actual MCP/HTTP calls, asserting request
+counts, optional-field preservation and the final retry guidance.
+
+A source-only tool addition can precede the coordinated hosted release. Keep
+the historical hosted fixture unchanged, name only the pending addition in
+fixture-mode registration checks, and retain the full deployed-backend parity
+gate for release. Fixture success does not prove that the new hosted tool is
+deployed or that a new package can be published.

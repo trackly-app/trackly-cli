@@ -64,6 +64,105 @@ function query(requests) {
   return u.searchParams;
 }
 
+const HUMAN_ENV = { NODE_OPTIONS: `--require=${path.join(__dirname, 'force-tty.js')}`, NO_COLOR: '1' };
+
+test('apply requests cloud auto-apply with acknowledgement and optional resume', async (t) => {
+  for (const resumeId of [undefined, 21]) {
+    const args = ['apply', '42', ...(resumeId ? ['--resume-id', String(resumeId)] : [])];
+    const response = { request: { id: 'request-1', jobId: 42, status: 'queued' } };
+    for (const env of [HUMAN_ENV, {}]) {
+      const { result, requests } = await runAgainstMock(t, args, () => ({ status: 201, json: response }), env);
+      assert.equal(result.code, 0, result.stderr);
+      assert.equal(result.stderr, '');
+      assert.equal(requests.length, 1);
+      assert.equal(requests[0].method, 'POST');
+      assert.equal(requests[0].url, '/api/jobscout/apply/assist-requests');
+      assert.deepEqual(JSON.parse(requests[0].body), { jobId: 42, acknowledged: true, ...(resumeId ? { resumeId } : {}) });
+      if (env === HUMAN_ENV) {
+        assert.match(result.stdout, /request-1: queued/);
+        assert.match(result.stdout, /Trackly will apply and notify you/);
+      } else assert.deepEqual(JSON.parse(result.stdout), { ...response, message: 'Trackly will apply and notify you.' });
+    }
+  }
+});
+
+test('apply --status lists requests without enqueueing', async (t) => {
+  for (const requests of [[], [{ id: 'request-1', jobId: 42, status: 'submitted', applicantMessage: 'Applied successfully.' }]]) {
+    for (const env of [HUMAN_ENV, {}]) {
+      const run = await runAgainstMock(t, ['apply', '--status'], () => ({ json: { requests } }), env);
+      assert.equal(run.result.code, 0, run.result.stderr);
+      assert.equal(run.requests.length, 1);
+      assert.equal(run.requests[0].method, 'GET');
+      assert.equal(run.requests[0].url, '/api/jobscout/apply/assist-requests');
+      assert.equal(run.requests[0].body, '');
+      if (env === HUMAN_ENV) assert.match(run.result.stdout, requests.length ? /Job 42: submitted.*\n.*Applied successfully/ : /No auto-apply requests/);
+      else assert.deepEqual(JSON.parse(run.result.stdout), { requests });
+    }
+  }
+});
+
+test('apply validates IDs and status combinations before HTTP', async (t) => {
+  for (const args of [[], ['0'], ['-1'], ['1.5'], ['2147483648'], ['abc'], ['42', '43'],
+    ['42', '--resume-id'], ['42', '--resume-id', '0'], ['42', '--resume-id', '2147483648'],
+    ['42', '--status'], ['--status=true'], ['--status', '--resume-id', '21']]) {
+    const { result, requests } = await runAgainstMock(t, ['apply', ...args]);
+    assert.equal(result.code, 1, args.join(' '));
+    assert.equal(requests.length, 0);
+  }
+});
+
+test('whoami shows only a returned plan and uses the me endpoint', async (t) => {
+  for (const tier of ['scout', 'apply', 'ultra', undefined]) {
+    const user = { id: 7, name: 'Test User', email: 'test@example.com', ...(tier ? { plan: {
+      tier, source: tier === 'scout' ? 'free' : 'paid', studentEligible: true, enforced: true, subscription: null,
+    } } : {}) };
+    for (const env of [HUMAN_ENV, {}]) {
+      const { result, requests } = await runAgainstMock(t, ['whoami'], () => ({ json: { success: true, user } }), env);
+      assert.equal(result.code, 0, result.stderr);
+      assert.equal(requests[0].url, '/api/jobscout/me');
+      if (env !== HUMAN_ENV) assert.deepEqual(JSON.parse(result.stdout), user);
+      else if (tier) assert.match(result.stdout, new RegExp(`Plan: ${tier}`));
+      else assert.doesNotMatch(result.stdout, /Plan:/);
+    }
+  }
+});
+
+test('CLI refusals show server plan fields or a temporary rate limit on every command', async (t) => {
+  for (const args of [['ask', 'PM jobs'], ['jobs'], ['apply', '42']]) {
+    for (const error of ['limit_reached', 'assist_limit_reached', 'slow_down']) {
+      const body = error === 'slow_down' ? { error } : { success: false, error, feature: 'agent_fill',
+        used: 100, limit: 100, resetsAt: '2026-12-01T00:00:00Z', upgradeUrl: 'https://example.com/opaque-upgrade' };
+      for (const env of [HUMAN_ENV, {}]) {
+        const { result, requests } = await runAgainstMock(t, args, () => ({ status: 429, json: body }), env);
+        assert.equal(result.code, 1);
+        assert.equal(requests.length, 1, 'refusals must not retry');
+        const text = env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message;
+        assert.doesNotMatch(text, /20 natural|daily/i);
+        if (error === 'slow_down') assert.match(text, /Rate limited, try again shortly/);
+        else {
+          assert.match(text, /agent fills.*Used 100 of 100.*Resets on/);
+          assert.match(text, /https:\/\/example.com\/opaque-upgrade/);
+          if (env !== HUMAN_ENV) {
+            const payload = JSON.parse(result.stdout);
+            for (const key of ['error', 'feature', 'used', 'limit', 'resetsAt', 'upgradeUrl']) assert.deepEqual(payload[key], body[key]);
+          }
+        }
+      }
+    }
+  }
+});
+
+test('auto-apply 404 reports account availability for enqueue and status', async (t) => {
+  for (const args of [['apply', '42'], ['apply', '--status']]) {
+    for (const env of [HUMAN_ENV, {}]) {
+      const { result, requests } = await runAgainstMock(t, args, () => ({ status: 404, json: { error: 'feature_disabled' } }), env);
+      assert.equal(result.code, 1);
+      assert.match(env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message, /Auto-apply is not available for this account yet/);
+      assert.equal(requests.length, 1);
+    }
+  }
+});
+
 test('jobs maps every filter flag to the right query param', async (t) => {
   const { requests, result } = await runAgainstMock(
     t,
@@ -171,8 +270,8 @@ test('job --json passes a null sponsorship status through untouched', async (t) 
   assert.equal(JSON.parse(result.stdout).job.sponsorshipStatus, null);
 });
 
-test('apply/save/dismiss POST the correct tracker stage', async (t) => {
-  for (const [action, stage] of [['apply', 'applied'], ['save', 'backlog'], ['dismiss', 'discarded']]) {
+test('mark-applied/save/dismiss POST the correct tracker stage', async (t) => {
+  for (const [action, stage] of [['mark-applied', 'applied'], ['save', 'backlog'], ['dismiss', 'discarded']]) {
     const { requests, result } = await runAgainstMock(t, [action, '1234'], () => ({ status: 200, json: { ok: true } }));
     assert.equal(result.code, 0, `${action}: ${result.stderr}`);
     assert.equal(requests[0].method, 'POST');

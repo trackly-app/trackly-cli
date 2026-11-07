@@ -60,11 +60,11 @@ There is a small Node test suite (`npm test`), no linter, and no build step. The
 
 1. User runs `trackly mcp` (or AI agent spawns it via stdio)
 2. `bin/trackly` delegates to `mcp/server.js`
-3. `mcp/server.js` creates an `McpServer` with 58 tools, connects via `StdioServerTransport`
+3. `mcp/server.js` creates an `McpServer` with 59 tools, connects via `StdioServerTransport`
 4. Each tool calls `apiRequest()` from `lib/client.js` with a `trackly-mcp/<version>` User-Agent derived from `package.json`
 5. CLI commands use `trackly-cli/<version>` User-Agent derived from `package.json` (separate channel attribution)
 
-The 58 MCP tools include the complete search, network, profile, and Trackly
+The 59 MCP tools include the complete search, network, profile, and Trackly
 Apply set documented in `docs/trackly-tools.md` plus the analytics-owned
 `get_more_tools` missing-capability tool. Keep this count synchronized with
 `mcp/server.js`, `README.md`, and the docs-drift tests.
@@ -158,9 +158,11 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `GET /api/jobscout/companies/search` -- Semantic company search
 - `GET /api/jobscout/me` -- User stats and discovery preferences
 - `PUT /api/jobscout/preferences` -- Atomic discovery-preference updates
-- `GET /api/jobscout/ask` -- Natural language search (20/day limit)
+- `GET /api/jobscout/ask` -- Natural language search
 - `POST /api/jobscout/companies/request` -- Request a company be added (rate-limited, 5 pending max)
-- `POST /api/jobscout/tracker/jobs/:id/stage` -- Update job tracker stage (`applied`/`backlog`/`discarded`; CLI maps apply/save/dismiss)
+- `POST /api/jobscout/tracker/jobs/:id/stage` -- Update job tracker stage (`applied`/`backlog`/`discarded`; CLI maps mark-applied/save/dismiss)
+- `POST /api/jobscout/apply/assist-requests` -- Request cloud auto-apply (jobId, acknowledged, optional resumeId)
+- `GET /api/jobscout/apply/assist-requests` -- List the user's auto-apply requests
 - `GET /api/jobscout/apply/queue` -- Get the user's approved application queue (`trackly_get_apply_queue`)
 - `GET /api/jobscout/application-profile` -- Get the versioned application profile (`trackly_get_application_profile`)
 - `GET /api/jobscout/application-profile/schema` -- Get profile fields and onboarding questions (`trackly_get_profile_onboarding`)
@@ -203,9 +205,9 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `GET /api/network/companies/:id/workspace` -- Get company workspace (jobs, contacts, campaigns)
 - `GET /auth/google/cli` -- OAuth login redirect
 
-The complete 58-tool inventory is in `docs/trackly-tools.md`. Helpers such as `trackly_verify_prepared_resume` and `trackly_validate_apply_resume_upload` intentionally have no CLI HTTP endpoint and therefore do not appear in the endpoint list above.
+The complete 59-tool inventory is in `docs/trackly-tools.md`. Helpers such as `trackly_verify_prepared_resume` and `trackly_validate_apply_resume_upload` intentionally have no CLI HTTP endpoint and therefore do not appear in the endpoint list above.
 
-Hosted `/api/mcp` tool count: the backend owns the hosted registry. It omits exactly four local-only tools (`trackly_diagnose_local_path`, `trackly_lint_application_text`, `trackly_validate_apply_resume_upload`, `trackly_validate_apply_tab_keep_set`) and adds `trackly_chat`, for 55. `trackly_prepare_resume` and `trackly_verify_prepared_resume` are registered on both servers. When a tool is added to or removed from either server, recount the hosted names and update every "N hosted tools" claim in `README.md`; the docs-coverage test only checks that those README claims agree.
+Hosted `/api/mcp` tool count: the backend owns the hosted registry. It omits exactly four local-only tools (`trackly_diagnose_local_path`, `trackly_lint_application_text`, `trackly_validate_apply_resume_upload`, `trackly_validate_apply_tab_keep_set`) and adds `trackly_chat`. The deployed catalog remains 55 hosted tools; `trackly_auto_apply` is a source-only addition pending a coordinated backend release and catalog recapture. `trackly_prepare_resume` and `trackly_verify_prepared_resume` are registered on both servers. When a tool is added to or removed from either server, recount the hosted names and update every "N hosted tools" claim in `README.md`; the docs-coverage test only checks that those README claims agree.
 
 ## Common Pitfalls
 
@@ -214,7 +216,7 @@ Hosted `/api/mcp` tool count: the backend owns the hosted registry. It omits exa
 3. **Auth tokens at `~/.trackly/config.json`.** File permissions are 0600, directory is 0700. Do not change this.
 4. **OAuth callback binds to 127.0.0.1 only.** Port is OS-assigned (ephemeral via `listen(0)`, validated to 1024-65535 — the backend's accepted range). 5-minute timeout. A single `cmdLogin`-scoped SIGINT handler closes the callback server on Ctrl-C.
 5. **`--json` flag or non-TTY stdout** triggers JSON output mode on all commands.
-6. **The `ask` command has a 20/day rate limit** enforced server-side (429 response).
+6. **No daily search cap.** Display server-provided plan refusals (feature, usage, reset, optional upgrade URL); other 429 responses are temporary rate limits.
 7. **Keep dependencies minimal.** Direct runtime dependencies are
    `@modelcontextprotocol/sdk`, `@posthog/mcp`, `posthog-node`, `zod`, Hono, and
    the security pins `fast-uri` and `ip-address`, which are declared directly
