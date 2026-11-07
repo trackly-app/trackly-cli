@@ -73,6 +73,10 @@ test('real stdio search preserves pages when only their total is unavailable', {
       const ask = await client.callTool({ name: 'trackly_ask', arguments: { query: 'Synthetic query' } });
       assert.deepEqual(JSON.parse(ask.content[0].text), { success: true,
         jobsUrl: '/api/jobscout/jobs?limit=2', ...lowerBound });
+      fixture = { status: 200, body: { ...lowerBound, jobsUrl: '/api/admin/disallowed' } };
+      const poisoned = await client.callTool({ name: 'trackly_ask', arguments: { query: 'Synthetic query' } });
+      assert.deepEqual(JSON.parse(poisoned.content[0].text), { ...lowerBound,
+        jobsUrl: '/api/jobscout/jobs?limit=2' });
       fixture = { status: 503, body: { success: false, error: 'Failed to fetch jobs' } };
       const before = calls.length;
       const result = await client.callTool({ name: 'trackly_search_jobs', arguments: { limit: 2 } });

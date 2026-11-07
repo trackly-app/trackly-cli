@@ -583,6 +583,7 @@ function createServer() {
           return {
             ...askResult,
             ...jobsResult,
+            jobsUrl: askResult.jobsUrl,
             jobs: jobsResult.jobs || jobsResult.data || [],
           };
         }
