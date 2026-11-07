@@ -73,7 +73,7 @@ API-key creation attempts.
 ### Available Tools
 
 - **get_more_tools** — Report what the agent wanted to do when no Trackly tool fit, so Trackly can improve its MCP surface. The tool is always available; report delivery is best-effort.
-- **trackly_search_jobs** — Search/filter jobs. A successful page may have `total: null`, `pagination.total: null` and `countStatus: "unavailable"` when its total cannot be computed. The returned jobs remain valid: explain `countGuidance`, use `hasMore` and pagination to continue, and avoid retrying just to obtain a total. Zero is a known count; null is unknown. Genuine page failures remain tool errors.
+- **trackly_search_jobs** — Search/filter jobs. A successful page may have `total: null`, `pagination.total: null` and `countStatus: "unavailable"` when its total cannot be computed. The returned jobs remain valid: explain `countGuidance`, use `hasMore` and pagination to continue, and avoid retrying just to obtain a total. Zero is a known count; null is unknown. A numeric `total` with `totalIsLowerBound: true` (also in `pagination`) means at least that many matches, not an exact count. `false` marks a known exact total; `null` leaves the total unknown. Natural-language `trackly_ask` preserves the same page metadata. Genuine page failures remain tool errors.
   - `function` (one value) or `jobFunctions` (nonempty array, OR; use one spelling only). The 14 values are: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`
   - `region`: nonempty array of `us`, `europe`, `latam`, `middle_east`, `asia`, `africa`, `canada`, `oceania`, `remote`, `unknown`, combined with OR. Use instead of `locationFilter`; unlike its legacy list form, this supports US plus other regions.
   - `usStates`: nonempty array of US codes `AL`, `AK`, `AZ`, `AR`, `CA`, `CO`, `CT`, `DC`, `DE`, `FL`, `GA`, `HI`, `ID`, `IL`, `IN`, `IA`, `KS`, `KY`, `LA`, `ME`, `MD`, `MA`, `MI`, `MN`, `MS`, `MO`, `MT`, `NE`, `NV`, `NH`, `NJ`, `NM`, `NY`, `NC`, `ND`, `OH`, `OK`, `OR`, `PA`, `RI`, `SC`, `SD`, `TN`, `TX`, `UT`, `VT`, `VA`, `WA`, `WV`, `WI`, `WY`, `PR`, `REMOTE`.
@@ -102,6 +102,21 @@ Example: `{"jobFunctions":["finance","partnerships"],"region":["us","europe"],"s
 The local package and hosted service have separate release lifecycles. Refresh the client's tool discovery after upgrading or reconnecting and use only parameters its current schema advertises.
 
 - **trackly_get_job** — Get full job details by positive numeric Trackly ID from search or the saved queue. Employer requisition IDs and URLs are not accepted.
+
+Job results use `matchScoreStatus: "scored" | "pending" | "not_scored"`. A score is a saved result; never estimate a numeric score when it is null. `pending` requires owned waiting work for the current parsed default resume and selected description revision: retryable description parsing or a live job-specific score item. `matchScoreReason` explains a missing score:
+
+| Reason | Meaning |
+| --- | --- |
+| `null` | A valid saved score is present, including historical saved scores. |
+| `outside_scoring_window` | An active current listing was first seen outside the automatic 30-day window. |
+| `parse_required` | An in-window current description still needs a structured parse. |
+| `score_required` | An in-window current description has a parse but no valid saved score. |
+| `description_unavailable` | No usable selected description is available. |
+| `inactive` | The job is inactive and has no displayed saved score. |
+| `not_scored` | The reason cannot be safely determined, including unsupported or historical unscored selections. |
+
+`parse_required` and `score_required` identify missing prerequisites for an active current listing inside the window. Reasons alone do not assert a queued/running task, a ready resume, available retries, or a completion deadline. Only `matchScoreStatus=pending` establishes owned waiting work. The unparsed phase uses the description parser's own retryable worklist and exact input/cap rules. Once parsed, only a live job-specific score item establishes pending. Failed, exhausted, externally owned or ambiguous parsing stays unknown; completed, exhausted, stale processing, superseded-resume and superseded-revision score items cannot establish pending. This does not assert active execution or a completion deadline. A valid saved score takes precedence. When authority is unavailable, the status remains `not_scored`.
+
 - **trackly_search_companies** — Semantic company search
 - **trackly_list_companies** — List all tracked companies with job counts
 - **trackly_get_stats** — Job tracker metrics dashboard

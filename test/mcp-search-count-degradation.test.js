@@ -16,7 +16,8 @@ test('real stdio search preserves pages when only their total is unavailable', {
   const api = http.createServer((request, response) => {
     if (request.method === 'GET' && request.url.startsWith('/api/jobscout/jobs')) calls.push(request.url);
     response.writeHead(fixture.status, { 'Content-Type': 'application/json' });
-    response.end(JSON.stringify(fixture.body));
+    response.end(JSON.stringify(request.url.startsWith('/api/jobscout/ask')
+      ? { success: true, jobsUrl: '/api/jobscout/jobs?limit=2' } : fixture.body));
   });
   await new Promise(resolve => api.listen(0, '127.0.0.1', resolve));
   t.after(async () => {
@@ -30,6 +31,12 @@ test('real stdio search preserves pages when only their total is unavailable', {
     hasMore: true, pagination: { total: null, limit: 2, offset: 4, hasMore: true },
     recencyStats: { available: false, totalActive: null },
   };
+  const lowerBound = { ...degraded, total: 7, totalIsLowerBound: true,
+    countGuidance: 'The total is a lower bound, not an exact count.',
+    jobs: [{ id: 301, matchScore: null, matchScoreStatus: 'not_scored', matchScoreReason: 'parse_required' }],
+    pagination: { ...degraded.pagination, total: 7, totalIsLowerBound: true } };
+  const exact = { ...lowerBound, total: 122, totalIsLowerBound: false,
+    pagination: { ...lowerBound.pagination, total: 122, totalIsLowerBound: false } };
   const zero = { success: true, jobs: [], total: 0, hasMore: false,
     pagination: { total: 0, limit: 2, offset: 4, hasMore: false } };
   for (const analyticsDisabled of [true, false]) {
@@ -49,7 +56,7 @@ test('real stdio search preserves pages when only their total is unavailable', {
       await client.connect(transport);
       const discovery = await client.listTools();
       assert.match(discovery.tools.find(tool => tool.name === 'trackly_search_jobs').description, /total.*unavailable/i);
-      for (const body of [degraded, zero]) {
+      for (const body of [degraded, lowerBound, exact, zero]) {
         fixture = { status: 200, body };
         const before = calls.length;
         const result = await client.callTool({ name: 'trackly_search_jobs', arguments: {
@@ -62,6 +69,10 @@ test('real stdio search preserves pages when only their total is unavailable', {
         assert.equal(query.get('search'), 'product manager');
         assert.equal(query.get('offset'), '4');
       }
+      fixture = { status: 200, body: lowerBound };
+      const ask = await client.callTool({ name: 'trackly_ask', arguments: { query: 'Synthetic query' } });
+      assert.deepEqual(JSON.parse(ask.content[0].text), { success: true,
+        jobsUrl: '/api/jobscout/jobs?limit=2', ...lowerBound });
       fixture = { status: 503, body: { success: false, error: 'Failed to fetch jobs' } };
       const before = calls.length;
       const result = await client.callTool({ name: 'trackly_search_jobs', arguments: { limit: 2 } });
