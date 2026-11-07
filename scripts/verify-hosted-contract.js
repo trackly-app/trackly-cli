@@ -7369,6 +7369,9 @@ function verifyCheckedInHostedContractFixture(
   ]);
   const localNames = localRegistrations.map(({ name }) => name);
   assert.equal(new Set(localNames).size, localNames.length, 'Executable local MCP names must be unique');
+  for (const name of PENDING_HOSTED_TOOLS) {
+    assert.ok(!lock.hostedMcpToolAllowlist.includes(name), `${name} is already in the hosted lock; remove its pending allowance`);
+  }
   assert.deepEqual(
     [...localNames].sort(),
     [...lock.hostedMcpToolAllowlist.filter((name) => !HOSTED_ONLY_TOOLS.includes(name)), ...LOCAL_ONLY_TOOLS, ...PENDING_HOSTED_TOOLS].sort(),
@@ -7423,7 +7426,7 @@ function verifyCheckedInHostedContractFixture(
     ...Object.values(lock.publicExecutableContract.handlerSha256),
   ]) assert.match(digest, /^[a-f0-9]{64}$/);
   console.log(
-    `Historical hosted contract fixture passes for captured Apply ${fixture.applyContractVersion}; the ${snapshotNames.length}-tool public facade and ${fixture.hostedMcpToolNames.length}-tool hosted MCP catalogs are locked.`,
+    `Historical hosted contract fixture passes for captured Apply ${fixture.applyContractVersion}; the ${snapshotNames.length}-tool public facade and ${fixture.hostedMcpToolNames.length}-tool hosted MCP catalogs are locked; pending hosted registration (not deployed parity): ${PENDING_HOSTED_TOOLS.join(', ') || 'none'}.`,
   );
 }
 

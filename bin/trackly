@@ -15,13 +15,14 @@ const {
   removeCredentials,
   saveConfig,
 } = require('../lib/client');
-const { color, isJSON, jobDateDetailLines, outputJobs, outputCompanies, outputStats, outputContacts, outputReferralCampaign, outputNetworkBrief, outputCompanyBrief, outputCompanyWorkspace, outputError, planRefusalMessage } = require('../lib/formatters');
+const { color, isJSON, jobDateDetailLines, outputJobs, outputCompanies, outputStats, outputContacts, outputReferralCampaign, outputNetworkBrief, outputCompanyBrief, outputCompanyWorkspace, outputError, planRefusalMessage, planRefusalFields } = require('../lib/formatters');
 const http = require('http');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { version: VERSION } = require('../package.json');
 const { doctorAgent, resumeValidationStatus, setupAgent } = require('../lib/agent');
 const { diagnoseLocalPath } = require('../lib/path-diagnostics');
+const { validateAssistResponse, autoApplyUnavailableError, autoApplyRequestError } = require('../lib/auto-apply');
 
 const BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'version', 'v', 'clear-api-key', 'clear-base-url', 'refresh', 'remote', 'skills-only']);
 const VALUE_FLAGS = new Set([
@@ -278,14 +279,18 @@ function setApiErrorExit(error, fallbackMessage, exitCode = 1) {
     printJson(maintenance);
   } else if (maintenance) {
     outputError(formatMaintenanceForHuman(maintenance));
-  } else if (refusal && isJSON()) {
-    const payload = { error: error.error, status: error.status, message: refusal };
-    for (const key of ['feature', 'limit', 'used', 'resetsAt', 'upgradeUrl']) {
-      if (Object.prototype.hasOwnProperty.call(error, key)) payload[key] = error[key];
+  } else if ((refusal || ['invalid_auto_apply_response', 'auto_apply_status_unknown', 'auto_apply_job_not_found'].includes(error?.code)) && isJSON()) {
+    const payload = { error: error.error, status: error.status, message: refusal || error.message };
+    if (refusal && (error.status !== 429 || ['assist_limit_reached', 'limit_reached'].includes(error.error))) {
+      payload.retryable = false;
+      payload.code = error.error;
     }
+    if (['invalid_auto_apply_response', 'auto_apply_status_unknown', 'auto_apply_job_not_found'].includes(error.code)) Object.assign(payload, { code: error.code, retryable: false });
+    Object.assign(payload, planRefusalFields(error));
+    if (typeof error.diagnostic === 'string') payload.diagnostic = error.diagnostic;
     printJson(payload);
   } else {
-    outputError(refusal || error?.error || error?.message || fallbackMessage);
+    outputError(refusal || (error?.code === 'auto_apply_job_not_found' ? error.message : error?.error || error?.message) || fallbackMessage);
   }
   process.exitCode = exitCode;
 }
@@ -866,7 +871,7 @@ async function cmdPreferences(args) {
   }
 }
 
-const ACTION_TO_COMMAND = { applied: 'apply', saved: 'save', dismissed: 'dismiss' };
+const ACTION_TO_COMMAND = { applied: 'mark-applied', saved: 'save', dismissed: 'dismiss' };
 
 // CLI surface accepts applied|saved|dismissed (legacy human-friendly terms).
 // Backend `/api/jobscout/tracker/jobs/:id/stage` expects stage values:
@@ -898,6 +903,7 @@ async function cmdUpdateStatus(id, action) {
   }
 }
 
+/** Request auto-apply or list requests, leaving access and limits to the server. */
 async function cmdApply(args) {
   const usage = 'Usage: trackly apply <jobId> [--resume-id <id>] | trackly apply --status';
   if (args.status !== undefined && (args.status !== true || args._.length || args['resume-id'] !== undefined)) {
@@ -914,6 +920,7 @@ async function cmdApply(args) {
     const endpoint = '/api/jobscout/apply/assist-requests';
     const body = args.status ? null : { jobId, acknowledged: true, ...(resumeId === undefined ? {} : { resumeId }) };
     const result = await apiRequest(args.status ? 'GET' : 'POST', endpoint, body);
+    validateAssistResponse(result, args.status ? { list: true } : { jobId });
     if (isJSON()) return printJson(args.status ? result : { ...result, message: 'Trackly will apply and notify you.' });
     if (args.status) {
       const requests = result.requests || [];
@@ -928,9 +935,9 @@ async function cmdApply(args) {
     }
   } catch (error) {
     if (error?.status === 404) {
-      setApiErrorExit({ status: 404, error: 'feature_disabled', feature: 'assist_request' }, 'Auto-apply unavailable');
+      setApiErrorExit(autoApplyUnavailableError(error), 'Auto-apply unavailable');
     } else {
-      setApiErrorExit(error, 'Failed to request auto-apply');
+      setApiErrorExit(args.status ? error : autoApplyRequestError(error), 'Failed to request auto-apply');
     }
   }
 }
@@ -1129,11 +1136,10 @@ async function cmdRequestCompany(args) {
     const requestId = result.requestId || result.id || '?';
     console.log(color('green', `Requested "${name}" (#${requestId}). Trackly team will review shortly.`));
   } catch (e) {
-    // Backend returns 429 (rate limit, max 5 pending) and 409 (duplicate pending request)
-    // with a specific `error` message. Surface that message verbatim so the user knows
-    // exactly which gate fired without having to enable --json.
+    // Plan refusals use the server plan fields; other 429s use temporary rate-limit guidance.
+    // JSON preserves the server error; a 409 still reports the duplicate request.
     if (e.status === 429) {
-      setApiErrorExit(e, 'Maximum 5 pending requests allowed. Please wait for existing requests to be reviewed.');
+      setApiErrorExit(e, 'Rate limited, try again shortly.');
     } else if (e.status === 409) {
       setApiErrorExit(e, 'You already have a pending request for this company.');
     } else {

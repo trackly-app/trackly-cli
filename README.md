@@ -39,6 +39,14 @@ trackly jobs --function product
 
 ## CLI Commands
 
+The next coordinated release changes `trackly apply <id>` to authorize cloud
+auto-apply. Before upgrading, change scripts that only record applications to
+`trackly mark-applied <id>`. These source changes have not been published to npm.
+
+Plan and auto-apply response errors in `--json` mode emit a structured object
+on stdout and exit nonzero; check the exit code before treating output as a
+successful result.
+
 ```bash
 trackly jobs                          # List jobs
 trackly jobs --remote                 # Filter remote jobs (sets usStates=REMOTE)

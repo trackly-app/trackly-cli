@@ -53,6 +53,14 @@ wrapper too: generic read-failure guidance must not overwrite that decision.
 Exercise both CLI output modes and actual MCP/HTTP calls, asserting request
 counts, optional-field preservation and the final retry guidance.
 
+For cloud enqueue mutations, a 2xx response must identify the requested job,
+request ID and status before either output mode reports success. Malformed
+responses need a status-check instruction rather than an automatic re-enqueue.
+Preserve safe API diagnostics for account-unavailability fallbacks without
+echoing raw proxy response bodies. An interrupted enqueue or server failure
+must ask for a status check before another enqueue. Generic 429 wording alone
+does not authorize retrying mutations; job reads retain their bounded delay.
+
 A source-only tool addition can precede the coordinated hosted release. Keep
 the historical hosted fixture unchanged, name only the pending addition in
 fixture-mode registration checks, and retain the full deployed-backend parity

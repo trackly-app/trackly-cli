@@ -10,7 +10,8 @@ const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 const { registerApplyTools } = require('./apply-tools');
 const { configureMcpAnalytics, shutdownMcpAnalytics } = require('./analytics');
 const { normalizeJobResult, unavailableJobFromError, jobFailureGuidance } = require('../lib/job-result');
-const { planRefusalMessage } = require('../lib/formatters');
+const { planRefusalMessage, planRefusalFields } = require('../lib/formatters');
+const { validateAssistResponse, autoApplyUnavailableError, autoApplyRequestError } = require('../lib/auto-apply');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
 const MCP_SHUTDOWN_TIMEOUT_MS = 2_000;
@@ -177,15 +178,20 @@ function createErrorResult(error, fallbackMessage, extra = {}) {
   }
 
   const refusal = planRefusalMessage(error);
+  if (['invalid_auto_apply_response', 'auto_apply_status_unknown', 'auto_apply_job_not_found'].includes(error?.code)) {
+    payload.code = error.code;
+    payload.retryable = false;
+    payload.message = error.message;
+  }
   if (refusal) {
     payload.message = refusal;
     payload.hint = refusal;
-    payload.retryable = error.status === 429
-      && !['assist_limit_reached', 'limit_reached'].includes(error.error);
-    if (!payload.retryable) payload.code = error.error;
-    for (const key of ['feature', 'limit', 'used', 'resetsAt', 'upgradeUrl']) {
-      if (Object.prototype.hasOwnProperty.call(error, key)) payload[key] = error[key];
+    if (error.status !== 429 || ['assist_limit_reached', 'limit_reached'].includes(error.error)) {
+      payload.retryable = false;
+      payload.code = error.error;
     }
+    Object.assign(payload, planRefusalFields(error));
+    if (typeof error.diagnostic === 'string') payload.diagnostic = error.diagnostic;
   }
 
   return {
@@ -247,12 +253,16 @@ function wrapTool(handler, fallbackMessage, jobIdKey) {
       if (payload.code === 'maintenance_mode' || createTracklyAccessError(error, error?.status)
         || (error?.status === 429 && payload.retryable === false)) {
         guidance.category = payload.code === 'maintenance_mode' ? 'maintenance'
-          : error?.status === 429 ? 'rate_limit' : 'access';
+          : 'access';
         guidance.error = payload.error;
         guidance.retryable = payload.retryable;
         guidance.maxRetries = payload.retryable ? 1 : 0;
         if (!payload.retryable) delete guidance.retryAfterSeconds;
         guidance.nextStep = { message: payload.guidance || payload.message || payload.error };
+      }
+      if (error?.status === 429 && guidance.retryable) {
+        payload.message = guidance.nextStep.message;
+        delete payload.hint;
       }
       return { ...result, ...successResult({ ...payload, ...guidance }) };
     };
@@ -406,7 +416,8 @@ function createServer() {
   server.registerTool(
     'trackly_auto_apply',
     {
-      description: 'Request cloud auto-apply for one Trackly job at a US Greenhouse, Lever, or Ashby posting. Uses the account default resume. Call only when the user asks Trackly to apply and notify them. Returns the request and its status.',
+      description: 'Request cloud auto-apply for one Trackly job at a US Greenhouse, Lever, or Ashby posting using the account default resume. Trackly submits the application asynchronously and notifies the user. Call only when the user asks Trackly to apply to this job. Check the server autoApplySupported field when present. Returns the request and its current status; check progress with trackly apply --status in the CLI.',
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         jobId: z.number().int().positive().max(2147483647).describe('Trackly job ID to apply to'),
       }).strict(),
@@ -416,12 +427,13 @@ function createServer() {
         const result = await apiRequest('POST', '/api/jobscout/apply/assist-requests', {
           jobId, acknowledged: true,
         }, false, false, MCP_USER_AGENT);
+        validateAssistResponse(result, { jobId });
         return { ...result, message: 'Trackly will apply and notify you.' };
       } catch (error) {
         if (error?.status === 404) {
-          throw { status: 404, error: 'feature_disabled', feature: 'assist_request' };
+          throw autoApplyUnavailableError(error);
         }
-        throw error;
+        throw autoApplyRequestError(error);
       }
     }, 'Failed to request auto-apply'),
   );
@@ -533,7 +545,7 @@ function createServer() {
 
   server.tool(
     'trackly_update_status',
-    'Update a job application status (apply, save, or dismiss).',
+    'Record an application the user already submitted, save a job, or dismiss a job. Does not submit an application; use trackly_auto_apply to request cloud auto-apply.',
     {
       id: z.number().describe('Job posting ID'),
       action: z.enum(['applied', 'saved', 'dismissed']).describe('Status action'),

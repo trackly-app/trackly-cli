@@ -39,6 +39,7 @@ async function runAgainstMock(t, args, respond, childEnv = {}) {
     req.on('end', () => {
       requests.push({ method: req.method, url: req.url, body });
       const r = (respond && respond(req)) || { status: 200, json: {} };
+      if (r.disconnect) return req.socket.destroy();
       if (r.body !== undefined) {
         res.writeHead(r.status || 200, r.headers || { 'Content-Type': 'application/octet-stream' });
         res.end(r.body);
@@ -101,6 +102,37 @@ test('apply --status lists requests without enqueueing', async (t) => {
   }
 });
 
+test('malformed auto-apply responses never report success or retry the mutation', async (t) => {
+  for (const [args, body] of [
+    [['apply', '42'], {}], [['apply', '42'], { request: null }],
+    [['apply', '42'], { request: { id: 'x', jobId: 41, status: 'queued' } }],
+    [['apply', '42'], { request: { id: 'x', jobId: 42 } }],
+    [['apply', '--status'], {}], [['apply', '--status'], { requests: null }],
+    [['apply', '--status'], { requests: [{}] }],
+    [['apply', '42'], '<html>unexpected-response</html>'],
+    [['apply', '--status'], '<html>unexpected-response</html>'],
+  ]) {
+    for (const env of [HUMAN_ENV, {}]) {
+      const { result, requests } = await runAgainstMock(t, args, () => (typeof body === 'string' ? { status: 201, body } : { status: 201, json: body }), env);
+      assert.equal(result.code, 1);
+      const message = env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message;
+      assert.match(message, /Invalid auto-apply response.*Check your request status/);
+      assert.doesNotMatch(result.stdout + result.stderr, /TypeError|Trackly will apply/);
+      assert.equal(requests.length, 1);
+    }
+  }
+});
+
+test('invalid manual tracking commands recommend mark-applied without submitting', async (t) => {
+  for (const id of [undefined, 'abc', '0']) {
+    const { result, requests } = await runAgainstMock(t, ['mark-applied', ...(id ? [id] : [])]);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /Usage: trackly mark-applied <id>/);
+    assert.doesNotMatch(result.stderr, /Usage: trackly apply/);
+    assert.equal(requests.length, 0);
+  }
+});
+
 test('apply validates IDs and status combinations before HTTP', async (t) => {
   for (const args of [[], ['0'], ['-1'], ['1.5'], ['2147483648'], ['abc'], ['42', '43'],
     ['42', '--resume-id'], ['42', '--resume-id', '0'], ['42', '--resume-id', '2147483648'],
@@ -137,6 +169,7 @@ test('CLI refusals show server plan fields or a temporary rate limit on every co
         assert.equal(result.code, 1);
         assert.equal(requests.length, 1, 'refusals must not retry');
         const text = env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message;
+        if (env !== HUMAN_ENV) assert.equal(JSON.parse(result.stdout).retryable, error === 'slow_down' ? undefined : false);
         assert.doesNotMatch(text, /20 natural|daily/i);
         if (error === 'slow_down') assert.match(text, /Rate limited, try again shortly/);
         else {
@@ -152,6 +185,88 @@ test('CLI refusals show server plan fields or a temporary rate limit on every co
   }
 });
 
+test('CLI structured refusals omit malformed server plan fields', async (t) => {
+  const { result } = await runAgainstMock(t, ['apply', '42'], () => ({ status: 429, json: {
+    error: 'limit_reached', feature: 'constructor', used: 'untrusted-text', limit: -1,
+    resetsAt: {}, upgradeUrl: 'javascript:alert(1)',
+  } }));
+  const payload = JSON.parse(result.stdout);
+  assert.equal(result.code, 1);
+  assert.equal(payload.retryable, false);
+  for (const key of ['feature', 'used', 'limit', 'resetsAt', 'upgradeUrl']) assert.equal(Object.hasOwn(payload, key), false);
+  assert.doesNotMatch(result.stdout, /untrusted-text|javascript|constructor/);
+});
+
+test('uncertain auto-apply enqueues require status checks without retrying', async (t) => {
+  for (const response of [{ status: 500, json: { error: 'unavailable' } }, { disconnect: true }]) {
+    for (const env of [HUMAN_ENV, {}]) {
+      const { result, requests } = await runAgainstMock(t, ['apply', '42'], () => response, env);
+      assert.equal(result.code, 1);
+      assert.equal(requests.length, 1);
+      const message = env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message;
+      assert.match(message, /Check your request status with trackly apply --status before requesting again/);
+      assert.doesNotMatch(result.stdout + result.stderr, /Trackly will apply/);
+      if (env !== HUMAN_ENV) {
+        assert.equal(result.stderr, '');
+        assert.equal(JSON.parse(result.stdout).retryable, false);
+        assert.equal(JSON.parse(result.stdout).code, 'auto_apply_status_unknown');
+      }
+    }
+  }
+});
+
+test('auto-apply preserves recognized maintenance and controlled-access envelopes', async (t) => {
+  for (const code of ['maintenance_mode', 'ACCESS_CHECK_UNAVAILABLE']) {
+    const { result, requests } = await runAgainstMock(t, ['apply', '42'],
+      () => ({ status: 503, json: { code, message: 'Temporarily unavailable' } }));
+    assert.equal(result.code, 1);
+    assert.equal(result.stderr, '');
+    assert.equal(JSON.parse(result.stdout).code, code);
+    assert.equal(requests.length, 1);
+  }
+});
+
+test('request-company uses generic throttling for 429 without plan fields', async (t) => {
+  for (const env of [HUMAN_ENV, {}]) {
+    const { result, requests } = await runAgainstMock(t, ['request-company', 'Example'],
+      () => ({ status: 429, json: { error: 'Maximum 5 pending requests allowed.' } }), env);
+    assert.equal(result.code, 1);
+    assert.equal(requests.length, 1);
+    assert.match(env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message, /Rate limited, try again shortly/);
+    if (env !== HUMAN_ENV) assert.equal(JSON.parse(result.stdout).error, 'Maximum 5 pending requests allowed.');
+  }
+});
+
+test('whoami tolerates every subscription status and never sends plan inputs', async (t) => {
+  for (const status of ['active', 'trialing', 'past_due', 'unpaid', 'incomplete', 'incomplete_expired', 'paused', 'canceled']) {
+    const user = { id: 7, name: 'Test User', email: 'test@example.com', plan: {
+      tier: 'apply', source: 'paid', studentEligible: false, enforced: true,
+      subscription: { status, renewsAt: null, cancelAtPeriodEnd: false }, futureField: 'ignored',
+    } };
+    const { result, requests } = await runAgainstMock(t, ['whoami'], () => ({ json: { success: true, user } }));
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), user);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].method, 'GET');
+    assert.equal(requests[0].body, '');
+  }
+});
+
+test('auto-apply preserves the backend missing-job refusal', async (t) => {
+  for (const env of [HUMAN_ENV, {}]) {
+    const { result, requests } = await runAgainstMock(t, ['apply', '42'],
+      () => ({ status: 404, json: { error: 'job_not_found' } }), env);
+    assert.equal(result.code, 1);
+    assert.equal(requests.length, 1);
+    assert.match(env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message, /Job not found.*Check the Trackly job ID/);
+    assert.doesNotMatch(result.stdout + result.stderr, /not available for this account/);
+    if (env !== HUMAN_ENV) {
+      assert.equal(JSON.parse(result.stdout).error, 'job_not_found');
+      assert.equal(JSON.parse(result.stdout).retryable, false);
+    }
+  }
+});
+
 test('auto-apply 404 reports account availability for enqueue and status', async (t) => {
   for (const args of [['apply', '42'], ['apply', '--status']]) {
     for (const env of [HUMAN_ENV, {}]) {
@@ -159,6 +274,22 @@ test('auto-apply 404 reports account availability for enqueue and status', async
       assert.equal(result.code, 1);
       assert.match(env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message, /Auto-apply is not available for this account yet/);
       assert.equal(requests.length, 1);
+    }
+  }
+});
+
+test('auto-apply preserves JSON and non-JSON 404 diagnostics without raw bodies', async (t) => {
+  for (const response of [
+    { status: 404, json: { error: 'Not found' } },
+    { status: 404, body: '<html>private-proxy-body</html>', headers: { 'Content-Type': 'text/html' } },
+  ]) {
+    for (const env of [HUMAN_ENV, {}]) {
+      const { result } = await runAgainstMock(t, ['apply', '42'], () => response, env);
+      assert.equal(result.code, 1);
+      const text = env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message;
+      assert.match(text, /Auto-apply is not available for this account yet.*API diagnostic:/);
+      assert.match(text, response.json ? /Not found/ : /non-JSON response/);
+      assert.doesNotMatch(result.stdout + result.stderr, /private-proxy-body/);
     }
   }
 });

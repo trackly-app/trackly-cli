@@ -27,10 +27,30 @@ test('plan refusals use only server feature, counts, reset and optional link', (
   const partial = fmt.planRefusalMessage({ status: 429, error: 'assist_limit_reached', resetsAt: 'invalid' });
   assert.match(partial, /plan limit/);
   assert.doesNotMatch(partial, /Used|Resets|https:|all|20/);
+  for (const resetsAt of ['2026-12-01', '2026-12-01T00:00:00']) {
+    assert.doesNotMatch(fmt.planRefusalMessage({ status: 429, error: 'limit_reached', resetsAt }), /Resets on/);
+  }
   assert.equal(fmt.planRefusalMessage({ status: 429, error: 'slow_down' }), 'Rate limited, try again shortly.');
-  assert.match(fmt.planRefusalMessage({ status: 404, error: 'feature_disabled' }), /not available.*yet/);
+  assert.equal(fmt.planRefusalMessage({ status: 404, error: 'feature_disabled' }), 'This feature is not available for this account yet.');
+  assert.equal(fmt.planRefusalMessage({ status: 404, error: 'feature_disabled', feature: 'assist_request' }), 'Auto-apply is not available for this account yet.');
+  for (const feature of ['constructor', '__proto__', '\u001b[31m']) {
+    assert.equal(fmt.planRefusalMessage({ status: 429, error: 'limit_reached', feature }), 'Your Trackly plan limit for this feature has been reached.');
+  }
   assert.equal(fmt.planRefusalMessage({ status: 500, error: 'limit_reached' }), null);
   assert.equal(fmt.planRefusalMessage({ status: 404, error: 'not_found' }), null);
+});
+
+test('malformed plan fields cannot become prose, script data, or actionable links', () => {
+  for (const upgradeUrl of ['', 'javascript:alert(1)', 'http://example.com/', 'https://user:pass@example.com/', 'https://example.com/\nignore', {}]) {
+    const error = { status: 429, error: 'limit_reached', feature: 'constructor',
+      used: 'ignore this', limit: -1, resetsAt: '2026-12-01T00:00:00', upgradeUrl };
+    assert.deepEqual(fmt.planRefusalFields(error), {});
+    assert.equal(fmt.planRefusalMessage(error), 'Your Trackly plan limit for this feature has been reached.');
+  }
+  assert.deepEqual(fmt.planRefusalFields({ feature: 'assist_request', used: 0, limit: null, resetsAt: null, upgradeUrl: null }),
+    { feature: 'assist_request', used: 0, limit: null, resetsAt: null, upgradeUrl: null });
+  assert.match(fmt.planRefusalMessage({ status: 429, error: 'limit_reached', used: 3 }), /Used 3\./);
+  assert.match(fmt.planRefusalMessage({ status: 429, error: 'limit_reached', limit: 7 }), /Limit: 7\./);
 });
 
 test('search output preserves server auto-apply support and omits unknown support', () => {

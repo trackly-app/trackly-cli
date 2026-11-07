@@ -156,7 +156,7 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `GET /api/jobscout/jobs/:id` -- Job detail
 - `GET /api/jobscout/companies` -- List companies
 - `GET /api/jobscout/companies/search` -- Semantic company search
-- `GET /api/jobscout/me` -- User stats and discovery preferences
+- `GET /api/jobscout/me` -- User identity, optional plan, stats and discovery preferences (also backs whoami)
 - `PUT /api/jobscout/preferences` -- Atomic discovery-preference updates
 - `GET /api/jobscout/ask` -- Natural language search
 - `POST /api/jobscout/companies/request` -- Request a company be added (rate-limited, 5 pending max)
@@ -194,7 +194,6 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `GET /api/jobscout/application-profile/default-resume` -- Download the default resume into the private local cache (`trackly_prepare_resume`)
 - `POST /api/auth/api-key` -- Create API key
 - `GET /api/auth/api-keys` -- List API keys
-- `GET /api/auth/user` -- Current user info
 - `POST /api/auth/refresh` -- Token refresh
 - `GET /api/network/people` -- List/search contacts
 - `POST /api/network/jobs/:id/referral-campaign` -- Start referral campaign

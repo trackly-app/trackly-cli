@@ -18,8 +18,9 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       requests.push({ method: req.method, url: req.url, body, userAgent: req.headers['user-agent'] });
-      res.writeHead(fixture.status, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(fixture.body));
+      if (fixture.disconnect) return req.socket.destroy();
+      res.writeHead(fixture.status, { 'Content-Type': fixture.raw ? 'text/html' : 'application/json' });
+      res.end(fixture.raw || JSON.stringify(fixture.body));
     });
   });
   t.after(() => new Promise(resolve => httpServer.close(resolve)));
@@ -34,6 +35,8 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
       const { tools } = await client.listTools();
       const tool = tools.find(value => value.name === 'trackly_auto_apply');
       assert.ok(tool);
+      assert.deepEqual(tool.annotations, { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true });
+      assert.match(tools.find(value => value.name === 'trackly_update_status').description, /already submitted/);
       assert.deepEqual(Object.keys(tool.inputSchema.properties), ['jobId']);
       assert.deepEqual(tool.inputSchema.required, ['jobId']);
       assert.equal(tool.inputSchema.additionalProperties, false);
@@ -60,6 +63,7 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
 
       for (const [status, body, expected] of [
         [404, { error: 'feature_disabled' }, /Auto-apply is not available for this account yet/],
+        [404, { error: 'job_not_found' }, /Job not found.*Check the Trackly job ID/],
         [404, { error: 'Not found' }, /Auto-apply is not available for this account yet/],
         [429, { error: 'limit_reached', feature: 'assist_request', used: 15, limit: 15,
           resetsAt: null, upgradeUrl: null }, /cloud auto-apply.*Used 15 of 15/],
@@ -77,13 +81,50 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
         payload = JSON.parse(result.content[0].text);
         assert.match(payload.message || payload.error, expected);
         assert.equal(payload.status, status);
+        if (body.error === 'slow_down') assert.equal(payload.retryable, undefined);
+        if (body.error === 'Not found') assert.equal(payload.diagnostic, 'Not found');
         assert.equal(requests.length, before + 1, 'mutation refusal must not retry');
         assert.doesNotMatch(JSON.stringify(payload), /20 natural|daily limit/i);
-        if (status === 404 || body.error.endsWith('limit_reached')) assert.equal(payload.retryable, false);
+        if (status === 404 || status >= 500 || body.error.endsWith('limit_reached')) assert.equal(payload.retryable, false);
+        if (status >= 500) assert.match(payload.error, /Check your request status with trackly apply --status/);
         if (body.error.endsWith('limit_reached')) {
           for (const key of ['feature', 'used', 'limit', 'resetsAt', 'upgradeUrl']) assert.deepEqual(payload[key], body[key]);
         }
       }
+
+      for (const code of ['maintenance_mode', 'ACCESS_CHECK_UNAVAILABLE']) {
+        fixture = { status: 503, body: { code, message: 'Temporarily unavailable' } };
+        result = await client.callTool({ name: 'trackly_auto_apply', arguments: { jobId: 42 } });
+        payload = JSON.parse(result.content[0].text);
+        assert.equal(result.isError, true);
+        assert.equal(payload.code, code);
+      }
+
+      fixture = { status: 429, body: { error: 'limit_reached', feature: 'constructor',
+        used: 'untrusted-text', limit: -1, resetsAt: {}, upgradeUrl: 'javascript:alert(1)' } };
+      result = await client.callTool({ name: 'trackly_auto_apply', arguments: { jobId: 42 } });
+      payload = JSON.parse(result.content[0].text);
+      assert.equal(result.isError, true);
+      for (const key of ['feature', 'used', 'limit', 'resetsAt', 'upgradeUrl']) assert.equal(Object.hasOwn(payload, key), false);
+      assert.doesNotMatch(JSON.stringify(payload), /untrusted-text|javascript|constructor/);
+
+      fixture = { disconnect: true };
+      const beforeDisconnect = requests.length;
+      result = await client.callTool({ name: 'trackly_auto_apply', arguments: { jobId: 42 } });
+      payload = JSON.parse(result.content[0].text);
+      assert.equal(result.isError, true);
+      assert.equal(payload.retryable, false);
+      assert.equal(payload.code, 'auto_apply_status_unknown');
+      assert.match(payload.error, /Check your request status with trackly apply --status/);
+      assert.equal(requests.length, beforeDisconnect + 1);
+
+      fixture = { status: 404, raw: '<html>private-proxy-body</html>' };
+      result = await client.callTool({ name: 'trackly_auto_apply', arguments: { jobId: 42 } });
+      payload = JSON.parse(result.content[0].text);
+      assert.equal(result.isError, true);
+      assert.match(payload.message, /Auto-apply is not available for this account yet/);
+      assert.match(payload.diagnostic, /non-JSON response/);
+      assert.doesNotMatch(JSON.stringify(payload), /private-proxy-body/);
 
       for (const flag of [true, false, undefined]) {
         const job = { id: 42, title: 'PM', ...(flag === undefined ? {} : { autoApplySupported: flag }) };
@@ -92,16 +133,41 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
         assert.deepEqual(JSON.parse(result.content[0].text).jobs, [job]);
       }
 
+      for (const body of [{}, { request: null }, { request: { id: 'x', jobId: 41, status: 'queued' } },
+        { request: { id: 'x', jobId: 42 } }, '<html>unexpected-response</html>']) {
+        fixture = typeof body === 'string' ? { status: 201, raw: body } : { status: 201, body };
+        const before = requests.length;
+        result = await client.callTool({ name: 'trackly_auto_apply', arguments: { jobId: 42 } });
+        payload = JSON.parse(result.content[0].text);
+        assert.equal(result.isError, true);
+        assert.equal(payload.code, 'invalid_auto_apply_response');
+        assert.equal(payload.retryable, false);
+        assert.match(payload.error, /Invalid auto-apply response.*Check your request status/);
+        assert.equal(requests.length, before + 1);
+      }
+
+      fixture = { status: 429, body: { error: 'slow_down' } };
+      for (const [name, args] of [['trackly_update_status', { id: 42, action: 'applied' }],
+        ['trackly_start_apply_run', { jobId: 42 }]]) {
+        const before = requests.length;
+        result = await client.callTool({ name, arguments: args });
+        payload = JSON.parse(result.content[0].text);
+        assert.equal(result.isError, true);
+        assert.equal(payload.retryable, undefined);
+        assert.match(payload.message, /Rate limited, try again shortly/);
+        assert.equal(requests.length, before + 1);
+      }
+
       fixture = { status: 429, body: { error: 'limit_reached', feature: 'agent_fill', used: 0, limit: 0, resetsAt: null } };
-      for (const [name, args] of [['trackly_ask', { query: 'PM' }], ['trackly_get_job', { id: 42 }]]) {
+      for (const [name, args] of [['trackly_ask', { query: 'PM' }], ['trackly_get_job', { id: 42 }], ['trackly_get_job_brief', { jobId: 42 }]]) {
         result = await client.callTool({ name, arguments: args });
         payload = JSON.parse(result.content[0].text);
         assert.equal(payload.retryable, false);
         assert.match(payload.message, /agent fills.*Used 0 of 0/);
         assert.equal(Object.hasOwn(payload, 'upgradeUrl'), false);
         assert.doesNotMatch(JSON.stringify(payload), /https:|20 natural/);
-        if (name === 'trackly_get_job') {
-          assert.equal(payload.category, 'rate_limit');
+        if (name !== 'trackly_ask') {
+          assert.equal(payload.category, 'access');
           assert.equal(payload.maxRetries, 0);
           assert.equal(Object.hasOwn(payload, 'retryAfterSeconds'), false);
         }
