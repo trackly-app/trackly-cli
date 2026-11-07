@@ -73,7 +73,7 @@ API-key creation attempts.
 ### Available Tools
 
 - **get_more_tools** — Report what the agent wanted to do when no Trackly tool fit, so Trackly can improve its MCP surface. The tool is always available; report delivery is best-effort.
-- **trackly_search_jobs** — Search/filter jobs. A successful page may have `total: null`, `pagination.total: null` and `countStatus: "unavailable"` when its total cannot be computed. The returned jobs remain valid: explain `countGuidance`, use `hasMore` and pagination to continue, and avoid retrying just to obtain a total. Zero is a known count; null is unknown. A numeric `total` with `totalIsLowerBound: true` (also in `pagination`) means at least that many matches, not an exact count. `false` marks a known exact total; `null` leaves the total unknown. Natural-language `trackly_ask` preserves the same page metadata. Genuine page failures remain tool errors.
+- **trackly_search_jobs** — Search/filter jobs. A successful page may have `total: null`, `pagination.total: null` and `countStatus: "unavailable"` when its total cannot be computed. The returned jobs remain valid: explain `countGuidance`, use `hasMore` and pagination to continue, and avoid retrying just to obtain a total. Zero is a known count; null is unknown. A numeric `total` with `totalIsLowerBound: true` (also in `pagination`) means at least that many matches, not an exact count. `false` marks a known exact total; `null` leaves the total unknown. Natural-language `trackly_ask` returns the same page metadata, but it returns one page and takes no pagination input: continue there with `trackly_search_jobs` and `offset`. Genuine page failures remain tool errors.
   - `function` (one value) or `jobFunctions` (nonempty array, OR; use one spelling only). The 14 values are: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`
   - `region`: nonempty array of `us`, `europe`, `latam`, `middle_east`, `asia`, `africa`, `canada`, `oceania`, `remote`, `unknown`, combined with OR. Use instead of `locationFilter`; unlike its legacy list form, this supports US plus other regions.
   - `usStates`: nonempty array of US codes `AL`, `AK`, `AZ`, `AR`, `CA`, `CO`, `CT`, `DC`, `DE`, `FL`, `GA`, `HI`, `ID`, `IL`, `IN`, `IA`, `KS`, `KY`, `LA`, `ME`, `MD`, `MA`, `MI`, `MN`, `MS`, `MO`, `MT`, `NE`, `NV`, `NH`, `NJ`, `NM`, `NY`, `NC`, `ND`, `OH`, `OK`, `OR`, `PA`, `RI`, `SC`, `SD`, `TN`, `TX`, `UT`, `VT`, `VA`, `WA`, `WV`, `WI`, `WY`, `PR`, `REMOTE`.
@@ -103,19 +103,21 @@ The local package and hosted service have separate release lifecycles. Refresh t
 
 - **trackly_get_job** — Get full job details by positive numeric Trackly ID from search or the saved queue. Employer requisition IDs and URLs are not accepted.
 
-Job results use `matchScoreStatus: "scored" | "pending" | "not_scored"`. A score is a saved result; never estimate a numeric score when it is null. `pending` requires owned waiting work for the current parsed default resume and selected description revision: retryable description parsing or a live job-specific score item. `matchScoreReason` explains a missing score:
+Job results use `matchScoreStatus: "scored" | "pending" | "not_scored"`. A score is a saved result; never estimate a numeric score when it is null. `pending` means the backend reports work still outstanding for this job; it is the only status that means a score may still arrive. `matchScoreReason` explains a missing score:
 
 | Reason | Meaning |
 | --- | --- |
-| `null` | A valid saved score is present, including historical saved scores. |
-| `outside_scoring_window` | An active current listing was first seen outside the automatic 30-day window. |
-| `parse_required` | An in-window current description still needs a structured parse. |
-| `score_required` | An in-window current description has a parse but no valid saved score. |
-| `description_unavailable` | No usable selected description is available. |
-| `inactive` | The job is inactive and has no displayed saved score. |
-| `not_scored` | The reason cannot be safely determined, including unsupported or historical unscored selections. |
+| `null` | A saved score is present. |
+| `outside_scoring_window` | The job was first seen outside the automatic 30-day scoring window, so it is not scored automatically. |
+| `parse_required` | The job description still needs to be parsed before it can be scored. |
+| `score_required` | The description is parsed, but no score is saved yet. |
+| `description_unavailable` | No usable job description is available to score. |
+| `inactive` | The job is inactive, so no score is shown. |
+| `not_scored` | No score, and the reason cannot be determined. |
 
-`parse_required` and `score_required` identify missing prerequisites for an active current listing inside the window. Reasons alone do not assert a queued/running task, a ready resume, available retries, or a completion deadline. Only `matchScoreStatus=pending` establishes owned waiting work. The unparsed phase uses the description parser's own retryable worklist and exact input/cap rules. Once parsed, only a live job-specific score item establishes pending. Failed, exhausted, externally owned or ambiguous parsing stays unknown; completed, exhausted, stale processing, superseded-resume and superseded-revision score items cannot establish pending. This does not assert active execution or a completion deadline. A valid saved score takes precedence. When authority is unavailable, the status remains `not_scored`.
+`parse_required` and `score_required` name a missing prerequisite, not a queued task. A reason never promises a running job, a ready resume, available retries, or a completion time: only `matchScoreStatus=pending` means a score may still arrive, and it carries no deadline either. So report the job as not yet scored, and do not poll for a score or estimate one. A valid saved score always wins over a reason, and when the status cannot be determined it stays `not_scored`.
+
+The backend owns when a score is produced. These values are the stable part of the API; the queue, cooldown, lease and revision mechanics behind them are backend implementation, are not public API, and are deliberately not documented here. Read the fields, not the machinery.
 
 - **trackly_search_companies** — Semantic company search
 - **trackly_list_companies** — List all tracked companies with job counts
@@ -128,7 +130,7 @@ Job results use `matchScoreStatus: "scored" | "pending" | "not_scored"`. A score
   - When server-side enforcement is active, a job remains visible when its stated minimum is less than or equal to that role's limit. Jobs with no stated minimum remain visible.
 - **trackly_update_status** — Mark a job as applied, saved, or dismissed
 - **trackly_auto_apply** — Request cloud auto-apply for one US Greenhouse, Lever, or Ashby job using the account default resume. Arguments: `{jobId: number}` (positive integer, at most 2147483647). Call only when the user asks Trackly to apply and notify them. Returns the request and status. The server decides availability and limits; 404 `feature_disabled` means unavailable for this account, while `job_not_found` asks for a valid job ID; 429 carries plan usage/reset details and an optional server-provided upgrade URL. Available in local source; pending the coordinated hosted release. Check progress with `trackly apply --status` in the CLI.
-- **trackly_ask** — Natural language job search
+- **trackly_ask** — Natural language job search. Takes only a query and returns one page with the same count metadata as `trackly_search_jobs`, plus the parsed filters it inferred. It has no pagination input, so when `hasMore` is true continue with `trackly_search_jobs` using supported structured filters and `offset`; repeating the query returns the same first page. An unreadable follow-on job page is a tool error, not an empty result.
 - **trackly_get_job_brief** — Get network brief for a positive numeric Trackly job ID (company signal, top contact, actions).
 
 Both job tools return JSON text and matching `structuredContent`. A recognized missing or removed posting, or an explicitly inactive posting, returns `availability: "unavailable"`, a reason, `retryable: false`, and a `nextStep` directing the agent to search for current openings. This is a normal tool result. Closed briefs retain their allowed stored company and role context, but omit stale recommended motions and application actions. A missing availability flag means unknown, not closed; detecting closed briefs requires a backend that supplies that flag.

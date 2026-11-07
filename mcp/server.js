@@ -24,6 +24,19 @@ const AUTH_HINT =
 const MCP_ANALYTICS_CONTEXT_DESCRIPTION =
   'Briefly explain why this tool helps the current job-search goal. Never include resume text, profile answers, demographic or work-authorization answers, application notes, credentials, or secrets.';
 
+// The only keys trackly_ask copies from the job page it follows. Everything else
+// in that response stays out of the payload: the ask result owns its own
+// envelope and parse fields (success, query, parsedFilters), and the handler owns
+// the guard fields (jobsUrl, jobsUrlRefused). Keep this list in sync with the
+// count metadata documented in docs/trackly-tools.md.
+const ASK_PAGE_METADATA_KEYS = [
+  'total', 'totalIsLowerBound', 'countStatus', 'countGuidance', 'hasMore', 'pagination', 'recencyStats',
+];
+// Fixed text, never derived from the page body, so an unreadable response cannot
+// put its own content into the agent's context through the error path either.
+const INVALID_JOBS_RESPONSE_ERROR =
+  'Trackly returned an unreadable job page for this search. The search did not complete; retry it, or use trackly_search_jobs with structured filters.';
+
 // Mirrors `granola-followup-app/src/services/region-classifier.ts:8` REGION_TAGS.
 // Keep in sync when the backend enum changes.
 const REGION_TAGS = [
@@ -149,6 +162,7 @@ function createErrorResult(error, fallbackMessage, extra = {}) {
     || error?.code === 'sensitive_revocation_confirmation_required'
     || error?.code === 'invalid_profile_revision'
     || error?.code === 'invalid_profile_response'
+    || error?.code === 'invalid_jobs_response'
   ) {
     payload.code = error.code;
   }
@@ -566,7 +580,7 @@ function createServer() {
 
   server.tool(
     'trackly_ask',
-    'Natural language job search. Describe what you are looking for and the AI parses it into structured filters. Results preserve matchScoreReason and count metadata: totalIsLowerBound=true means the total is a lower bound; total=null means unknown. Explain countGuidance and use hasMore/pagination.',
+    'Natural language job search. Describe what you are looking for and the AI parses it into structured filters. Returns one page and has no pagination input. Results preserve matchScoreReason and count metadata: totalIsLowerBound=true means the total is a lower bound; total=null means unknown. Explain countGuidance, then continue with trackly_search_jobs using supported structured filters and offset. Never repeat this natural-language query to paginate: it returns the same first page.',
     {
       query: z.string().max(500).describe('Natural language search query, e.g. "PM jobs at fintech companies in SF"'),
     },
@@ -580,11 +594,35 @@ function createServer() {
         const JOBS_URL_ALLOWLIST = /^\/api\/(v1|jobscout)\/jobs(\?|$)/;
         if (JOBS_URL_ALLOWLIST.test(askResult.jobsUrl)) {
           const jobsResult = await apiRequest('GET', askResult.jobsUrl, null, false, false, MCP_USER_AGENT);
+          // The followed page is backend-controlled data, not an envelope to trust.
+          // Require a real page first: lib/client.js resolves every 2xx verbatim,
+          // so an empty body, a proxy's HTML interstitial (surfaced as `raw`) or a
+          // body reporting its own failure would otherwise be answered as a
+          // successful search with zero jobs. An unreadable page is a failed
+          // search, not an empty one.
+          const jobs = jobsResult?.jobs ?? jobsResult?.data;
+          if (!Array.isArray(jobs) || jobsResult.success === false) {
+            throw {
+              status: 502,
+              code: 'invalid_jobs_response',
+              error: INVALID_JOBS_RESPONSE_ERROR,
+            };
+          }
+          // Copy only the documented count metadata. A blanket spread of the page
+          // let it overwrite the ask-owned parse fields the agent needs
+          // (parsedFilters, query, success), set the guard fields this handler
+          // owns (jobsUrl, which had to be re-pinned, and jobsUrlRefused, which
+          // did not), and reflect arbitrary page keys into the agent's context.
+          const pageMetadata = {};
+          for (const key of ASK_PAGE_METADATA_KEYS) {
+            if (Object.prototype.hasOwnProperty.call(jobsResult, key)) pageMetadata[key] = jobsResult[key];
+          }
           return {
             ...askResult,
-            ...jobsResult,
+            ...pageMetadata,
+            jobs,
             jobsUrl: askResult.jobsUrl,
-            jobs: jobsResult.jobs || jobsResult.data || [],
+            jobsUrlRefused: false,
           };
         }
         // Untrusted jobsUrl. Strip it from the returned payload so the MCP client
