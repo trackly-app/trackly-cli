@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- MCP search distinguishes pending prerequisites from jobs outside the scoring window and preserves explicit lower-bound counts. `trackly_ask` forwards documented count/recency metadata, preserves its interpretation and validated URL, omits unrelated page fields, and returns the `invalid_jobs_response` tool error for unreadable follow-on pages.
 - **Breaking:** `trackly apply <jobId>` requests cloud auto-apply. Use `trackly mark-applied <jobId>` to record an application you already submitted.
 - `trackly whoami` reads the account identity and optional plan from `/api/jobscout/me`.
 - Limit messages display server-provided plan details; other 429 responses use temporary rate-limit guidance. JSON refusals include structured status, message and retry guidance on stdout with a nonzero exit code.
