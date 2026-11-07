@@ -424,8 +424,10 @@ function createServer() {
     },
     wrapTool(async ({ jobId }) => {
       try {
+        // Never send `acknowledged`: it separately lets the claiming staff member read the
+        // applicant's sensitive answers. A request to apply is not consent to that disclosure.
         const result = await apiRequest('POST', '/api/jobscout/apply/assist-requests', {
-          jobId, acknowledged: true,
+          jobId,
         }, false, false, MCP_USER_AGENT);
         validateAssistResponse(result, { jobId });
         return { ...result, message: 'Trackly will apply and notify you.' };

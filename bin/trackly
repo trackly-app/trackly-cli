@@ -918,7 +918,8 @@ async function cmdApply(args) {
   if (!hasAuth()) failNow(AUTH_HELP_TEXT);
   try {
     const endpoint = '/api/jobscout/apply/assist-requests';
-    const body = args.status ? null : { jobId, acknowledged: true, ...(resumeId === undefined ? {} : { resumeId }) };
+    // No `acknowledged`: that flag lets staff read sensitive answers and is granted in the web app.
+    const body = args.status ? null : { jobId, ...(resumeId === undefined ? {} : { resumeId }) };
     const result = await apiRequest(args.status ? 'GET' : 'POST', endpoint, body);
     validateAssistResponse(result, args.status ? { list: true } : { jobId });
     if (isJSON()) return printJson(args.status ? result : { ...result, message: 'Trackly will apply and notify you.' });

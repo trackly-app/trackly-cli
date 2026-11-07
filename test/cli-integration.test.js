@@ -78,7 +78,7 @@ test('apply requests cloud auto-apply with acknowledgement and optional resume',
       assert.equal(requests.length, 1);
       assert.equal(requests[0].method, 'POST');
       assert.equal(requests[0].url, '/api/jobscout/apply/assist-requests');
-      assert.deepEqual(JSON.parse(requests[0].body), { jobId: 42, acknowledged: true, ...(resumeId ? { resumeId } : {}) });
+      assert.deepEqual(JSON.parse(requests[0].body), { jobId: 42, ...(resumeId ? { resumeId } : {}) });
       if (env === HUMAN_ENV) {
         assert.match(result.stdout, /request-1: queued/);
         assert.match(result.stdout, /Trackly will apply and notify you/);

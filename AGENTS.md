@@ -161,7 +161,7 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `GET /api/jobscout/ask` -- Natural language search
 - `POST /api/jobscout/companies/request` -- Request a company be added (rate-limited, 5 pending max)
 - `POST /api/jobscout/tracker/jobs/:id/stage` -- Update job tracker stage (`applied`/`backlog`/`discarded`; CLI maps mark-applied/save/dismiss)
-- `POST /api/jobscout/apply/assist-requests` -- Request cloud auto-apply (jobId, acknowledged, optional resumeId)
+- `POST /api/jobscout/apply/assist-requests` -- Request cloud auto-apply (jobId, optional resumeId; the CLI never sends `acknowledged`, which grants staff access to sensitive answers)
 - `GET /api/jobscout/apply/assist-requests` -- List the user's auto-apply requests
 - `GET /api/jobscout/apply/queue` -- Get the user's approved application queue (`trackly_get_apply_queue`)
 - `GET /api/jobscout/application-profile` -- Get the versioned application profile (`trackly_get_application_profile`)
