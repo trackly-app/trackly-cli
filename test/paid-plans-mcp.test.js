@@ -133,6 +133,16 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
       assert.equal(payload.diagnostic, 'Not found[31m');
       assert.doesNotMatch(payload.message + payload.diagnostic, /[\u0000-\u001f\u007f]/);
 
+      fixture = { status: 500, body: { error: '\u001b\u0007\r\n\u007f\u009b' + 'x'.repeat(900) } };
+      const beforeUncertain = requests.length;
+      result = await client.callTool({ name: 'trackly_auto_apply', arguments: { jobId: 42 } });
+      payload = JSON.parse(result.content[0].text);
+      assert.equal(result.isError, true);
+      assert.equal(payload.retryable, false);
+      assert.equal(requests.length, beforeUncertain + 1);
+      assert.doesNotMatch(payload.message, /[\u0000-\u001f\u007f-\u009f]|x{501}/);
+      assert.match(payload.message, /x{500}\. Check your request status with trackly apply --status/);
+
       for (const flag of [true, false, undefined]) {
         const job = { id: 42, title: 'PM', ...(flag === undefined ? {} : { autoApplySupported: flag }) };
         fixture = { status: 200, body: { jobs: [job] } };

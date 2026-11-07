@@ -294,18 +294,29 @@ test('auto-apply preserves JSON and non-JSON 404 diagnostics without raw bodies'
   }
 });
 
-test('auto-apply 404 diagnostics strip terminal controls', async (t) => {
+test('auto-apply diagnostics strip terminal controls and cap server text', async (t) => {
   for (const args of [['apply', '42'], ['apply', '--status']]) {
     for (const env of [HUMAN_ENV, {}]) {
       const { result } = await runAgainstMock(t, args,
-        () => ({ status: 404, json: { error: 'Not found\u001b[31m\u0007\r\n\u007f' } }), env);
+        () => ({ status: 404, json: { error: 'Not found\u001b[31m\u0007\r\n\u007f\u009b' } }), env);
       assert.equal(result.code, 1);
       const payload = env === HUMAN_ENV ? null : JSON.parse(result.stdout);
       const text = payload ? payload.message : result.stderr.trim();
       assert.match(text, /API diagnostic: Not found\[31m$/);
-      assert.doesNotMatch(text, /[\u0000-\u001f\u007f]/);
+      assert.doesNotMatch(text, /[\u0000-\u001f\u007f-\u009f]/);
       if (payload) assert.equal(payload.diagnostic, 'Not found[31m');
     }
+  }
+  for (const env of [HUMAN_ENV, {}]) {
+    const { result, requests } = await runAgainstMock(t, ['apply', '42'],
+      () => ({ status: 500, json: { error: '\u001b\u0007\r\n\u007f\u009b' + 'x'.repeat(900) } }), env);
+    assert.equal(result.code, 1);
+    assert.equal(requests.length, 1);
+    const payload = env === HUMAN_ENV ? null : JSON.parse(result.stdout);
+    const text = payload ? payload.message : result.stderr.trim();
+    assert.doesNotMatch(text, /[\u0000-\u001f\u007f-\u009f]|x{501}/);
+    assert.match(text, /x{500}\. Check your request status with trackly apply --status/);
+    if (payload) assert.equal(payload.retryable, false);
   }
 });
 
