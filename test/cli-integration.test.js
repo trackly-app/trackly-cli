@@ -67,7 +67,7 @@ function query(requests) {
 
 const HUMAN_ENV = { NODE_OPTIONS: `--require=${path.join(__dirname, 'force-tty.js')}`, NO_COLOR: '1' };
 
-test('apply requests cloud auto-apply with acknowledgement and optional resume', async (t) => {
+test('apply requests cloud auto-apply without acknowledgement and with optional resume', async (t) => {
   for (const resumeId of [undefined, 21]) {
     const args = ['apply', '42', ...(resumeId ? ['--resume-id', String(resumeId)] : [])];
     const response = { request: { id: 'request-1', jobId: 42, status: 'queued' } };
@@ -79,6 +79,7 @@ test('apply requests cloud auto-apply with acknowledgement and optional resume',
       assert.equal(requests[0].method, 'POST');
       assert.equal(requests[0].url, '/api/jobscout/apply/assist-requests');
       assert.deepEqual(JSON.parse(requests[0].body), { jobId: 42, ...(resumeId ? { resumeId } : {}) });
+      assert.ok(!('acknowledged' in JSON.parse(requests[0].body)), 'apply must never send the staff sensitive-answer consent flag');
       if (env === HUMAN_ENV) {
         assert.match(result.stdout, /request-1: queued/);
         assert.match(result.stdout, /Trackly will apply and notify you/);

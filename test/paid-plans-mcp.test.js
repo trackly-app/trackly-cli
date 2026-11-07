@@ -52,9 +52,11 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
       assert.equal(requests[0].method, 'POST');
       assert.match(requests[0].userAgent, /^trackly-mcp\//);
       assert.deepEqual(JSON.parse(requests[0].body), { jobId: 42 });
+      assert.ok(!('acknowledged' in JSON.parse(requests[0].body)), 'MCP must never send the staff sensitive-answer consent flag');
 
       for (const args of [{}, { jobId: 0 }, { jobId: -1 }, { jobId: 1.5 }, { jobId: '42' },
-        { jobId: 2147483648 }, { jobId: 42, resumeId: 21 }, { jobId: 42, acknowledged: false }]) {
+        { jobId: 2147483648 }, { jobId: 42, resumeId: 21 }, { jobId: 42, acknowledged: false },
+        { jobId: 42, acknowledged: true }]) {
         const before = requests.length;
         result = await client.callTool({ name: 'trackly_auto_apply', arguments: args });
         assert.equal(result.isError, true);
