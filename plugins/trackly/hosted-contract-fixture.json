@@ -1,20 +1,20 @@
 {
   "formatVersion": 3,
-  "capturedAt": "2026-11-10T00:20:47-08:00",
+  "capturedAt": "2026-11-10T01:56:16-08:00",
   "sourceRuntime": {
-    "commit": "afa31b7f5884eda5104b9efca8491ea75e24e086",
+    "commit": "f9226166b6b34bfcd611efa47c1b793ffc77c87c",
     "parents": [
-      "e0ba580a9a033569616bc3333201205cad2a9148"
+      "391cb2e81e44d2106347547fdfbc1b2487821c49"
     ],
-    "committedAt": "2026-11-10T06:52:19Z"
+    "committedAt": "2026-11-10T08:12:28Z"
   },
   "mergedRuntime": {
-    "commit": "6cd11dfb1c5b59dbb11b325c3a4f68a1a3fc8b23",
+    "commit": "6a5b05f5d043feba651e8dc7c70f1ea29013308b",
     "parents": [
-      "662cf2039ef8ca243d316168912ef24f771ea78c",
-      "afa31b7f5884eda5104b9efca8491ea75e24e086"
+      "83ec973080dfae008afe88abc51aa9625b96f757",
+      "f9226166b6b34bfcd611efa47c1b793ffc77c87c"
     ],
-    "committedAt": "2026-11-09T23:14:09-08:00"
+    "committedAt": "2026-11-10T00:46:57-08:00"
   },
   "applyContractVersion": "3.9.3",
   "pluginContractVersion": "1.0.0",
@@ -107,7 +107,7 @@
     [
       "trackly_prepare_resume_artifact",
       "cd5173c44d6d2670cae41cc08dcf547eacbf574d850c62cb1467877cde9d7af2",
-      "a83b1f55b59755d302c82d26dc0e3883b4aa6728463fb18a9609e4fdb333101b"
+      "698f5eb8a52436b7afe0d258d844a28b447c65115c54c118b01b8db95ed7ac88"
     ],
     [
       "trackly_certify_review_ready",
@@ -188,8 +188,8 @@
     "get_more_tools"
   ],
   "sourceSha256": {
-    "pluginServer": "0a9c61e29adb36504197bd2c4a1b2374facc09a944e40a48cea10ac1e1b5319e",
-    "pluginScopes": "7af7450c08a4b1944fb4f5dd0cf97a2f1247693326ba1af4e866b5fe4fa5d040",
+    "pluginServer": "2a7e5b61262d3d9e9519f10c247013ce8252c578dc8e4b8f3e843ac43399237f",
+    "pluginScopes": "c8a7557be3bc1706dd0565baf2513b1ac191090b385926b5adc5c43e89721d55",
     "jobBriefService": "fee263be5b7b05da8db6b9b9e2cb7559a50abeeeab447166f5fe7a889892bc7b",
     "backendUiRedirect": "3d1018e472992626d39299be89ee8e996930fb76ce0f69155f2f63bb6f34d55e",
     "maintenanceMode": "0409b32355a014ecc4d64056bf251fcde5f377400fe4f7485e70795420b25afe",

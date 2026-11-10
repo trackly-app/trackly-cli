@@ -6,7 +6,10 @@ function assertExactHostedSourceSha256(source, expected, label) { assert.equal(c
 // hosted fixture. Keep these separate so historical fixture verification stays
 // independent while coordinated verification locks every new trust boundary.
 const HOSTED_RESUME_SECURITY_SOURCE_SHA256 = Object.freeze({
-  'src/mcp/plugin-router.ts': '6a2fea712f9b614cdbfa295f824bf39499bd561488d3c5acd7d8c72a03fa6adc',
+  // Recaptured at close-ai 6a5b05f5 (#3604): the Claude, ChatGPT and classic plugin servers also
+  // receive the token's own userId and granted scopes (directory flags, Claude Apply allowlist and
+  // sensitive-applicability reads). Authentication, resume preview and the transport are unchanged.
+  'src/mcp/plugin-router.ts': '2f5d9b07c4e4cf8b4a952e722cfe2689d7e812f2c33b8d5ed3e705b2584afb67',
   'src/mcp/plugin-resume-capability.ts': '944bcb942c9a537e8fa0d90991aab49b1e12582d05091ea5ace4776d2ddca322',
   'src/mcp/plugin-resume-document.ts': '1ee57a9948aa296cd1b75dac814386609cf0e02b7d02dbcb9f096ddce98068db',
   'src/mcp/plugin-resume-router.ts': '3d927aa94a019c45fc302d5d148da99ee6a2045a72efb73ef34d022102ebac30',
@@ -153,10 +156,24 @@ const resumeOutputContract = {
   }).strict().optional()`,
 };
 assertExactSchemaProperties(resumeOutputProperties, resumeOutputContract, 'resumeOutputSchema');
+// close-ai #3604 (recaptured at 6a5b05f5): Claude has no private preview component, so a
+// Claude preview returns only the typed review_in_trackly_web state, with no document,
+// capability or open URL; the classic and ChatGPT preview paths are unchanged.
 assertDirectResumeHandlerAst(
   resumeRegistration,
   `async ({ operation }) => {
     try {
+      if (operation === 'preview' && options.surface === 'claude') {
+        return resultContent({
+          view: 'resume' as const,
+          success: true,
+          requiresLocalAgentOrManualUpload: true as const,
+          automaticEmployerAttachment: false as const,
+          noSubmit: true as const,
+          nextAction: 'review_in_trackly_web',
+          privacy: 'No resume bytes, file identifiers, filenames, download URLs, tokens, or local paths were returned.',
+        }, true);
+      }
       if (operation === 'preview') {
         if (!prepareResume) throw new Error('Resume preview is unavailable on this host');
         const { openUrl, ...document } = await prepareResume();
