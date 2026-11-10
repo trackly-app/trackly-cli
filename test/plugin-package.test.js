@@ -872,6 +872,11 @@ test('the exported plugin router must be mounted on the exact production applica
     }
     function startServer() {
       installProcessGuards();
+      try { startOutreachWorker(getOutreachData()); }
+      catch (error) {
+        logger.error('outreach-agent','Worker configuration rejected at API startup');
+        throw error;
+      }
       if (shouldRunStartupDbWrites()) {
         startRefreshGraceSweep();
         startMuseTraceRetention(pool, (postgresCode) => {
@@ -879,7 +884,10 @@ test('the exported plugin router must be mounted on the exact production applica
         });
       }
       const app = createApp();
-      app.listen(PORT);
+      const server = app.listen(PORT);
+      const stopVoiceRelay = attachVoiceRelay(server, voiceRelayDependencies(requireAuth, isVoiceV3Enabled, isVoiceV3Pilot));
+      installApiShutdown({ server, stopVoice: stopVoiceRelay, stopSummaries: stopVoiceRelaySummaries,
+        closeDatabase: () => pool.end(), exit: code => process.exit(code) });
     }
     if (require.main === module) {
       startServer();
@@ -1235,6 +1243,29 @@ test('the exported plugin router must be mounted on the exact production applica
     ),
     /must execute only installProcessGuards and its locked maintenance prelude before creating the live application/,
   );
+  // close-ai #3552: the outreach worker start is part of the locked prelude.
+  assert.throws(
+    () => assertLivePluginRouterMount(
+      source.replace("throw error;\n", 'return;\n'),
+      'tracklyPluginMcpRoutes',
+      './mcp/plugin-router',
+      '/api/plugin/trackly/mcp',
+      'swallowed outreach worker failure fixture',
+    ),
+    /must execute only installProcessGuards and its locked maintenance prelude before creating the live application/,
+  );
+  // close-ai #3460: the bound listener may reach only the reviewed voice relay and shutdown.
+  for (const [from, to, label] of [
+    ['const stopVoiceRelay = attachVoiceRelay(server,', 'const stopVoiceRelay = attachOtherRelay(server,', 'swapped relay fixture'],
+    ['closeDatabase: () => pool.end(), exit: code => process.exit(code) });', "closeDatabase: () => pool.end(), exit: code => process.exit(code) });\n      server.on('request', otherApp);", 'second request handler fixture'],
+  ]) {
+    const changed = source.replace(from, to);
+    assert.notEqual(changed, source);
+    assert.throws(
+      () => assertLivePluginRouterMount(changed, 'tracklyPluginMcpRoutes', './mcp/plugin-router', '/api/plugin/trackly/mcp', label),
+      /must attach only the reviewed voice relay and shutdown|must not reference the listening server outside its reviewed attachments/,
+    );
+  }
   assert.throws(
     () => assertLivePluginRouterMount(
       source.replace('if (shouldRunStartupDbWrites()) {', 'if (true) {'),
@@ -3962,8 +3993,8 @@ test('public skills reference only the locked 21-tool facade', () => {
   const lock = json('plugins/trackly/skill-lock.json');
   const actual = referencedTools(path.join(PLUGIN, 'skills'));
   assert.equal(lock.publicToolAllowlist.length, 21);
-  assert.equal(lock.hostedMcpToolAllowlist.length, 55);
-  assert.equal(new Set(lock.hostedMcpToolAllowlist).size, 55);
+  assert.equal(lock.hostedMcpToolAllowlist.length, 60);
+  assert.equal(new Set(lock.hostedMcpToolAllowlist).size, 60);
   assert.deepEqual(actual, [...lock.publicToolAllowlist].sort());
   assert.ok(!actual.some((name) => name.includes('referral')));
   assert.deepEqual(lock.publicLifecycleContract, {

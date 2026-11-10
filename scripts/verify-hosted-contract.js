@@ -13,7 +13,7 @@ const { HOSTED_RESUME_SECURITY_SOURCE_SHA256, assertHostedResumeSecuritySourceSn
 const assertResumeGlobalParserCarveout = createResumeParserVerifier({ activeNamedDefinitionAst, staticMemberName, parseFullSource, canonicalSchemaAst });
 
 const sha256ExactBytes = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-const CHECKED_IN_HOSTED_FIXTURE_SHA256 = 'c2656c0da385e5b6a755367690f474dbb9c2d7dc393ef53251a185ebc07e5694';
+const CHECKED_IN_HOSTED_FIXTURE_SHA256 = '993640a2abed713c5cf3d7969df20007b3ec15b55a44ae2ffde0980698d08e42';
 const HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256 = Object.freeze({
   applyCheckpointActionVariant: '6d83fd691e69b578f683c5e367cc1706a8f74b336e0ff435195f580c2350587c',
   applyCheckpointActionSchema: '6f0b0698b13997eda7100ec00720fff199d936270d232c7de5f55a8fcef2c2ab',
@@ -49,11 +49,14 @@ const HOSTED_GENERAL_RATE_LIMIT_SHA256 = 'c724c5215e1014a5e4cb598cb8487a4524e51e
 // plugin-scopes; this helper only shapes the published descriptors.
 // close-ai #3325 (recaptured at 7c7032c87): OpenAI search results drop only the
 // retired autoApplySupported flag; every other surface returns the response unchanged.
+// close-ai #3441 (recaptured at 6cd11dfb): plugin search forwards the hosted roleTypes
+// filter (deduplicated, comma-separated); #3462: the server reports the imported
+// published package version TRACKLY_PLUGIN_VERSION.
 const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' && options.surface !== 'openai' && options.surface !== 'muse'
     && options.surface !== 'claude') {
     throw new Error('Unknown plugin tool surface');
   }
-  const server = new McpServer({ name: 'trackly', version: PLUGIN_VERSION });
+  const server = new McpServer({ name: 'trackly', version: TRACKLY_PLUGIN_VERSION });
   server.server.registerCapabilities({ prompts: {} });
   server.server.setRequestHandler(ListPromptsRequestSchema, () => ({ prompts: [] }));
 
@@ -70,6 +73,8 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
     if (params.locationFilter) query.set('locationFilter', params.locationFilter);
     else if (Array.isArray(params.usStates) && params.usStates.length > 0) query.set('locationFilter', 'us');
     if (params.jobModality) query.set('jobModality', params.jobModality);
+    // Same passthrough as the hosted trackly_search_jobs (#3429): deduplicated, comma-separated.
+    if (Array.isArray(params.roleTypes)) query.set('roleTypes', [...new Set<string>(params.roleTypes)].join(','));
     if (params.status) query.set('status', params.status);
     if (params.sponsorship) {
       query.set('sponsorship', params.sponsorship);
@@ -220,7 +225,9 @@ const HOSTED_JOB_RESULT_SHA256 = 'e337bad5f2ebcdb4ebfa3379498852fa6fe8f78758f9b5
 // guidance points at https://usetrackly.app/profile and never submits.
 const HOSTED_PLUGIN_ONBOARDING_SHA256 = '5d4c4bd48dcc81f5230eb01e1e3269fa4ce4c9a2340eb232f6cb4104befd26ae';
 // close-ai #2105: rate-limit client IP resolution mounted in the global inventory.
-const HOSTED_CLIENT_IP_SHA256 = '9e09a30d819487315ea4e02d3c1ad1c3a584e65d36bd42882a0aad01610ee7ed';
+// close-ai #3460 (recaptured at 6cd11dfb): exports TRUST_PROXY_HOPS (still 1) and applies the
+// same hop policy to WebSocket upgrades via resolveUpgradeClientIp; Express resolution is unchanged.
+const HOSTED_CLIENT_IP_SHA256 = 'c1406043c3cc3de3c918044403a179b2227fad4967ed8cdd732c9ddc96efceba';
 // Exact deployed observation module; its imported literal path is resolved only after provenance verification.
 const HOSTED_OBSERVATION_ROUTE_SOURCE_SHA256 = 'a26b97cca7047c14df805f306aa00047d9264fdeb5136094c285b69a754cdfe9';
 const HOSTED_APPLY_REPLAY_HELPER_AST_SHA256 = Object.freeze({
@@ -518,7 +525,9 @@ function directHostedToolRegistrationsInNamedFactory(
   sourcePath,
   expectedToolCatalog,
   {
-    helperAstSha256 = '2fe648415f8e9b36be4db0e48a88952c8995784b112ef7cdae42e13529cfa97e',
+    // close-ai #3603 (recaptured at 6cd11dfb): the helper forwards optional MCP
+    // tool annotations unchanged; scope, analytics context and handler wrapping are as reviewed.
+    helperAstSha256 = '5ddf00c88db53eeeea74e50d63cc1a0383de5ec20c3e44e1d7655e1c8f70df5b',
   } = {},
 ) {
   const ast = parseFullSource(source, sourcePath);
@@ -585,6 +594,9 @@ function directHostedToolRegistrationsInNamedFactory(
     'truthCertificationInputSchema',
     'truthCertificationSchema',
     'startApplyRunSchema',
+    // close-ai #3603: the five Tracker tools share one handler set bound to this
+    // factory's requestApi and authToken; its initializer is locked exactly below.
+    'tracker',
   ]);
   const registrationCalls = new Set(registrations.map(({ call }) => call));
   const allowedServerMemberCalls = [];
@@ -601,6 +613,16 @@ function directHostedToolRegistrationsInNamedFactory(
         )),
         `${expectedFunction} in ${sourcePath} may declare only the reviewed hosted schema bindings`,
       );
+      for (const declaration of statement.declarations.filter((candidate) => candidate.id.name === 'tracker')) {
+        assert.deepEqual(
+          canonicalSchemaAst(declaration.init),
+          canonicalSchemaAst(babelParser.parseExpression(
+            'createTrackerToolHandlers(requestApi, authToken)',
+            { plugins: ['typescript'] },
+          )),
+          `${expectedFunction} in ${sourcePath} must bind Tracker handlers only to its own requestApi and authToken`,
+        );
+      }
       continue;
     }
     if (statement.type === 'ExpressionStatement' && registrationCalls.has(statement.expression)) continue;
@@ -824,18 +846,10 @@ const HOSTED_DEPLOYABLE_PATHS = Object.freeze([
   'src/routes/admin-read-query.ts',
 ]);
 
-// Recaptured from reviewed source 1a0474f4 (close-ai #3433 head) and deployed merge
-// 7c7032c87. #3433 branched before #3429 landed on main, so the merge inherits only
-// src/mcp/server.ts from its first parent 917a99a4; the other 48 paths keep source bytes.
-const REVIEWED_INHERITED_BASELINE = Object.freeze([Object.freeze({
-  sourceCommit: '1a0474f4e1ef04fa0d54d0d6e47178cc7f43eff7',
-  mergeCommit: '7c7032c87d97b3270681281ff33fa3d8887259c9',
-  firstParent: '917a99a49b7de9157643bb6fb388f29173f4d2d0',
-  relativePath: 'src/mcp/server.ts',
-  sourceSha256: 'cbbb22a883a29ad6554bbd523812bc08c880c85f589bcf6e52f0f4bcb0b312e8',
-  inheritedSha256: 'ee73ce10237b11650560ba8f800f344f34767a942145d0079f9ef83bb573ae96',
-  originCommit: 'bbe78d70e0b49dc5af3a47df00dcb648a82ac26d', // close-ai PR #3429 head (roleTypes search filter)
-})]);
+// Recaptured from reviewed source afa31b7f (close-ai #3603 head) and deployed merge
+// 6cd11dfb. The head already contains its first parent 662cf203 (main), so all 49
+// deployable paths preserve the reviewed bytes; no inherited exception applies.
+const REVIEWED_INHERITED_BASELINE = Object.freeze([]);
 
 function assertMergeCommitPreservesPaths(repository, sourceCommit, mergeCommit, relativePaths, inheritedBaseline = []) {
   const unused = new Set(inheritedBaseline);
@@ -931,6 +945,9 @@ function verifyHostedSnapshotGitProvenance(cliRoot, backendRoot) {
       `${relativePath} working bytes must exactly match the deployed runtime merge commit`,
     );
   }
+  // Recaptured at close-ai 6cd11dfb: pluginServer carries #3441 (plugin search roleTypes)
+  // and #3462 (masked readiness account, resume parse status, package version);
+  // applicationProfileService carries #3462 (default resume read through resumeData with parse status).
   const lockedSources = {
     pluginServer: 'src/mcp/plugin-server.ts',
     pluginScopes: 'src/mcp/plugin-scopes.ts',
@@ -1273,6 +1290,7 @@ function directToolRegistrationsInExportedFunction(
     // four-statement prefix and helper-shape checks below then do not apply.
     lockedPrefixSource = null,
     expectedPrefixDeclarators = null,
+    serverVersionIdentifier = 'PLUGIN_VERSION',
     uiResourceLoopSource = null,
   } = {},
 ) {
@@ -1377,7 +1395,7 @@ function directToolRegistrationsInExportedFunction(
   assert.deepEqual(
     canonicalSchemaAst(serverBindings[0].init),
     canonicalSchemaAst(babelParser.parseExpression(
-      "new McpServer({ name: 'trackly', version: PLUGIN_VERSION })",
+      `new McpServer({ name: 'trackly', version: ${serverVersionIdentifier} })`,
       { plugins: ['typescript'] },
     )),
     `${expectedFunction} in ${sourcePath} must use the locked pure server initializer`,
@@ -2618,18 +2636,33 @@ function assertPluginRoutePrecedence(
   return canonicalMount;
 }
 
+// A direct app.listen statement is either `app.listen(...);` or, since close-ai
+// #3460 (voice relay), exactly `const server = app.listen(...);` so the reviewed
+// WebSocket relay and graceful shutdown can attach to the same HTTP server.
+function directAppListenCall(statement) {
+  if (statement?.type === 'ExpressionStatement'
+    && statement.expression?.type === 'CallExpression'
+    && babelCalleeName(statement.expression.callee) === 'app.listen') return statement.expression;
+  if (statement?.type === 'VariableDeclaration'
+    && statement.kind === 'const'
+    && statement.declarations.length === 1
+    && statement.declarations[0].id?.type === 'Identifier'
+    && statement.declarations[0].id.name === 'server'
+    && statement.declarations[0].init?.type === 'CallExpression'
+    && babelCalleeName(statement.declarations[0].init.callee) === 'app.listen') return statement.declarations[0].init;
+  return null;
+}
+
 function assertServerListenSemantics(
   source,
   sourcePath,
-  { listenAstSha256 = '791d37989e4e894d2abd4634ce723c795fb8611cdc8dd865c0534d9ee97bbfe7' } = {},
+  // close-ai #3460 (recaptured at 6cd11dfb): the reviewed callback is unchanged;
+  // only the call is now bound as `const server = app.listen(...)`.
+  { listenAstSha256 = '80fbe9619b5f8e7cacb829a105d559bc938918c23450e9a8318206cfd5ea01c7' } = {},
 ) {
   assertActiveVariableInitializerAst(source, 'PORT', 'process.env.PORT || 3000', sourcePath);
   const startServer = activeNamedDefinitionAst(source, 'startServer', sourcePath);
-  const directListens = startServer.body.body.filter((statement) => (
-    statement.type === 'ExpressionStatement'
-    && statement.expression?.type === 'CallExpression'
-    && babelCalleeName(statement.expression.callee) === 'app.listen'
-  ));
+  const directListens = startServer.body.body.filter((statement) => directAppListenCall(statement) !== null);
   assert.equal(directListens.length, 1, `startServer in ${sourcePath} must have exactly one direct app.listen statement`);
   const allListens = [];
   function visitListens(node) {
@@ -2655,7 +2688,7 @@ function assertServerListenSemantics(
     }
   }
   visitListens(startServer.body);
-  const listenCall = directListens[0].expression;
+  const listenCall = directAppListenCall(directListens[0]);
   assert.deepEqual(
     allListens,
     [listenCall],
@@ -2872,16 +2905,19 @@ function assertLivePluginRouterMount(
     1,
     `startServer in ${sourcePath} must isolate createApp in one side-effect-free declaration`,
   );
-  const liveListens = startServer.body.body.filter((statement) => (
-    statement.type === 'ExpressionStatement'
-    && statement.expression?.type === 'CallExpression'
-    && babelCalleeName(statement.expression.callee) === 'app.listen'
-  ));
+  const liveListens = startServer.body.body.filter((statement) => directAppListenCall(statement) !== null);
   assert.equal(liveListens.length, 1, `startServer in ${sourcePath} must listen on the exact createApp result`);
   const liveListenIndex = startServer.body.body.indexOf(liveListens[0]);
   // close-ai #2792 (refresh grace sweep) and #2802 (Muse trace retention)
   // add exactly one guarded background-maintenance block after the guards.
+  // close-ai #3552 (recaptured at 6cd11dfb) starts the outreach worker before it;
+  // a rejected worker configuration fails startup instead of serving traffic.
   const lockedStartServerPrelude = parseFullSource(`installProcessGuards();
+  try { startOutreachWorker(getOutreachData()); }
+  catch (error) {
+    logger.error('outreach-agent','Worker configuration rejected at API startup');
+    throw error;
+  }
   if (shouldRunStartupDbWrites()) {
     startRefreshGraceSweep();
     startMuseTraceRetention(pool, (postgresCode) => {
@@ -2903,6 +2939,34 @@ function assertLivePluginRouterMount(
     startServer.body.body.indexOf(liveAppStatements[0]) + 1,
     `startServer in ${sourcePath} must immediately listen on the exact createApp result`,
   );
+  // close-ai #3460 (recaptured at 6cd11dfb): when the listener is bound, the HTTP
+  // server is used only by the reviewed voice relay upgrade handler (UUID path,
+  // origin allowlist, per-IP unauthenticated cap, one-time token claim) and the
+  // graceful shutdown. Nothing else may attach a request handler or second app.
+  if (liveListens[0].type === 'VariableDeclaration') {
+    const lockedServerAttachments = parseFullSource(`const stopVoiceRelay = attachVoiceRelay(server, voiceRelayDependencies(requireAuth, isVoiceV3Enabled, isVoiceV3Pilot));
+  installApiShutdown({ server, stopVoice: stopVoiceRelay, stopSummaries: stopVoiceRelaySummaries,
+    closeDatabase: () => pool.end(), exit: code => process.exit(code) });`, 'locked startServer server attachments').program.body;
+    const attachments = startServer.body.body.slice(
+      liveListenIndex + 1,
+      liveListenIndex + 1 + lockedServerAttachments.length,
+    );
+    assert.deepEqual(
+      canonicalSchemaAst(attachments),
+      canonicalSchemaAst(lockedServerAttachments),
+      `startServer in ${sourcePath} must attach only the reviewed voice relay and shutdown to the listening server`,
+    );
+    const serverReferences = collectBindingReferences(
+      startServer.body.body.slice(liveListenIndex + 1 + lockedServerAttachments.length),
+      'server',
+      () => false,
+    );
+    assert.deepEqual(
+      serverReferences,
+      [],
+      `startServer in ${sourcePath} must not reference the listening server outside its reviewed attachments`,
+    );
+  }
   assertActiveTopLevelStatementAst(
     source,
     `if (require.main === module) {
@@ -3580,7 +3644,9 @@ function assertPluginUiContractSemantics(
   sourcePath,
   // close-ai #2705: the card accepts only the legacy or OpenAI resume path and
   // now also rejects an open URL with a query string; copy drops the accent.
-  { htmlAstSha256 = '70f7e4141deb76f0c53d3389c8bd60ba0a07d16076b57fab003c22b62562a891' } = {},
+  // close-ai #3462 (recaptured at 6cd11dfb): ui/initialize reports the imported
+  // TRACKLY_PLUGIN_VERSION (JSON-encoded) instead of the literal '1.0.0'.
+  { htmlAstSha256 = '00667f49eb669234c58df27ca340c66a856517fa90c4841045a7a2d85e188e1a' } = {},
 ) {
   assertActiveVariableInitializerAst(
     source,
@@ -3590,6 +3656,7 @@ function assertPluginUiContractSemantics(
   );
   assertImportBinding(source, 'MCP_ISSUER', 'MCP_ISSUER', './mcp-config.js', sourcePath);
   assertActiveVariableInitializerAst(source, 'UI_DOMAIN', 'MCP_ISSUER', sourcePath);
+  assertImportBinding(source, 'TRACKLY_PLUGIN_VERSION', 'TRACKLY_PLUGIN_VERSION', './plugin-version.js', sourcePath);
   assertActiveVariableInitializerAst(
     source,
     'TRACKLY_PLUGIN_UI',
@@ -8286,6 +8353,11 @@ assertActiveVariableInitializerAst(
   '10 * 1024 * 1024',
   hostedPluginSourcePath,
 );
+// close-ai #3462 (recaptured at 6cd11dfb): an optional caller AbortSignal bounds the
+// readiness account lookup, and the User-Agent reports the imported package version.
+assertImportBinding(
+  hostedPluginSource, 'TRACKLY_PLUGIN_VERSION', 'TRACKLY_PLUGIN_VERSION', './plugin-version.js', hostedPluginSourcePath,
+);
 assertActiveFunctionDefinitionAst(
   hostedPluginSource,
   'apiRequest',
@@ -8296,6 +8368,7 @@ assertActiveFunctionDefinitionAst(
     body?: unknown,
     extraHeaders: Record<string, string> = {},
     timeoutMs = 60_000,
+    signal?: AbortSignal,
   ): Promise<any> {
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -8313,12 +8386,13 @@ assertActiveFunctionDefinitionAst(
       const bodyString = body === undefined ? null : JSON.stringify(body);
       const request = https.request({
         method,
+        signal,
         hostname: url.hostname,
         port: url.port || 443,
         path: \`\${url.pathname}\${url.search}\`,
         headers: {
           Authorization: \`Bearer \${authToken}\`,
-          'User-Agent': \`trackly-plugin-mcp/\${PLUGIN_VERSION}\`,
+          'User-Agent': \`trackly-plugin-mcp/\${TRACKLY_PLUGIN_VERSION}\`,
           Accept: 'application/json',
           'Content-Type': 'application/json',
           ...(bodyString ? { 'Content-Length': String(Buffer.byteLength(bodyString)) } : {}),
@@ -8503,6 +8577,8 @@ const executablePluginRegistrations = directToolRegistrationsInExportedFunction(
       options: { surface: 'legacy' | 'openai' | 'muse' | 'claude' } = { surface: 'legacy' }`,
     lockedPrefixSource: HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE,
     expectedPrefixDeclarators: ['server', 'searchJobsRequest', 'claudeSearchJobs', 'registerPluginTool'],
+    // close-ai #3462: the server reports the imported published package version.
+    serverVersionIdentifier: 'TRACKLY_PLUGIN_VERSION',
     // close-ai #2777/#3180: Muse and Claude publish no Apply UI cards; #2705
     // renders each card with the surface's own resume path.
     uiResourceLoopSource: `const uiResources = Object.entries(TRACKLY_PLUGIN_UI) as Array<[keyof typeof TRACKLY_PLUGIN_UI, string]>;
@@ -9516,9 +9592,21 @@ assertDescriptorUsesTopLevelBinding(
   'readinessOutputSchema',
   hostedPluginSourcePath,
 );
+// close-ai #3462 (recaptured at 6cd11dfb): readiness also reads the caller's own
+// /api/jobscout/me, bounded by the orchestration timeout, only to report a masked
+// sign-in email (maskConnectedEmail below) and its availability.
+assertWrappedHandlerDirectStatementAst(
+  readinessRegistration,
+  `const accountRequest = requestApi(
+    'GET', '/api/jobscout/me', authToken, undefined, {},
+    APPLY_ORCHESTRATION_REQUEST_TIMEOUT_MS, accountController.signal,
+  ).finally(() => clearTimeout(accountDeadline));`,
+  hostedPluginSourcePath,
+);
 assertWrappedHandlerDirectStatementAst(
   readinessRegistration,
   `return projectApplyReadiness({
+    accountResponse: value(accountResult),
     schema: value(schemaResult),
     profileResponse: value(profileResult),
     queue: value(queueResult),
@@ -9540,6 +9628,14 @@ const readinessRootProperties = schemaObjectPropertyAsts(
   hostedPluginSourcePath,
 );
 assert.ok(readinessRootProperties.profile, 'readinessOutputSchema is missing profile');
+// close-ai #3462: the only identity readiness publishes is the masked sign-in email.
+assertSchemaPropertyExpression(
+  readinessRootProperties,
+  'account',
+  `z.object({ maskedEmail: z.string().nullable() }).strict()
+    .describe('Connected sign-in account, with the email local part masked. Never the application email or an internal user ID.')`,
+  'readinessOutputSchema',
+);
 const readinessProperties = namedProperties(
   objectSchemaProperties(readinessRootProperties.profile, 'readinessOutputSchema.profile'),
   'readinessOutputSchema.profile',
@@ -9555,9 +9651,13 @@ const readinessProfileContract = {
   confirmed: 'z.boolean()',
   sensitiveStorageConsent: 'z.boolean()',
   defaultResumeAvailable: 'z.boolean()',
+  // close-ai #3462: parse status only (an enum or null), never resume content.
+  defaultResumeParseStatus: `z.enum(['parsed', 'pending', 'failed']).nullable()
+    .describe('Default resume parsing only; null means no default resume or unavailable status. Parsed does not establish Apply readiness or upload approval.')`,
   completeness: 'z.object({ completed: nullableCountSchema, total: nullableCountSchema, percent: nullableCountSchema }).strict()',
   missingRequired: 'z.array(profileFieldReferenceSchema).max(100)',
-  availableFields: 'z.array(profileFieldReferenceSchema).max(100)',
+  availableFields: `z.array(profileFieldReferenceSchema).max(100)
+    .describe('Saved resolved fields, including intentionally blank and declined answers. System defaults are excluded.')`,
 };
 assertExactSchemaProperties(
   readinessProperties,
@@ -9715,11 +9815,14 @@ for (const statement of [
         && typeof profile.fields[key] === 'object'
         && !Array.isArray(profile.fields[key])
         && RESOLVED_PROFILE_STATES.has(profile.fields[key].state)
+        && profile.fields[key].source !== CATALOG_DEFAULT_SOURCE
       ))
       .sort()
       .slice(0, 100)
       .map((key) => ({ key, label: fieldLabels.get(key)! }))
     : [];`,
+  // close-ai #3462: the masked email is projected only from a successful /me response.
+  `const maskedEmail = accountResponse?.success === true ? maskConnectedEmail(accountResponse.user?.email) : null;`,
 ]) {
   assertActiveFunctionDirectStatementAst(
     hostedPluginSource,
@@ -9729,10 +9832,37 @@ for (const statement of [
   );
 }
 
+assertImportBinding(
+  hostedPluginSource,
+  'CATALOG_DEFAULT_SOURCE',
+  'CATALOG_DEFAULT_SOURCE',
+  '../services/application-profile/profile-derived.js',
+  hostedPluginSourcePath,
+);
+// close-ai #3462: keeps the first and last character of a local part longer than two
+// characters and the domain; anything malformed or over 254 characters becomes null.
+assertActiveFunctionDefinitionAst(
+  hostedPluginSource,
+  'maskConnectedEmail',
+  `function maskConnectedEmail(value: unknown): string | null {
+    if (typeof value !== 'string' || value.length > 254) return null;
+    const match = /^([^\\s@<>]+)@([a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\\.[a-z]{2,})$/i.exec(value);
+    if (!match) return null;
+    const [, local, domain] = match;
+    return \`\${local.length > 2 ? \`\${local[0]}•••••\${local.at(-1)}\` : '•••••'}@\${domain}\`;
+  }`,
+  hostedPluginSourcePath,
+);
 const readinessProjectionProperties = functionSoleReturnObjectProperties(
   hostedPluginSource,
   'projectApplyReadiness',
   hostedPluginSourcePath,
+);
+assertBabelPropertyExpression(
+  readinessProjectionProperties,
+  'account',
+  '{ maskedEmail }',
+  'projectApplyReadiness projection',
 );
 const readinessProfileProjectionProperties = staticBabelObjectProperties(
   readinessProjectionProperties.profile,
@@ -9744,6 +9874,14 @@ assertBabelPropertyExpression(
   'missingRequired',
   'projectApplyReadiness profile projection',
 );
+assertBabelPropertyExpression(
+  readinessProfileProjectionProperties,
+  'defaultResumeParseStatus',
+  `['parsed', 'pending', 'failed'].includes(profile?.defaultResume?.parseStatus)
+    ? profile.defaultResume.parseStatus as 'parsed' | 'pending' | 'failed'
+    : null`,
+  'projectApplyReadiness profile projection',
+);
 const readinessAvailability = readinessProjectionProperties.availability;
 assert.equal(
   readinessAvailability?.type,
@@ -9752,14 +9890,20 @@ assert.equal(
 );
 assert.equal(
   readinessAvailability.properties.length,
-  3,
-  'projectApplyReadiness availability must preserve base status plus locked schema/profile availability',
+  4,
+  'projectApplyReadiness availability must preserve base status plus locked account/schema/profile availability',
 );
 assert.equal(readinessAvailability.properties[0]?.type, 'SpreadElement');
 assert.equal(readinessAvailability.properties[0]?.argument?.type, 'Identifier');
 assert.equal(readinessAvailability.properties[0]?.argument?.name, 'availability');
 const readinessAvailabilityProperties = staticBabelObjectProperties(
   { ...readinessAvailability, properties: readinessAvailability.properties.slice(1) },
+  'projectApplyReadiness availability projection',
+);
+assertBabelPropertyExpression(
+  readinessAvailabilityProperties,
+  'account',
+  'accountResponse?.success === true',
   'projectApplyReadiness availability projection',
 );
 assertBabelPropertyExpression(
