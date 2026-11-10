@@ -26,6 +26,8 @@ Trackly Apply on Claude is enabled per account while Anthropic reviews the Claud
 /plugin install trackly@trackly-claude
 ```
 
+To update to a newer release, unzip the new archive, then run `/plugin marketplace remove trackly-claude` and repeat the two commands above with the new folder. Bump `version` in `.claude-plugin/plugin.json` whenever the skill changes, so Claude Code installs the new copy.
+
 Or load it for one session with `claude --plugin-dir /absolute/path/to/trackly-claude-plugin-<version>/trackly`. Sign in to Trackly when Claude Code first connects to the server, and connect Claude in Chrome.
 
 ## Safety boundary

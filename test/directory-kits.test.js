@@ -32,7 +32,7 @@ const openaiCatalog = JSON.parse(fs.readFileSync(path.join(LISTING, 'openai', 't
 function withMutatedFile(file, mutate, run) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'trackly-directory-kits-'));
   try {
-    for (const relative of ['plugins/trackly/listing', 'plugins/trackly-claude']) {
+    for (const relative of ['plugins/trackly/listing', 'plugins/trackly-claude', 'plugins/trackly/hosted-contract-fixture.json']) {
       fs.cpSync(path.join(REPO, relative), path.join(root, relative), { recursive: true });
     }
     const target = path.join(root, path.relative(REPO, file));
@@ -106,6 +106,8 @@ test('plugin and kit checks reject a wrong connector, count drift and table drif
     [path.join(LISTING, 'claude', 'README.md'), (text) => text.replace('| `trackly_stop_apply` | Stop Trackly Apply | destructive |', '| `trackly_stop_apply` | Stop Trackly Apply | non-destructive |'), /annotation is wrong for trackly_stop_apply/],
     [path.join(LISTING, 'openai', 'metadata.json'), (text) => text.replace('"packageVersion": "1.0.9"', '"packageVersion": "1.0.8"'), /package 1\.0\.9/],
     [path.join(LISTING, 'openai', 'README.md'), (text) => text.replace(/\| `trackly_add_tracker_note` \|.*\n/, ''), /one justification row per new tool/],
+    // A hosted-contract recapture without a catalog recapture leaves the kits stale.
+    [path.join(REPO, 'plugins', 'trackly', 'hosted-contract-fixture.json'), (text) => text.replace(/"commit": "6a5b05f5[0-9a-f]+"/, '"commit": "0000000000000000000000000000000000000000"'), /same close-ai commit as hosted-contract-fixture\.json/],
   ];
   for (const [file, mutate, expected] of cases) {
     const errors = withMutatedFile(file, mutate, (root) => verifyDirectoryKits({ root }));
@@ -133,7 +135,11 @@ test('Claude downloads are deterministic and contain the skill and plugin', () =
     assert.deepEqual(data, fs.readFileSync(path.join(CLAUDE_SKILL, name.slice('trackly-apply/'.length))), name);
   }
 
-  const pluginEntries = new Map(readZip(plugin.bytes).map(({ name, data }) => [name, data]));
+  // One top-level folder, so plain `unzip` creates the directory the plugin README names.
+  const folder = 'trackly-claude-plugin-9.9.9';
+  const pluginRaw = readZip(plugin.bytes);
+  assert.ok(pluginRaw.every(({ name }) => name.startsWith(`${folder}/`)), 'one top-level plugin folder');
+  const pluginEntries = new Map(pluginRaw.map(({ name, data }) => [name.slice(folder.length + 1), data]));
   const marketplace = JSON.parse(pluginEntries.get('.claude-plugin/marketplace.json'));
   const manifest = JSON.parse(pluginEntries.get(`${PLUGIN_DIRECTORY}/.claude-plugin/plugin.json`));
   assert.equal(marketplace.name, MARKETPLACE_NAME);
@@ -145,6 +151,27 @@ test('Claude downloads are deterministic and contain the skill and plugin', () =
     ENDPOINTS.claude,
   );
   assert.ok(pluginEntries.has(`${PLUGIN_DIRECTORY}/skills/trackly-apply/SKILL.md`));
+});
+
+test('archives store entries uncompressed so their bytes do not depend on zlib', () => {
+  const archive = zip([{ name: 'a.txt', data: Buffer.from('hello hello hello hello') }]);
+  assert.equal(archive.readUInt16LE(8), 0, 'local header method is stored');
+  assert.ok(archive.includes(Buffer.from('hello hello hello hello')), 'file bytes appear verbatim');
+  assert.deepEqual(readZip(archive), [{ name: 'a.txt', data: Buffer.from('hello hello hello hello') }]);
+});
+
+test('release workflow builds before releasing and uploads exactly the built downloads', () => {
+  const workflow = fs.readFileSync(path.join(REPO, '.github', 'workflows', 'auto-release.yml'), 'utf8');
+  const build = workflow.indexOf('node scripts/build-claude-downloads.js --out dist/claude');
+  const create = workflow.indexOf('gh release create');
+  const upload = workflow.indexOf('gh release upload');
+  assert.ok(build >= 0 && create > build && upload > create, 'build, then create, then upload');
+  assert.match(workflow, /gh release view "\$TAG"/, 'release creation is idempotent so a rerun can attach');
+  const [skill, plugin] = buildDownloads({ version: '$VERSION' });
+  for (const filename of [skill.filename, plugin.filename, 'SHA256SUMS']) {
+    assert.ok(workflow.includes(`dist/claude/${filename}`), `workflow uploads dist/claude/${filename}`);
+  }
+  assert.match(workflow, /--clobber/);
 });
 
 test('zip writer refuses unsafe or duplicate entries', () => {
@@ -186,7 +213,7 @@ test('Claude Code validates the plugin and the packaged marketplace when its CLI
       fs.mkdirSync(path.join(out, path.dirname(name)), { recursive: true });
       fs.writeFileSync(path.join(out, name), data);
     }
-    const marketplace = spawnSync('claude', ['plugin', 'validate', out, '--strict'], { encoding: 'utf8' });
+    const marketplace = spawnSync('claude', ['plugin', 'validate', path.join(out, 'trackly-claude-plugin-0.0.0'), '--strict'], { encoding: 'utf8' });
     assert.equal(marketplace.status, 0, marketplace.stdout + marketplace.stderr);
   } finally {
     fs.rmSync(out, { recursive: true, force: true });

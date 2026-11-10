@@ -73,11 +73,17 @@ function catalogNames(catalog) {
   return catalog.tools.map(({ name }) => name);
 }
 
-function checkCatalog(check, catalog, surface) {
+function checkCatalog(check, catalog, surface, root) {
   check(catalog.formatVersion === 1, `${surface} tools.json formatVersion must be 1`);
   check(catalog.surface === surface, `${surface} tools.json must name surface ${surface}`);
   check(catalog.endpoint === ENDPOINTS[surface], `${surface} tools.json endpoint must be ${ENDPOINTS[surface]}`);
   check(/^[a-f0-9]{40}$/.test(catalog.source?.commit ?? ''), `${surface} tools.json must pin a full close-ai commit`);
+  // A recapture moves the hosted fixture; the directory catalogs must be recaptured with it.
+  const fixture = readJson(path.join(root, 'plugins', 'trackly', 'hosted-contract-fixture.json'));
+  check(
+    catalog.source?.commit === fixture.mergedRuntime?.commit,
+    `${surface} tools.json must be captured from the same close-ai commit as hosted-contract-fixture.json`,
+  );
   const names = catalogNames(catalog);
   check(new Set(names).size === names.length, `${surface} tools.json tool names must be unique`);
   for (const tool of catalog.tools) {
@@ -87,10 +93,10 @@ function checkCatalog(check, catalog, surface) {
   }
 }
 
-function checkOpenaiKit(check, { listing: LISTING }) {
+function checkOpenaiKit(check, { root: ROOT, listing: LISTING }) {
   const metadata = readJson(path.join(LISTING, 'openai', 'metadata.json'));
   const catalog = readJson(path.join(LISTING, 'openai', 'tools.json'));
-  checkCatalog(check, catalog, 'openai');
+  checkCatalog(check, catalog, 'openai', ROOT);
   const names = new Set(catalogNames(catalog));
   check(metadata.packageName === 'trackly-openai', 'OpenAI kit must describe the trackly-openai package');
   check(metadata.packageVersion === '1.0.9', 'OpenAI kit must describe package 1.0.9');
@@ -127,7 +133,7 @@ function claudeAnnotation(tool) {
 function checkClaudeKit(check, { root: ROOT, listing: LISTING }) {
   const metadata = readJson(path.join(LISTING, 'claude', 'metadata.json'));
   const catalog = readJson(path.join(LISTING, 'claude', 'tools.json'));
-  checkCatalog(check, catalog, 'claude');
+  checkCatalog(check, catalog, 'claude', ROOT);
   check(metadata.productionMcpURL === ENDPOINTS.claude, 'Claude kit must point at the Claude connector endpoint');
   check(metadata.sourceCommit === catalog.source?.commit, 'Claude kit metadata and catalog must come from the same close-ai commit');
   check(metadata.browserSurface === 'claude_in_chrome', 'Claude kit browser surface must be claude_in_chrome');

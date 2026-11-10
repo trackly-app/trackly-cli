@@ -3,9 +3,11 @@
 
 // Builds the two Claude downloads attached to each trackly-cli GitHub release:
 //   trackly-apply-claude-skill-<version>.zip  claude.ai skill upload (one trackly-apply/ folder)
-//   trackly-claude-plugin-<version>.zip       Claude Code local marketplace with the trackly plugin
-// The archives are deterministic: sorted entries, fixed timestamps and permissions, so the
-// same source always produces the same bytes and SHA-256.
+//   trackly-claude-plugin-<version>.zip       Claude Code local marketplace with the trackly plugin,
+//                                             under one trackly-claude-plugin-<version>/ folder
+// The archives are deterministic: sorted entries, fixed timestamps and permissions, and
+// stored (uncompressed) entries, so the same source produces the same bytes and SHA-256
+// on any Node or zlib build.
 //
 // Usage: node scripts/build-claude-downloads.js [--out <dir>] [--json]
 
@@ -38,17 +40,12 @@ function listFiles(directory, prefix = '') {
   return files;
 }
 
+// zlib.crc32 exists on every Node version package.json allows (^20.20.0 || >=22.22.0).
 function crc32(data) {
-  if (typeof zlib.crc32 === 'function') return zlib.crc32(data) >>> 0;
-  let crc = 0xffffffff;
-  for (const byte of data) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
-  }
-  return (crc ^ 0xffffffff) >>> 0;
+  return zlib.crc32(data) >>> 0;
 }
 
-/** Minimal deterministic ZIP writer (deflate, no extra fields, UTF-8 names). */
+/** Minimal deterministic ZIP writer (stored entries, no extra fields, UTF-8 names). */
 function zip(files) {
   const sorted = [...files].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const names = new Set();
@@ -62,13 +59,14 @@ function zip(files) {
     }
     names.add(name);
     const nameBytes = Buffer.from(name, 'utf8');
-    const compressed = zlib.deflateRawSync(data, { level: 9 });
+    // Stored, not deflated: deflate output can differ between zlib builds.
+    const compressed = data;
     const crc = crc32(data);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4); // version needed
+    local.writeUInt16LE(10, 4); // version needed for stored entries
     local.writeUInt16LE(0x0800, 6); // UTF-8 names
-    local.writeUInt16LE(8, 8); // deflate
+    local.writeUInt16LE(0, 8); // stored
     local.writeUInt16LE(DOS_TIME, 10);
     local.writeUInt16LE(DOS_DATE, 12);
     local.writeUInt32LE(crc, 14);
@@ -80,9 +78,9 @@ function zip(files) {
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50, 0);
     central.writeUInt16LE((3 << 8) | 20, 4); // made by Unix, spec 2.0
-    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(10, 6);
     central.writeUInt16LE(0x0800, 8);
-    central.writeUInt16LE(8, 10);
+    central.writeUInt16LE(0, 10);
     central.writeUInt16LE(DOS_TIME, 12);
     central.writeUInt16LE(DOS_DATE, 14);
     central.writeUInt32LE(crc, 16);
@@ -117,6 +115,7 @@ function readZip(buffer) {
   const entries = [];
   for (let index = 0; index < count; index += 1) {
     if (buffer.readUInt32LE(cursor) !== 0x02014b50) throw new Error('Bad central directory entry');
+    const method = buffer.readUInt16LE(cursor + 10);
     const compressedSize = buffer.readUInt32LE(cursor + 20);
     const nameLength = buffer.readUInt16LE(cursor + 28);
     const extraLength = buffer.readUInt16LE(cursor + 30);
@@ -126,7 +125,9 @@ function readZip(buffer) {
     const localNameLength = buffer.readUInt16LE(localOffset + 26);
     const localExtraLength = buffer.readUInt16LE(localOffset + 28);
     const dataStart = localOffset + 30 + localNameLength + localExtraLength;
-    const data = zlib.inflateRawSync(buffer.subarray(dataStart, dataStart + compressedSize));
+    const raw = buffer.subarray(dataStart, dataStart + compressedSize);
+    if (method !== 0 && method !== 8) throw new Error(`Unsupported compression method ${method} for ${name}`);
+    const data = method === 8 ? zlib.inflateRawSync(raw) : Buffer.from(raw);
     if (crc32(data) !== buffer.readUInt32LE(cursor + 16)) throw new Error(`CRC mismatch for ${name}`);
     entries.push({ name, data });
     cursor += 46 + nameLength + extraLength + commentLength;
@@ -156,9 +157,11 @@ function marketplaceManifest(manifest) {
 function buildDownloads({ version = require(path.join(ROOT, 'package.json')).version } = {}) {
   const manifest = pluginManifest();
   const skillFiles = listFiles(SKILL_ROOT).map(({ name, data }) => ({ name: `trackly-apply/${name}`, data }));
+  // One top-level folder, so plain `unzip` creates the directory the README names.
+  const pluginFolder = `trackly-claude-plugin-${version}`;
   const pluginFiles = [
-    { name: '.claude-plugin/marketplace.json', data: Buffer.from(`${JSON.stringify(marketplaceManifest(manifest), null, 2)}\n`) },
-    ...listFiles(PLUGIN_ROOT).map(({ name, data }) => ({ name: `${PLUGIN_DIRECTORY}/${name}`, data })),
+    { name: `${pluginFolder}/.claude-plugin/marketplace.json`, data: Buffer.from(`${JSON.stringify(marketplaceManifest(manifest), null, 2)}\n`) },
+    ...listFiles(PLUGIN_ROOT).map(({ name, data }) => ({ name: `${pluginFolder}/${PLUGIN_DIRECTORY}/${name}`, data })),
   ];
   return [
     { filename: `trackly-apply-claude-skill-${version}.zip`, kind: 'claude_ai_skill', files: skillFiles },
