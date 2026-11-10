@@ -463,7 +463,7 @@ function createTrackerToolHandlers(requestApi) {
           const fresh = bodyApp ?? (await readDetail(current.id)).application;
           if (fresh.mergedIntoId != null) throw merged(fresh);
           if (attempt > 0) throw conflict(fresh);
-          if (!stillWanted(fresh)) throw conflict(fresh, true);
+          if (!(await stillWanted(fresh))) throw conflict(fresh, true);
           current = fresh;
           continue;
         }
@@ -502,18 +502,37 @@ function createTrackerToolHandlers(requestApi) {
     // be redoing, so it is added again below).
     const events = known ?? (await readDetail(app.id)).events;
     const day = date ?? todayInTrackerZone(now);
-    const same = events.filter((e) => e.kind === 'note' && e.retractsEventId == null && e.payload?.text === text && eventDay(e, events) === day);
-    const live = same.find((e) => e.effective);
-    if (live) return { application: app, event: { id: live.id, effective: true } };
-    const edited = same.find((e) => !events.some((r) => r.retractsEventId === e.id));
-    if (edited) return { application: app, event: { id: edited.id, effective: false }, edited: true };
+    const existing = (list, application) => {
+      const same = list.filter((e) => e.kind === 'note' && e.retractsEventId == null && e.payload?.text === text && eventDay(e, list) === day);
+      const live = same.find((e) => e.effective);
+      if (live) return { application, event: { id: live.id, effective: true } };
+      const edited = same.find((e) => !list.some((r) => r.retractsEventId === e.id));
+      if (edited) return { application, event: { id: edited.id, effective: false }, edited: true };
+      return null;
+    };
+    const found = existing(events, app);
+    if (found) return found;
 
-    const post = (target, idempotencyKey) => postWithRetry(
-      target, eventsPath,
-      (expectedVersion) => ({ kind: 'note', expectedVersion, ...whenFields(date), payload: { text }, idempotencyKey }),
-      () => true,
-      noEntryHint,
-    );
+    // Local hardening beyond hosted parity: a concurrent call can add the same text for the same day under another
+    // key (one dated today, one undated). Before the one conflict retry, re-read the entry and reuse that copy.
+    let present = null;
+    const post = async (target, idempotencyKey) => {
+      present = null;
+      try {
+        return await postWithRetry(
+          target, eventsPath,
+          (expectedVersion) => ({ kind: 'note', expectedVersion, ...whenFields(date), payload: { text }, idempotencyKey }),
+          async (fresh) => {
+            present = existing((await readDetail(fresh.id)).events, fresh);
+            return present === null;
+          },
+          noEntryHint,
+        );
+      } catch (caught) {
+        if (present && caught instanceof TrackerToolError && caught.payload.error === 'version_conflict') return present;
+        throw caught;
+      }
+    };
     const key = trackerNoteKey(app.id, text, date, now);
     let result = await post(app, key);
     // Each re-add after an undo is keyed to the copy it replaces, so follow that chain to its live

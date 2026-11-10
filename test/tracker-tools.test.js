@@ -968,6 +968,21 @@ test('trackly_add_tracker_note', async (t) => {
     });
   });
 
+  await t.test('reuses a same-day copy a concurrent call added under another key instead of retrying into a twin', async () => {
+    const text = 'recruiter call moved';
+    // The concurrent call wrote the same text for today (for example dated today, so under another key) between
+    // this call's read and its write; this call's POST then meets a version conflict.
+    let fake;
+    fake = fakeTracker({ conflicts: 1, bumpOnConflict: () => fake.boardNote(12, text, new Date()) });
+    await withClient(fake, async (client) => {
+      const { isError, body } = await call(client, 'trackly_add_tracker_note', { applicationId: 12, text });
+      assert.equal(isError, false);
+      assertMatch(body, { noteSaved: true });
+      assert.equal(fake.events.filter((e) => e.kind === 'note' && e.payload.text === text).length, 1);
+      assert.equal(fake.writes().length, 1);
+    });
+  });
+
   await t.test('retries once on 409 and leaves the stage alone', async () => {
     const fake = fakeTracker({ conflicts: 1 });
     await withClient(fake, async (client) => {
