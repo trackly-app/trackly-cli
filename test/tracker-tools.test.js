@@ -257,7 +257,13 @@ async function withClient(backend, run, { analytics = false } = {}) {
         res.end(JSON.stringify(value));
       };
       try {
-        send(200, await handle(req.method, req.url, raw ? JSON.parse(raw) : undefined));
+        const value = await handle(req.method, req.url, raw ? JSON.parse(raw) : undefined);
+        if (value && typeof value.rawHtml === 'string') {
+          // A proxy or captive-portal page: lib/client.js resolves a non-JSON 2xx as {raw, message}.
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          return res.end(value.rawHtml);
+        }
+        send(200, value);
       } catch (error) {
         if (error?.httpStatus) return send(error.httpStatus, error.body);
         unexpected.push(String(error?.message || error));
@@ -368,6 +374,23 @@ test('Tracker tools: registration, schemas and hosted parity', async (t) => {
       }
     }, { analytics: true });
   });
+  await t.test('unknown arguments are rejected before any HTTP call with analytics enabled', async () => {
+    const fake = fakeTracker();
+    await withClient(fake, async (client) => {
+      const args = {
+        trackly_list_tracker_applications: {},
+        trackly_create_tracker_application: { explicitUserConfirmed: true, jobId: 9 },
+        trackly_update_tracker_stage: { applicationId: 11, stage: 'rejected' },
+        trackly_add_tracker_note: { applicationId: 11, text: 'x' },
+        trackly_retract_tracker_event: { applicationId: 11, eventId: 500 },
+      };
+      for (const name of TRACKER_TOOLS) {
+        const result = await callRaw(client, name, { ...args[name], context: 'record an outcome', unsupportedFocus: 'x' });
+        assert.equal(result.isError, true, name);
+      }
+      assert.equal(fake.calls.length, 0);
+    }, { analytics: true });
+  });
 });
 
 test('trackly_list_tracker_applications', async (t) => {
@@ -419,6 +442,31 @@ test('trackly_list_tracker_applications', async (t) => {
       assert.equal(body.error, 'invalid_tracker_response');
       assert.doesNotMatch(JSON.stringify(body), /recruiter\.private/);
     });
+  });
+
+  await t.test('treats a non-JSON or array-less 2xx list page as unreadable, so create never writes a twin', async () => {
+    for (const page of [{ rawHtml: '<html>Sign in to the network</html>' }, { ok: true }]) {
+      const fake = fakeTracker({ jobs: { 9: { companyName: 'Clay', title: 'PM' } } });
+      const garbled = async (method, requestPath, body) => {
+        if (method === 'GET' && (requestPath === BASE || requestPath.startsWith(`${BASE}?`))) {
+          fake.calls.push({ method, path: requestPath });
+          return page;
+        }
+        return fake.requestApi(method, requestPath, body);
+      };
+      await withClient(garbled, async (client) => {
+        for (const args of [{ explicitUserConfirmed: true, jobId: 9 }, { explicitUserConfirmed: true, companyName: 'Clay', roleTitle: 'PM' }]) {
+          const { body, isError } = await call(client, 'trackly_create_tracker_application', args);
+          assert.equal(isError, true);
+          assert.equal(body.error, 'invalid_tracker_response');
+        }
+        const listed = await call(client, 'trackly_list_tracker_applications', {});
+        assert.equal(listed.body.error, 'invalid_tracker_response');
+        const moved = await call(client, 'trackly_update_tracker_stage', { jobId: 9, stage: 'rejected' });
+        assert.equal(moved.body.error, 'invalid_tracker_response');
+        assert.deepEqual(fake.writes(), []);
+      });
+    }
   });
 });
 
@@ -728,6 +776,20 @@ test('trackly_update_tracker_stage', async (t) => {
       const again = await call(client, 'trackly_update_tracker_stage', { applicationId: 11, stage: 'rejected' });
       assertMatch(again.body, { changed: false, reason: 'already_recorded', stageEventId: first.body.stageEventId });
       assert.equal(fake.newEvents().filter((e) => e.toStage === 'rejected').length, 1);
+    });
+  });
+
+  await t.test('writes a wanted move even when this machine\'s clock lags the backend', async () => {
+    const fake = fakeTracker();
+    await withClient(fake, async (client) => {
+      await call(client, 'trackly_update_tracker_stage', { applicationId: 11, stage: 'rejected' });
+      // The user drags the card back; the backend stamps it 5 minutes ahead of this machine's clock.
+      fake.drag(11, 'interview');
+      fake.events[fake.events.length - 1].observedAt = new Date(Date.now() + 5 * 60_000);
+      const redo = await call(client, 'trackly_update_tracker_stage', { applicationId: 11, stage: 'rejected' });
+      assert.equal(redo.isError, false);
+      assert.notEqual(redo.body.reason, 'already_recorded');
+      assert.equal(fake.writes().filter((w) => w.body.kind === 'stage_change').length, 2);
     });
   });
 

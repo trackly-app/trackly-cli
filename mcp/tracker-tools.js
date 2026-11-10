@@ -137,11 +137,19 @@ function eventRow(e) {
  * reducer over the entry's real events (its ordering by date, precedence and observation time).
  */
 function wouldBecomeCurrent(events, stage, fromStage, date, now) {
+  // The server stamps a new event after every row it already holds. This process's clock can lag the backend's, so
+  // the hypothetical event is observed no earlier than just after the latest event read (local-only adaptation; the
+  // hosted tool runs next to the clock that stamps observedAt). The idempotency-key day still uses `now`.
+  const latestObserved = events.reduce((max, e) => {
+    const t = Date.parse(e.observedAt);
+    return Number.isFinite(t) && t > max ? t : max;
+  }, Number.NEGATIVE_INFINITY);
+  const observedAt = new Date(Math.max(now.getTime(), latestObserved + 1));
   // Like the route, a new stage change records the stage it moves from, so the reducer treats it as a user move.
   const candidate = eventRow({
     id: Number.MAX_SAFE_INTEGER, kind: 'stage_change', fromStage, toStage: stage, occurredAt: date ?? null,
     occurredPrecision: date ? 'local_date' : null, occurredTz: date ? TRACKER_DEFAULT_TZ : null, status: 'confirmed',
-    effective: true, supersedesEventId: null, retractsEventId: null, observedAt: now.toISOString(), actor: 'user', payload: {},
+    effective: true, supersedesEventId: null, retractsEventId: null, observedAt: observedAt.toISOString(), actor: 'user', payload: {},
   });
   return reduceStage([...events.map(eventRow), candidate]).currentStage === stage;
 }
@@ -347,8 +355,10 @@ function createTrackerToolHandlers(requestApi) {
       if (apiError(caught).status === 404) throw unavailable();
       throw caught;
     }
-    if (!Array.isArray(response?.applications)) return [];
-    if (!response.applications.every(isApplication)) throw invalidResponse();
+    // Local divergence from hosted (which reads a JSON body without `applications` as no entries): lib/client.js
+    // resolves a non-JSON 2xx page as {raw, message}, so a missing array is unreadable, never an empty board. An
+    // empty board here would let create skip its duplicate checks and add a twin.
+    if (!Array.isArray(response?.applications) || !response.applications.every(isApplication)) throw invalidResponse();
     return response.applications;
   }
 

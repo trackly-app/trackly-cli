@@ -1,13 +1,44 @@
 'use strict';
 
-// The ported Tracker reducer (mcp/waypoint-reducer.js). Before release it was checked
-// against close-ai's own reducer (src/services/waypoint/reducer.ts at 6cd11dfb) and
-// date-fns-tz 3.2.0 on 20,000 random event sets and 20,000 zone conversions, with no
-// mismatch; these cases pin the behavior the Tracker tools rely on.
+// The ported Tracker reducer (mcp/waypoint-reducer.js). The golden vectors in
+// test/fixtures/tracker/waypoint-reducer-golden-6cd11dfb.json were produced by close-ai's own
+// reducer (src/services/waypoint/reducer.ts at 6cd11dfb) and date-fns-tz 3.2.0 with
+// scripts/generate-waypoint-reducer-golden.js, so the port is checked against an independent
+// oracle rather than against itself. Regenerate them when the backend reducer changes.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { fromZonedTime, formatDateInZone, isDate, validZone, reduceStage } = require('../mcp/waypoint-reducer');
+
+const GOLDEN = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'tracker', 'waypoint-reducer-golden-6cd11dfb.json'), 'utf8'));
+
+test('golden vectors from close-ai\'s reducer: stage, entered-at and effective events match', () => {
+  assert.ok(GOLDEN.cases.length >= 200);
+  const date = (v) => (v === null ? null : v === 'invalid' ? new Date(Number.NaN) : new Date(v));
+  GOLDEN.cases.forEach(({ events, expected }, index) => {
+    const rows = events.map((e) => ({
+      ...e, applicationId: 1, userId: 7, lineageClass: 'C', idempotencyKey: null,
+      createdAt: new Date('2026-03-07T00:00:00.000Z'), occurredAt: date(e.occurredAt), observedAt: date(e.observedAt),
+    }));
+    assert.deepEqual(reduceStage(rows), expected, `golden case ${index}`);
+  });
+  // Shuffled input gives the same answer: ordering comes from the events, not the array.
+  for (const { events, expected } of GOLDEN.cases.slice(0, 40)) {
+    const rows = events.map((e) => ({
+      ...e, applicationId: 1, userId: 7, lineageClass: 'C', idempotencyKey: null,
+      createdAt: new Date('2026-03-07T00:00:00.000Z'), occurredAt: date(e.occurredAt), observedAt: date(e.observedAt),
+    })).reverse();
+    assert.equal(reduceStage(rows).currentStage, expected.currentStage);
+  }
+});
+
+test('golden zone conversions from date-fns-tz, including DST gaps and overlaps', () => {
+  for (const { wall, zone, instant } of GOLDEN.zones) {
+    assert.equal(fromZonedTime(wall, zone).toISOString(), instant, `${wall} ${zone}`);
+  }
+});
 
 test('zone helpers match date-fns-tz on DST boundaries', () => {
   // Los Angeles midnight in standard and daylight time, and the days the clocks change.

@@ -2942,7 +2942,10 @@ function assertLivePluginRouterMount(
   // close-ai #3460 (recaptured at 6cd11dfb): when the listener is bound, the HTTP
   // server is used only by the reviewed voice relay upgrade handler (UUID path,
   // origin allowlist, per-IP unauthenticated cap, one-time token claim) and the
-  // graceful shutdown. Nothing else may attach a request handler or second app.
+  // graceful shutdown. This locks the startServer call sites: no other statement may use the
+  // bound server. The bodies of src/routes/voice-relay.ts and src/services/api-shutdown.ts are
+  // reviewed per recapture (at 6cd11dfb the relay adds only an 'upgrade' listener); they are
+  // not byte-pinned here.
   if (liveListens[0].type === 'VariableDeclaration') {
     const lockedServerAttachments = parseFullSource(`const stopVoiceRelay = attachVoiceRelay(server, voiceRelayDependencies(requireAuth, isVoiceV3Enabled, isVoiceV3Pilot));
   installApiShutdown({ server, stopVoice: stopVoiceRelay, stopSummaries: stopVoiceRelaySummaries,
