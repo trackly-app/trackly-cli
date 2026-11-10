@@ -1218,7 +1218,7 @@ test('documented local MCP tool count matches every registered tool', () => {
     /server\.(?:tool|registerTool)\(\s*['"]([^'"]+)['"]/g
   )].map((match) => match[1]);
 
-  assert.equal(registeredTools.length, 59);
+  assert.equal(registeredTools.length, 64);
   assert.equal(new Set(registeredTools).size, registeredTools.length);
 });
 
@@ -1747,6 +1747,33 @@ test('hosted listener locks active PORT binding and exact listen callback semant
   }
 });
 
+test('hosted listener accepts only the reviewed const server binding (close-ai #3460)', () => {
+  const source = `
+    const PORT = process.env.PORT || 3000;
+    function startServer() {
+      const app = createApp();
+      const server = app.listen(PORT, () => {
+        logger.info('startup', 'Server started successfully', { port: PORT });
+      });
+    }
+  `;
+  const startServer = activeNamedDefinitionAst(source, 'startServer', 'bound listener fixture');
+  const options = {
+    listenAstSha256: sha256ExactBytes(JSON.stringify(canonicalSchemaAst(startServer.body.body[1]))),
+  };
+  assert.doesNotThrow(() => assertServerListenSemantics(source, 'bound listener fixture', options));
+  for (const [from, to] of [
+    ['const server = app.listen(', 'let server = app.listen('],
+    ['const server = app.listen(', 'const alternate = app.listen('],
+    ['const server = app.listen(', 'const unused = 1, server = app.listen('],
+  ]) {
+    assert.throws(
+      () => assertServerListenSemantics(source.replace(from, to), 'drifted bound listener fixture', options),
+      /must have exactly one direct app\.listen statement/,
+    );
+  }
+});
+
 test('hosted Git provenance reads outputs larger than the synchronous default buffer', () => {
   const repository = path.join(__dirname, '..');
   const packageLockBytes = gitOutput(repository, ['show', 'HEAD:package-lock.json'], null);
@@ -1821,6 +1848,7 @@ test('hosted application sensitivity map rejects mutation, reassignment, and ref
 test('hosted UI semantic lock rejects MIME, metadata, tool-output, and HTML drift', () => {
   const uiSource = `
     import { MCP_ISSUER } from './mcp-config.js';
+    import { TRACKLY_PLUGIN_VERSION } from './plugin-version.js';
     export const TRACKLY_PLUGIN_UI_MIME_TYPE = 'text/html;profile=mcp-app';
     export const TRACKLY_PLUGIN_UI = Object.freeze({
       readiness: 'ui://trackly/apply-readiness-v2.html',
@@ -1895,6 +1923,8 @@ test('hosted UI semantic lock rejects MIME, metadata, tool-output, and HTML drif
     ['connectDomains: []', "connectDomains: ['https://untrusted.invalid']"],
     ['resource_domains: []', "resource_domains: ['https://untrusted.invalid']"],
     ['const resourceUri = TRACKLY_PLUGIN_UI[view];', "const resourceUri = 'ui://untrusted/card.html';"],
+    // close-ai #3462: the reported app version must come from the shared plugin-version module.
+    ["import { TRACKLY_PLUGIN_VERSION } from './plugin-version.js';", "import { TRACKLY_PLUGIN_VERSION } from './untrusted-version.js';"],
   ]) {
     const changed = uiSource.replace(from, to);
     assert.notEqual(changed, uiSource);
