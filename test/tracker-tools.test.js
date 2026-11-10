@@ -101,8 +101,11 @@ function fakeTracker(opts = {}) {
     if (stage) app.currentStage = stage;
     app.version += 1;
   };
+  // Like the route: the database stamps a new event after every row it already holds.
   const push = (e) => {
-    const event = { ...e, id: nextEventId++, observedAt: tick() };
+    const latest = Math.max(...events.map((x) => x.observedAt.getTime()));
+    const stamped = tick();
+    const event = { ...e, id: nextEventId++, observedAt: stamped.getTime() > latest ? stamped : new Date(latest + 1) };
     events.push(event);
     return event;
   };
@@ -788,7 +791,7 @@ test('trackly_update_tracker_stage', async (t) => {
       fake.events[fake.events.length - 1].observedAt = new Date(Date.now() + 5 * 60_000);
       const redo = await call(client, 'trackly_update_tracker_stage', { applicationId: 11, stage: 'rejected' });
       assert.equal(redo.isError, false);
-      assert.notEqual(redo.body.reason, 'already_recorded');
+      assertMatch(redo.body, { changed: true, application: { currentStage: 'rejected' } });
       assert.equal(fake.writes().filter((w) => w.body.kind === 'stage_change').length, 2);
     });
   });
