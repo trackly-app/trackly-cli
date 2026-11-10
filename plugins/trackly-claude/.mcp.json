@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "trackly": {
+      "type": "http",
+      "url": "https://mcp.usetrackly.app/api/plugin/trackly/claude/mcp"
+    }
+  }
+}

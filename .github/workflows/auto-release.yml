@@ -79,3 +79,20 @@ jobs:
             --title "$TAG" \
             --notes-file /tmp/release-notes.md \
             --latest
+
+      # close-ai #3601 (U9): the Claude Trackly Apply skill ships as two release downloads,
+      # a claude.ai skill upload and a Claude Code plugin with the Claude connector. The
+      # archives are deterministic, so SHA256SUMS can be reproduced from the tagged source.
+      - name: Attach Claude skill and plugin downloads
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.current }}
+        run: |
+          set -euo pipefail
+          node scripts/build-claude-downloads.js --out dist/claude
+          gh release upload "v$VERSION" \
+            "dist/claude/trackly-apply-claude-skill-$VERSION.zip" \
+            "dist/claude/trackly-claude-plugin-$VERSION.zip" \
+            dist/claude/SHA256SUMS \
+            --clobber
