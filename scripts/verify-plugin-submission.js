@@ -28,6 +28,9 @@ const { OAuthMetadataSchema, OAuthProtectedResourceMetadataSchema } = require('@
 
 const ROOT = path.resolve(__dirname, '..');
 const PLUGIN = path.join(ROOT, 'plugins', 'trackly');
+// Absolute path: test/plugin-submission.test.js evaluates this file in a VM whose require
+// resolves relative names from the test directory.
+const { verifyDirectoryKits } = require(path.join(__dirname, 'verify-directory-kits.js'));
 const MANIFEST_PATH = path.join(PLUGIN, '.codex-plugin', 'plugin.json');
 const METADATA_PATH = path.join(PLUGIN, 'listing', 'metadata.json');
 const TESTS_PATH = path.join(PLUGIN, 'listing', 'submission-tests.json');
@@ -776,6 +779,9 @@ async function runStatic() {
   await validateSkills(state);
   await validateAssetsAndTree(state, manifest);
   validateSubmissionTests(state, fixtures);
+  // close-ai #3601: the ChatGPT 1.0.9 and Claude v2 listing kits, and the Claude
+  // Trackly Apply skill and plugin, are checked with the same preflight.
+  for (const message of verifyDirectoryKits()) addError(state, `directory kit: ${message}`);
   return state;
 }
 

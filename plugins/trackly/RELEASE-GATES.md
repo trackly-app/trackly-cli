@@ -161,8 +161,9 @@ the host's own browser tool, and only the user clicks Submit.
 The fixture-pinned `mutationAnnotationContract` in
 `scripts/verify-hosted-contract.js` mirrors the runtime pinned in
 `hosted-contract-fixture.json`. The fixture is recaptured from the deployed
-close-ai merge `6cd11dfb1c5b59dbb11b325c3a4f68a1a3fc8b23` (close-ai #3603; it
-was `7c7032c87d97b3270681281ff33fa3d8887259c9` from close-ai #3433,
+close-ai merge `6a5b05f5d043feba651e8dc7c70f1ea29013308b` (close-ai #3604,
+directory parity; it was `6cd11dfb1c5b59dbb11b325c3a4f68a1a3fc8b23` from close-ai #3603,
+`7c7032c87d97b3270681281ff33fa3d8887259c9` from close-ai #3433,
 `71e7f9bfa73df85bbd483ee07712a38d386b79a1`, `6be6d4d2105f7de7f491c7b55bfdf00057d193f4`
 from trackly-app/trackly-cli#186, and `dded739620bcdee1e6863324c8f660e6b999d0cc` from trackly-app/trackly-cli#154), retaining
 `trackly_defer_apply_access` and `trackly_clear_apply_access_deferment` to
@@ -174,6 +175,41 @@ non-destructive, which matches the Destructive column above, and idempotent (ret
 `readOnlyAnnotations` emits read-only, non-destructive and idempotent.
 
 Accepted backend rule (Alan, 2026-10-24): in `audit` and `enforce` modes, verified machine credentials skip the request-level invite gate (close-ai #2789). The Berkeley-only check for CLI and MCP sign-in is decided earlier, at Google sign-in (`googleTracklyOAuthDecision` in close-ai `src/config/passport.ts`, keyed on the `cli:`/`mcp:` OAuth state), and this gate does not pin it. These credentials are hosted MCP OAuth, MCP bearer tokens, non-extension API keys and `client_platform: 'trackly-cli'` JWTs. `client_platform` is a signed claim that the server sets when it mints the token; no header or User-Agent counts as proof. `assertMachineAccessSemantics` in `scripts/verify-hosted-contract.js` pins the request-level rule exactly, so any change to it fails the coordinated gate.
+
+### Directory catalogs after close-ai #3604
+
+The same factory also serves the ChatGPT (`/api/plugin/trackly/openai/mcp`, 38
+tools) and Claude (`/api/plugin/trackly/claude/mcp`, 21 tools, plus 16 Trackly
+Apply tools for accounts on `TRACKLY_CLAUDE_APPLY_ALLOWLIST`) directory
+catalogs. The table above still describes this package's classic 21-tool
+surface, which close-ai #3604 left byte-identical: the registration helper
+returns before registering any name outside `contracts/trackly-plugin-tools.json`
+on the classic surface. The coordinated gate pins that guard as exact AST and
+pins each of the eleven directory-only registrations (profile read and setup
+status, companies list, company request, experience limits, Apply queue and the
+five Tracker tools) by name, annotations, descriptor bytes and handler bytes.
+Their scopes come from `src/mcp/directory-surface-registry.ts`, which is now a
+deployable path and whole-byte locked, as `plugin-scopes.ts` is.
+
+Directory listing material lives beside this package and is checked by
+`npm run test:plugin-submission`:
+
+- [`listing/openai/`](listing/openai/): the ChatGPT `trackly-openai` 1.0.9 kit:
+  the captured 38-tool catalog, the pinned close-ai package source and portal
+  justifications for the eleven new tools. 1.0.9 updates the existing app
+  record; Rescan and approval of every new tool come before submission.
+- [`listing/claude/`](listing/claude/): the Claude v2 listing text, the
+  approved consent lines and the 37-tool table. The listing edit waits for the
+  real-client dry run, and Claude Apply opens to everyone only after Anthropic
+  approves the edit.
+- [`../trackly-claude/`](../trackly-claude/): the Claude Trackly Apply skill and
+  Claude Code plugin, released as `trackly-apply-claude-skill-<version>.zip` and
+  `trackly-claude-plugin-<version>.zip` with each trackly-cli GitHub release
+  (`auto-release.yml`). Every tool name the skill uses must exist in the Claude
+  catalog, and `claude plugin validate --strict` must pass when the CLI is installed.
+
+Portal steps for both directories stay in Kevin's local session; nothing in this
+repository signs in to a portal or submits a listing.
 
 ## Product verification
 

@@ -124,6 +124,20 @@ Tracker, and Apply tools with the local server and add `trackly_chat`; the 4 loc
 tools listed below are not available remotely. Hosted setup and tool details
 are at [usetrackly.app/connector](https://usetrackly.app/connector).
 
+### Trackly Apply skill for Claude
+
+If you connected Trackly from the Claude directory, the Trackly Apply skill
+teaches Claude to finish your Apply setup and fill applications you approved
+in your own browser with Claude in Chrome. It stops before Submit; you always
+submit yourself. Each [GitHub release](https://github.com/trackly-app/trackly-cli/releases)
+attaches two downloads built from [`plugins/trackly-claude`](plugins/trackly-claude):
+
+- `trackly-apply-claude-skill-<version>.zip`: upload it in claude.ai under Settings, Capabilities, Skills.
+- `trackly-claude-plugin-<version>.zip`: a Claude Code plugin with the skill and the Claude connector. See its [README](plugins/trackly-claude/README.md) to install it.
+
+Trackly Apply on the Claude connector is enabled per account while the
+updated directory listing is in review.
+
 ### Local (CLI via stdio, for Cursor / Windsurf / Claude Code)
 
 For agent-assisted form filling on macOS, install the public skill and local MCP together:
