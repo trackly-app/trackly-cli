@@ -108,23 +108,27 @@ function zip(files) {
 
 /** Reads entry names and contents back from an archive this module wrote. */
 function readZip(buffer) {
+  if (buffer.length < 22) throw new Error('Missing end of central directory');
   const endOffset = buffer.length - 22;
   if (buffer.readUInt32LE(endOffset) !== 0x06054b50) throw new Error('Missing end of central directory');
+  const inBounds = (offset, length) => offset >= 0 && offset + length <= buffer.length;
   const count = buffer.readUInt16LE(endOffset + 10);
   let cursor = buffer.readUInt32LE(endOffset + 16);
   const entries = [];
   for (let index = 0; index < count; index += 1) {
-    if (buffer.readUInt32LE(cursor) !== 0x02014b50) throw new Error('Bad central directory entry');
+    if (!inBounds(cursor, 46) || buffer.readUInt32LE(cursor) !== 0x02014b50) throw new Error('Bad central directory entry');
     const method = buffer.readUInt16LE(cursor + 10);
     const compressedSize = buffer.readUInt32LE(cursor + 20);
     const nameLength = buffer.readUInt16LE(cursor + 28);
     const extraLength = buffer.readUInt16LE(cursor + 30);
     const commentLength = buffer.readUInt16LE(cursor + 32);
     const localOffset = buffer.readUInt32LE(cursor + 42);
+    if (!inBounds(cursor + 46, nameLength) || !inBounds(localOffset, 30)) throw new Error('Archive entry out of bounds');
     const name = buffer.toString('utf8', cursor + 46, cursor + 46 + nameLength);
     const localNameLength = buffer.readUInt16LE(localOffset + 26);
     const localExtraLength = buffer.readUInt16LE(localOffset + 28);
     const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+    if (!inBounds(dataStart, compressedSize)) throw new Error(`Archive data out of bounds for ${name}`);
     const raw = buffer.subarray(dataStart, dataStart + compressedSize);
     if (method !== 0 && method !== 8) throw new Error(`Unsupported compression method ${method} for ${name}`);
     const data = method === 8 ? zlib.inflateRawSync(raw) : Buffer.from(raw);

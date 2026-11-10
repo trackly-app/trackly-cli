@@ -48,7 +48,7 @@ function listFiles(directory, prefix = '') {
 /** Rows of the markdown tables in a document: tool name -> annotation-ish cells. */
 function markdownToolRows(markdown) {
   const rows = new Map();
-  for (const line of markdown.split('\n')) {
+  for (const line of markdown.split(/\r?\n/)) {
     const match = /^\| `(trackly_[a-z_]+)` \|(.*)\|$/.exec(line);
     if (!match) continue;
     if (rows.has(match[1])) throw new Error(`${match[1]} appears in more than one table row`);
@@ -58,10 +58,10 @@ function markdownToolRows(markdown) {
 }
 
 function parseFrontmatter(markdown) {
-  const match = /^---\n([\s\S]*?)\n---\n/.exec(markdown);
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(markdown);
   if (!match) return null;
   const fields = {};
-  for (const line of match[1].split('\n')) {
+  for (const line of match[1].split(/\r?\n/)) {
     const field = /^([a-z][a-z0-9_-]*):\s*(.*)$/.exec(line);
     if (!field) return null;
     fields[field[1]] = field[2];
@@ -209,7 +209,13 @@ function checkClaudeSkill(check, { listing: LISTING, claudeSkill: CLAUDE_SKILL }
     }
     for (const [, target] of text.matchAll(/\]\(([^)#\s]+)(?:#[^)]*)?\)/g)) {
       if (/^https:\/\//.test(target)) continue;
-      check(fs.existsSync(path.join(CLAUDE_SKILL, path.dirname(relative), target)), `Claude skill ${relative} links to a missing file: ${target}`);
+      // Links must stay inside the packaged skill folder, or the downloaded skill breaks.
+      const resolved = path.resolve(CLAUDE_SKILL, path.dirname(relative), target);
+      if (!resolved.startsWith(`${CLAUDE_SKILL}${path.sep}`)) {
+        check(false, `Claude skill ${relative} links outside the skill folder: ${target}`);
+        continue;
+      }
+      check(fs.existsSync(resolved), `Claude skill ${relative} links to a missing file: ${target}`);
     }
     check(!/\bhttp:\/\//.test(text), `Claude skill ${relative} must use HTTPS links`);
   }

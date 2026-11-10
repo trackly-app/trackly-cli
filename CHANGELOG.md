@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Search output shows `autoApplySupported` when returned by the server.
 
 ### Maintenance
+
 - Recapture the coordinated hosted-contract gate against close-ai `6a5b05f5` (close-ai #3604, directory parity). The classic 21-tool facade is byte-identical; the gate now pins the eleven directory-only registrations, the classic-surface name guard, the Claude resume-preview branch and the byte-locked directory surface registry that supplies the ChatGPT and Claude scope rows.
 
 ## [0.25.0] - 2026-11-04

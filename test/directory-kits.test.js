@@ -91,10 +91,14 @@ test('skill checks reject non-Claude tools, surfaces, resume approval and broken
     [(text) => text.replace('Never activate the final Submit control.', 'Avoid the final Submit control.'), /keep the rule: Never activate/],
     [(text) => text.replace('(references/onboarding.md)', '(references/missing.md)'), /missing file: references\/missing\.md/],
     [(text) => text.replace('name: trackly-apply', 'name: Trackly Apply'), /name must be trackly-apply/],
+    [(text) => text.replace('(references/onboarding.md)', '(../../../README.md)'), /links outside the skill folder/],
+    [(text) => text.replace(/\n/g, '\r\n'), null],
   ];
   for (const [mutate, expected] of cases) {
     const errors = withMutatedFile(skill, mutate, (root) => verifyDirectoryKits({ root }));
-    assert.ok(errors.some((message) => expected.test(message)), `${expected}: ${errors.join(' | ')}`);
+    // A null expectation means the mutation must still pass (CRLF line endings).
+    if (expected === null) assert.deepEqual(errors, []);
+    else assert.ok(errors.some((message) => expected.test(message)), `${expected}: ${errors.join(' | ')}`);
   }
 });
 
@@ -172,6 +176,15 @@ test('release workflow builds before releasing and uploads exactly the built dow
     assert.ok(workflow.includes(`dist/claude/${filename}`), `workflow uploads dist/claude/${filename}`);
   }
   assert.match(workflow, /--clobber/);
+});
+
+test('readZip reports short or truncated archives with a clear error', () => {
+  assert.throws(() => readZip(Buffer.alloc(4)), /Missing end of central directory/);
+  const archive = zip([{ name: 'a.txt', data: Buffer.from('hello') }]);
+  const corrupt = Buffer.from(archive);
+  // Point the central directory at an offset past the end of the buffer.
+  corrupt.writeUInt32LE(corrupt.length + 100, corrupt.length - 6);
+  assert.throws(() => readZip(corrupt), /Bad central directory entry/);
 });
 
 test('zip writer refuses unsafe or duplicate entries', () => {
