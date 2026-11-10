@@ -12,6 +12,15 @@ const { configureMcpAnalytics, shutdownMcpAnalytics } = require('./analytics');
 const { normalizeJobResult, unavailableJobFromError, jobFailureGuidance } = require('../lib/job-result');
 const { planRefusalMessage, planRefusalFields } = require('../lib/formatters');
 const { validateAssistResponse, autoApplyUnavailableError, autoApplyRequestError } = require('../lib/auto-apply');
+const {
+  TrackerToolError,
+  createTrackerToolHandlers,
+  trackerCreateShape,
+  trackerListShape,
+  trackerNoteShape,
+  trackerRetractShape,
+  trackerStageShape,
+} = require('./tracker-tools');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
 const MCP_SHUTDOWN_TIMEOUT_MS = 2_000;
@@ -119,6 +128,13 @@ const APPLY_BATCH_CONFLICT_CODES = new Set(
 );
 
 function createErrorResult(error, fallbackMessage, extra = {}) {
+  if (error instanceof TrackerToolError) {
+    // Tracker tools build their whole error body from fixed strings and IDs.
+    return {
+      content: [{ type: 'text', text: JSON.stringify(error.payload, null, 2) }],
+      isError: true,
+    };
+  }
   const normalizedMaintenance = maintenanceOutput(error);
   const normalizedAccess = createTracklyAccessError(error, error?.status);
   const payload = normalizedMaintenance
@@ -576,6 +592,61 @@ function createServer() {
       }
       return apiRequest('POST', `/api/jobscout/tracker/jobs/${id}/stage`, { stage }, false, false, MCP_USER_AGENT);
     }, 'Failed to update job status')
+  );
+
+  // Tracker (Waypoint) tools, mirrored from the hosted MCP (close-ai #3600).
+  const tracker = createTrackerToolHandlers(
+    (method, path, body) => apiRequest(method, path, body ?? null, false, false, MCP_USER_AGENT),
+  );
+
+  server.registerTool(
+    'trackly_list_tracker_applications',
+    {
+      description: 'List your Tracker entries (the /tracker board: saved, contacted, applied, screen, assessment, interview, final, offer, accepted, declined, rejected, withdrawn). Filter by stage, company or role text, or a Trackly job ID. Returns each entry\'s id, jobPostingId, company, role, currentStage, stageEnteredAt, version and link. Pass applicationId alone to get that entry with its events. Use it to find the applicationId for trackly_update_tracker_stage, trackly_add_tracker_note or trackly_retract_tracker_event. Contact email addresses are never returned.',
+      inputSchema: z.object(trackerListShape()).strict(),
+      annotations: { title: 'List Tracker entries', readOnlyHint: true, openWorldHint: false },
+    },
+    wrapTool((params) => tracker.list(params), 'Failed to list Tracker entries'),
+  );
+
+  server.registerTool(
+    'trackly_create_tracker_application',
+    {
+      description: 'Add a job to the Tracker board (Quick Add) when it has no Tracker entry yet. Creating an entry records the job as applied: the new entry starts in the applied stage, dated appliedOn when given. Only call it after the user explicitly confirms they applied, and pass explicitUserConfirmed=true. Pass jobId, or companyName and roleTitle. Move the entry afterwards with trackly_update_tracker_stage, for example to interview. If the job, or the same company and role, is already on the board, nothing is written and the existing entry is returned with created=false. A repeated call never adds a second entry. Separate from trackly_update_status, which only sets the job list status.',
+      inputSchema: z.object(trackerCreateShape()).strict(),
+      annotations: { title: 'Add a job to the Tracker', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    wrapTool((params) => tracker.create(params), 'Failed to create the Tracker entry'),
+  );
+
+  server.registerTool(
+    'trackly_update_tracker_stage',
+    {
+      description: 'Move one Tracker entry to a new stage (for example rejected or interview), as if the user dragged the card on the /tracker board, with the same history, undo and conflict checks. Pass exactly one of applicationId or jobId. This is separate from trackly_update_status, which only sets the job list status: marking an entry rejected here keeps its Applied record and does not discard the job. There is no "paused" stage: record a pause with trackly_add_tracker_note and leave the stage unchanged. If the entry is already in that stage nothing is written. Returns not_found when the job has no Tracker entry yet (this tool never creates one; use trackly_create_tracker_application first), tracker_unavailable when the Tracker is switched off, and version_conflict with the entry\'s current version and stage if it kept changing; nothing is written on any error.',
+      inputSchema: z.object(trackerStageShape()).strict(),
+      annotations: { title: 'Move a Tracker entry to a stage', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    wrapTool((params) => tracker.updateStage(params), 'Failed to update the Tracker stage'),
+  );
+
+  server.registerTool(
+    'trackly_add_tracker_note',
+    {
+      description: 'Add a dated note to one Tracker entry without changing its stage. Pass exactly one of applicationId or jobId. Use it to record a pause ("employer paused hiring Nov 9"), since there is no paused stage, or any outcome evidence; say where the evidence came from. A repeated call with the same text and date does not add a second note. Returns not_found, tracker_unavailable or version_conflict without writing anything.',
+      inputSchema: z.object(trackerNoteShape()).strict(),
+      annotations: { title: 'Add a Tracker note', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    wrapTool((params) => tracker.addNote(params), 'Failed to add the Tracker note'),
+  );
+
+  server.registerTool(
+    'trackly_retract_tracker_event',
+    {
+      description: 'Undo one Tracker event that the user names: retract a single stage change, note or other event by its eventId, as the undo on the /tracker board does. Only call it when the user asked to undo that specific event; never to clean up or to retry. The event stays in history marked as retracted and the entry\'s stage is recomputed. Retracting an already retracted event changes nothing. The only stage event of an entry, and a retraction itself, cannot be retracted. Returns not_found, tracker_unavailable or version_conflict without writing anything.',
+      inputSchema: z.object(trackerRetractShape()).strict(),
+      annotations: { title: 'Retract a Tracker event', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    },
+    wrapTool((params) => tracker.retract(params), 'Failed to retract the Tracker event'),
   );
 
   server.tool(

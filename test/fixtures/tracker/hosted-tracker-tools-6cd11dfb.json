@@ -1,0 +1,259 @@
+[
+  {
+    "name": "trackly_list_tracker_applications",
+    "description": "List your Tracker entries (the /tracker board: saved, contacted, applied, screen, assessment, interview, final, offer, accepted, declined, rejected, withdrawn). Filter by stage, company or role text, or a Trackly job ID. Returns each entry's id, jobPostingId, company, role, currentStage, stageEnteredAt, version and link. Pass applicationId alone to get that entry with its events. Use it to find the applicationId for trackly_update_tracker_stage, trackly_add_tracker_note or trackly_retract_tracker_event. Contact email addresses are never returned.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "stage": {
+          "type": "string",
+          "enum": ["contacted", "saved", "applied", "screen", "assessment", "interview", "final", "offer", "accepted", "declined", "rejected", "withdrawn"],
+          "description": "Only entries currently in this stage. One of: contacted, saved, applied, screen, assessment, interview, final, offer, accepted, declined, rejected, withdrawn"
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Company or role text to match, up to 100 characters"
+        },
+        "jobId": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 2147483647,
+          "description": "Trackly job posting ID; returns only the Tracker entries linked to that job"
+        },
+        "applicationId": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 2147483647,
+          "description": "One Tracker entry ID. Returns that entry with its events (ids, kinds, stages, dates and note text), so you can name an event for trackly_retract_tracker_event. Cannot be combined with the other filters."
+        },
+        "context": {
+          "type": "string",
+          "description": "Briefly explain why this tool helps the current job-search goal. Never include resume text, profile answers, demographic or work-authorization answers, application notes, credentials, or secrets."
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "title": "List Tracker entries",
+      "readOnlyHint": true,
+      "openWorldHint": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "scopes": ["tracking:read"]
+  },
+  {
+    "name": "trackly_create_tracker_application",
+    "description": "Add a job to the Tracker board (Quick Add) when it has no Tracker entry yet. Creating an entry records the job as applied: the new entry starts in the applied stage, dated appliedOn when given. Only call it after the user explicitly confirms they applied, and pass explicitUserConfirmed=true. Pass jobId, or companyName and roleTitle. Move the entry afterwards with trackly_update_tracker_stage, for example to interview. If the job, or the same company and role, is already on the board, nothing is written and the existing entry is returned with created=false. A repeated call never adds a second entry. Separate from trackly_update_status, which only sets the job list status.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 2147483647,
+          "description": "Trackly job posting ID. The company, role, location and default link come from the Trackly job. Pass jobId, or companyName and roleTitle (or both, to override the job's names)."
+        },
+        "companyName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Company name, up to 200 characters. Required with roleTitle when there is no jobId; with a jobId it overrides the job's company name."
+        },
+        "roleTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Role title, up to 200 characters. Required with companyName when there is no jobId; with a jobId it overrides the job's title."
+        },
+        "appliedOn": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Date the user applied, YYYY-MM-DD, read as a local date in America/Los_Angeles. Omit when unknown."
+        },
+        "link": {
+          "type": "string",
+          "maxLength": 2048,
+          "format": "uri",
+          "description": "Posting or application URL, http(s), up to 2048 characters. Defaults to the Trackly job's URL when jobId is given."
+        },
+        "explicitUserConfirmed": {
+          "type": "boolean",
+          "const": true,
+          "description": "Must be true: the user explicitly confirmed they applied to this job, because creating a Tracker entry records the job as applied."
+        },
+        "context": {
+          "type": "string",
+          "description": "Briefly explain why this tool helps the current job-search goal. Never include resume text, profile answers, demographic or work-authorization answers, application notes, credentials, or secrets."
+        }
+      },
+      "required": ["explicitUserConfirmed"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "title": "Add a job to the Tracker",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "scopes": ["tracking:write"]
+  },
+  {
+    "name": "trackly_update_tracker_stage",
+    "description": "Move one Tracker entry to a new stage (for example rejected or interview), as if the user dragged the card on the /tracker board, with the same history, undo and conflict checks. Pass exactly one of applicationId or jobId. This is separate from trackly_update_status, which only sets the job list status: marking an entry rejected here keeps its Applied record and does not discard the job. There is no \"paused\" stage: record a pause with trackly_add_tracker_note and leave the stage unchanged. If the entry is already in that stage nothing is written. Returns not_found when the job has no Tracker entry yet (this tool never creates one; use trackly_create_tracker_application first), tracker_unavailable when the Tracker is switched off, and version_conflict with the entry's current version and stage if it kept changing; nothing is written on any error.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "applicationId": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 2147483647,
+          "description": "Tracker entry ID from trackly_list_tracker_applications. Pass exactly one of applicationId or jobId."
+        },
+        "jobId": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 2147483647,
+          "description": "Trackly job posting ID. Resolved to its Tracker entry. Pass exactly one of applicationId or jobId."
+        },
+        "stage": {
+          "type": "string",
+          "enum": ["contacted", "saved", "applied", "screen", "assessment", "interview", "final", "offer", "accepted", "declined", "rejected", "withdrawn"],
+          "description": "New Tracker stage. One of: contacted, saved, applied, screen, assessment, interview, final, offer, accepted, declined, rejected, withdrawn"
+        },
+        "occurredOn": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Calendar date the change happened, YYYY-MM-DD, read as a local date in America/Los_Angeles. Omit to use the time of the call."
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "description": "Optional dated note saved after the stage change, up to 1000 characters. Say where the evidence came from, for example \"rejection email, Nov 9\"."
+        },
+        "context": {
+          "type": "string",
+          "description": "Briefly explain why this tool helps the current job-search goal. Never include resume text, profile answers, demographic or work-authorization answers, application notes, credentials, or secrets."
+        }
+      },
+      "required": ["stage"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "title": "Move a Tracker entry to a stage",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "scopes": ["tracking:write"]
+  },
+  {
+    "name": "trackly_add_tracker_note",
+    "description": "Add a dated note to one Tracker entry without changing its stage. Pass exactly one of applicationId or jobId. Use it to record a pause (\"employer paused hiring Nov 9\"), since there is no paused stage, or any outcome evidence; say where the evidence came from. A repeated call with the same text and date does not add a second note. Returns not_found, tracker_unavailable or version_conflict without writing anything.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "applicationId": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 2147483647,
+          "description": "Tracker entry ID from trackly_list_tracker_applications. Pass exactly one of applicationId or jobId."
+        },
+        "jobId": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 2147483647,
+          "description": "Trackly job posting ID. Resolved to its Tracker entry. Pass exactly one of applicationId or jobId."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "description": "Note text, up to 1000 characters. Say where the evidence came from."
+        },
+        "occurredOn": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Calendar date the change happened, YYYY-MM-DD, read as a local date in America/Los_Angeles. Omit to use the time of the call."
+        },
+        "context": {
+          "type": "string",
+          "description": "Briefly explain why this tool helps the current job-search goal. Never include resume text, profile answers, demographic or work-authorization answers, application notes, credentials, or secrets."
+        }
+      },
+      "required": ["text"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "title": "Add a Tracker note",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "scopes": ["tracking:write"]
+  },
+  {
+    "name": "trackly_retract_tracker_event",
+    "description": "Undo one Tracker event that the user names: retract a single stage change, note or other event by its eventId, as the undo on the /tracker board does. Only call it when the user asked to undo that specific event; never to clean up or to retry. The event stays in history marked as retracted and the entry's stage is recomputed. Retracting an already retracted event changes nothing. The only stage event of an entry, and a retraction itself, cannot be retracted. Returns not_found, tracker_unavailable or version_conflict without writing anything.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "applicationId": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 2147483647,
+          "description": "Tracker entry ID from trackly_list_tracker_applications. Pass exactly one of applicationId or jobId."
+        },
+        "jobId": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 2147483647,
+          "description": "Trackly job posting ID. Resolved to its Tracker entry. Pass exactly one of applicationId or jobId."
+        },
+        "eventId": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 2147483647,
+          "description": "The one event to retract, from trackly_list_tracker_applications with applicationId, or the stageEventId or noteEventId a write returned."
+        },
+        "context": {
+          "type": "string",
+          "description": "Briefly explain why this tool helps the current job-search goal. Never include resume text, profile answers, demographic or work-authorization answers, application notes, credentials, or secrets."
+        }
+      },
+      "required": ["eventId"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "title": "Retract a Tracker event",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "scopes": ["tracking:write"]
+  }
+]

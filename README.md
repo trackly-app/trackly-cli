@@ -35,7 +35,7 @@ trackly jobs --function product
 
 ## At a Glance
 
-5,400+ companies | 250K+ jobs | 40+ ATS types | CLI + MCP | 59 local + 55 hosted MCP tools
+5,400+ companies | 250K+ jobs | 40+ ATS types | CLI + MCP | 64 local + 60 hosted MCP tools
 
 ## CLI Commands
 
@@ -119,8 +119,8 @@ OAuth sign-in is the default for every client. An API key is optional and only
 needed for headless clients that cannot complete an interactive sign-in: send
 `Authorization: Bearer trk_...` with a key from **Settings → API Keys**.
 
-Remote connections get 55 hosted tools. They share the search, company, status, and
-Apply tools with the local server and add `trackly_chat`; the 4 local-only
+Remote connections get 60 hosted tools. They share the search, company, status,
+Tracker, and Apply tools with the local server and add `trackly_chat`; the 4 local-only
 tools listed below are not available remotely. Hosted setup and tool details
 are at [usetrackly.app/connector](https://usetrackly.app/connector).
 
@@ -213,11 +213,11 @@ Hosted and local releases are separate: the current client schema is authoritati
 
 ## MCP Tools Reference
 
-The local stdio server (`trackly mcp`) registers the 59 tools below. Four are
+The local stdio server (`trackly mcp`) registers the 64 tools below. Four are
 local-only because they run their checks on your machine:
 `trackly_diagnose_local_path`, `trackly_lint_application_text`,
 `trackly_validate_apply_resume_upload`, and `trackly_validate_apply_tab_keep_set`.
-The currently deployed hosted server has 55 hosted tools. This source adds `trackly_auto_apply`, pending the coordinated backend and CLI release; that release must verify the updated hosted catalog before publication.
+The currently deployed hosted server has 60 hosted tools, including the five Tracker tools. This source also adds `trackly_auto_apply`, pending the coordinated backend and CLI release; that release must verify the updated hosted catalog before publication.
 
 | Tool | Description |
 |------|-------------|
@@ -229,6 +229,11 @@ The currently deployed hosted server has 55 hosted tools. This source adds `trac
 | trackly_get_preferences | Read bounded discovery preferences, edit availability, and save revision |
 | trackly_update_experience_limits | Atomically replace role-specific limits on a job's stated minimum years |
 | trackly_update_status | Mark jobs as applied, saved, or dismissed |
+| trackly_list_tracker_applications | List Tracker board entries by stage, company or role text, or job ID; one entry with its events by applicationId |
+| trackly_create_tracker_application | Add a job the user confirmed applying to onto the Tracker board, without duplicates |
+| trackly_update_tracker_stage | Move one Tracker entry to a stage (rejected, interview, offer...) with an optional dated note |
+| trackly_add_tracker_note | Add a dated note to one Tracker entry without changing its stage |
+| trackly_retract_tracker_event | Undo one Tracker event the user names |
 | trackly_auto_apply | Request cloud auto-apply for one job |
 | trackly_ask | Natural language job search |
 | trackly_get_job_brief | Get a network brief, with availability and retry guidance |
@@ -345,7 +350,7 @@ trackly config --base-url http://127.0.0.1:3000  # Point at a different backend
 | Job search + filters | Yes | Yes | Yes |
 | Apply/save/dismiss | Yes | Yes | Yes |
 | AI-powered search | Yes (trackly ask) | Yes | Yes |
-| MCP integration | Yes (59 local tools) | -- | -- |
+| MCP integration | Yes (64 local tools) | -- | -- |
 | Browser required | No | Yes | No |
 | Best for | Terminal + AI agents | Visual browsing | Custom integrations |
 
@@ -359,7 +364,7 @@ Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly l
 
 **What MCP servers exist for job searching?**
 
-trackly-cli includes a built-in MCP server with 59 tools: the complete Trackly
+trackly-cli includes a built-in MCP server with 64 tools: the complete Trackly
 job-search and application set plus `get_more_tools`, which lets agents report
 a missing capability. Run `trackly mcp` or use
 `trackly agent setup --client claude`.
