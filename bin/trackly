@@ -920,7 +920,18 @@ const APPLY_GUIDE = Object.freeze({
 });
 
 function cmdApplyGuide() {
-  if (isJSON()) return printJson({ success: true, ways: APPLY_GUIDE });
+  // Scripts and JSON callers keep 0.25.0's failure for a missing ID, so `trackly apply $ID` with an
+  // empty variable never reports success. Only an interactive terminal gets the guide with exit 0.
+  if (isJSON()) {
+    printJson({
+      success: false,
+      error: 'job_id_required',
+      message: 'Job ID must be a positive integer. Usage: trackly apply <id> (or trackly mark-applied <id>).',
+      ways: APPLY_GUIDE,
+    });
+    process.exitCode = 1;
+    return;
+  }
   console.log(color('bold', 'Applying with Trackly'));
   console.log(`  ${APPLY_GUIDE.tracklyApply}`);
   console.log(`  ${APPLY_GUIDE.cloudAutoApply}`);

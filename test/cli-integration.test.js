@@ -159,8 +159,15 @@ test('apply <id> still marks a job applied exactly as in 0.25.0, with a mark-app
 test('apply with no job ID explains Trackly Apply, cloud auto-apply and mark applied without any request', async (t) => {
   for (const env of [HUMAN_ENV, {}]) {
     const { result, requests } = await runAgainstMock(t, ['apply'], undefined, env);
-    assert.equal(result.code, 0, result.stderr);
     assert.equal(requests.length, 0);
+    // A terminal gets the guide; scripts and JSON callers still fail on a missing ID, as in 0.25.0.
+    assert.equal(result.code, env === HUMAN_ENV ? 0 : 1, result.stderr);
+    if (env !== HUMAN_ENV) {
+      const payload = JSON.parse(result.stdout);
+      assert.equal(payload.success, false);
+      assert.equal(payload.error, 'job_id_required');
+      assert.match(payload.message, /Usage: trackly apply <id>/);
+    }
     const text = env === HUMAN_ENV ? result.stdout : Object.values(JSON.parse(result.stdout).ways).join('\n');
     assert.match(text, /Trackly Apply \(local\).*your browser on your computer.*stops before Submit.*trackly agent setup/);
     assert.match(text, /Cloud auto-apply: .*Trackly takes care of the application.*nothing running on your computer/);
