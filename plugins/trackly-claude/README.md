@@ -1,8 +1,8 @@
-# Trackly Apply for Claude
+# Trackly Apply (local) for Claude
 
 This folder is the source of two downloads published with each trackly-cli release:
 
-- `trackly-apply-claude-skill-<version>.zip`: the Trackly Apply skill for claude.ai. Upload it in Claude under Settings, then Capabilities, then Skills.
+- `trackly-apply-claude-skill-<version>.zip`: the Trackly Apply (local) skill for claude.ai. Upload it in Claude under Settings, then Capabilities, then Skills.
 - `trackly-claude-plugin-<version>.zip`: a Claude Code plugin that bundles the same skill with the Trackly Claude connector.
 
 Both connect to the Trackly Claude connector:
@@ -11,9 +11,9 @@ Both connect to the Trackly Claude connector:
 
 ## What it does
 
-The skill guides Claude through Trackly Apply setup (missing profile answers, the default resume and profile confirmation) and fills job applications the user approved, in the user's own Chrome with Claude in Chrome. It stops before Submit; the user always submits. It reads only typed Trackly state, because Trackly results on Claude carry no prose instructions.
+The skill guides Claude through Trackly Apply (local) setup (missing profile answers, the default resume and profile confirmation) and fills job applications the user approved, in the user's own Chrome with Claude in Chrome. It stops before Submit; the user always submits. It reads only typed Trackly state, because Trackly results on Claude carry no prose instructions.
 
-Trackly Apply on Claude is enabled per account while Anthropic reviews the Claude directory listing. Without it, the skill still helps with setup and the connector's job search, profile and Tracker tools work as usual.
+Trackly Apply (local) on Claude is enabled per account while Anthropic reviews the Claude directory listing. Without it, the skill still helps with setup and the connector's job search, profile and Tracker tools work as usual.
 
 ## Install
 

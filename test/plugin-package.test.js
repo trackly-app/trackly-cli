@@ -3997,12 +3997,12 @@ test('brand validation accepts the exact approved PNG replacement state', () => 
   }, png);
 });
 
-test('public skills reference only the locked 21-tool facade', () => {
+test('public skills reference only the locked 23-tool facade', () => {
   const lock = json('plugins/trackly/skill-lock.json');
   const actual = referencedTools(path.join(PLUGIN, 'skills'));
-  assert.equal(lock.publicToolAllowlist.length, 21);
-  assert.equal(lock.hostedMcpToolAllowlist.length, 60);
-  assert.equal(new Set(lock.hostedMcpToolAllowlist).size, 60);
+  assert.equal(lock.publicToolAllowlist.length, 23);
+  assert.equal(lock.hostedMcpToolAllowlist.length, 62);
+  assert.equal(new Set(lock.hostedMcpToolAllowlist).size, 62);
   assert.deepEqual(actual, [...lock.publicToolAllowlist].sort());
   assert.ok(!actual.some((name) => name.includes('referral')));
   assert.deepEqual(lock.publicLifecycleContract, {
@@ -4032,7 +4032,10 @@ test('public skills reference only the locked 21-tool facade', () => {
     resumeHandling: 'private_original_preview_exact_approval_verified_attachment_or_manual_unbound',
     certifyReviewReady: 'atomic_checkpoint_truth_outcome_verified_original_or_manual_unbound',
     reconcileManualSubmission: 'atomic_current_epoch_evidence_outcome',
-    submissionBoundary: 'manual_only_no_submit_tool',
+    // close-ai contract 1.1.0 (#3536): Trackly Apply (cloud) is the one path where Trackly submits.
+    submissionBoundary: 'browser_apply_stops_before_submit; only cloudAutoApply submits, and only on an explicit user request',
+    cloudAutoApply: 'explicit_user_request_queues_trackly_submitted_assist_request',
+    cloudAutoApplyLimitRefusal: 'openai_and_classic_never_carry_upgrade_url; claude_and_muse_have_no_auto_apply_tool',
   });
   assert.deepEqual(Object.keys(lock.publicScopeContract).sort(), [...lock.publicToolAllowlist].sort());
   assert.deepEqual(

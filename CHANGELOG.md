@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-11-11
+
+Trackly Apply (cloud) is available in the CLI and the npm MCP server, now that the hosted MCP serves the same tools (close-ai #3536, in production since 2026-11-10 10:18 PM PST). Trackly offers three different ways to apply, and this release names them the same way everywhere:
+
+- **Trackly Apply (local):** your own AI agent (Claude in Chrome, Codex or computer use) fills the application in your browser and stops before Submit; you submit. Set it up with `trackly agent setup`.
+- **Trackly Apply (cloud):** you only request it and Trackly applies to the employer for you; nothing runs on your computer.
+- **Mark applied:** you applied on your own and record it.
+
+### Added
+- `trackly auto-apply <jobId>` requests Trackly Apply (cloud) for one job, with your default resume or `--resume-id <id>`. `trackly auto-apply --status` lists your requests and `trackly auto-apply --help` explains Trackly Apply (cloud) next to the other two ways. Every request sends `acknowledged: true`: asking Trackly to apply is your consent for Trackly staff to use every saved profile answer, sensitive ones included, to complete the application.
+- Two MCP tools, mirrored from the hosted MCP: `trackly_auto_apply` (Trackly Apply (cloud) for one job the user explicitly asked for; strict `jobId` input) and `trackly_auto_apply_status` (read-only request list, optionally for up to 200 `jobIds`, at most 50 results plus `hasMore`). The local MCP now registers 65 tools; the hosted MCP has 62.
+- `trackly_search_jobs` sets `autoApplySupported: true` on jobs Trackly Apply (cloud) can apply to (active US Greenhouse, Lever and Ashby postings) instead of passing through the server's retired constant, and adds a `nextSteps` line when some of them are still open to you, as the hosted search does. `trackly jobs` marks those jobs with the `trackly auto-apply <id>` command.
+
+### Changed
+- `trackly apply` with no job ID names Trackly Apply (local), Trackly Apply (cloud) (`trackly auto-apply <jobId>`) and mark applied (`trackly mark-applied <jobId>`). `trackly apply <jobId>` still marks the job applied, as in 0.25.0 and 0.26.0, with a hint to use `trackly mark-applied`. The JSON keys of the no-ID guide are unchanged.
+- Help, README, `docs/trackly-tools.md` and refusal messages use "Trackly Apply (local)" and "Trackly Apply (cloud)". Tool names, input schemas, scopes and the `trackly auto-apply` command name are unchanged.
+- Skills: the npm Trackly Apply (local) skill 4.9.5 and the Codex plugin 1.1.5 skills explain the three ways to apply side by side, so an agent calls `trackly_auto_apply` only when the user asks Trackly to apply for them. The Claude skill 1.0.1 and Claude plugin 1.0.1 say that Trackly Apply (cloud) is not offered on the Claude connector. Installed 4.9.4 skills keep working; `trackly agent setup` updates them.
+
+### Maintenance
+- Recapture the coordinated hosted-contract gate against the deployed close-ai `96781f59` (deploy run 42965813816, after the #3536 merge `3ea1ab64`). The classic facade is contract 1.1.0 with 23 tools: it adds `trackly_auto_apply` and `trackly_auto_apply_status`, and the `trackly_search_jobs` descriptor gains the `autoApplySupported` sentence. The gate now byte-locks close-ai `src/mcp/auto-apply.ts`, which supplies those descriptors, and pins the Trackly Apply (cloud) refusal branch and annotations. The ChatGPT kit catalog is 40 tools (thirteen new in the 1.0.9 Rescan); the Claude catalog is unchanged at 37.
+- Removes the 0.26.0 hold (`cloudAutoApply.released`) and its test preload instead of adding a second switch.
+
 ## [0.26.0] - 2026-11-10
 
 ### Changed

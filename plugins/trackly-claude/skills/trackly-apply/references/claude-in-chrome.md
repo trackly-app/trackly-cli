@@ -1,6 +1,6 @@
 # Claude in Chrome
 
-Trackly Apply on Claude drives the employer form only through Claude in Chrome, in the user's own Chrome, with `browserSurface: claude_in_chrome` on every call. Trackly's server never opens an employer site.
+Trackly Apply (local) on Claude drives the employer form only through Claude in Chrome, in the user's own Chrome, with `browserSurface: claude_in_chrome` on every call. Trackly's server never opens an employer site.
 
 ## Before the first mutation
 
