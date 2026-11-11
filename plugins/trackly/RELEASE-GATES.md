@@ -128,11 +128,14 @@ the private backend plugin registry. `plugin-server.test.ts` locks every row
 below, so a change to any hint fails CI. Paste these one-line justifications
 into the portal.
 
-`openWorldHint` is false for all 21 tools. Every tool calls only Trackly's own
+`openWorldHint` is false for all 23 tools. Every tool calls only Trackly's own
 API, scoped to the signed-in account. The Apply services have no outbound
 network client and never fetch employer sites. Stored postings are served
-without live employer-site hydration. Employer pages are opened and filled by
-the host's own browser tool, and only the user clicks Submit.
+without live employer-site hydration. For Trackly Apply (local), employer pages
+are opened and filled by the host's own browser tool, and only the user clicks
+Submit. Trackly Apply (cloud) (`trackly_auto_apply`, contract 1.1.0) only queues
+a request for one job the user explicitly asked Trackly to apply to; Trackly
+submits it later, outside the call and outside the host browser.
 
 | Tool | Read only | Destructive | Justification |
 | --- | --- | --- | --- |
@@ -146,6 +149,8 @@ the host's own browser tool, and only the user clicks Submit.
 | `trackly_list_apply_access_deferments` | true | false | Lists the account's active deferments. |
 | `trackly_prepare_resume_artifact` | true | false | Reads the original saved resume and issues a private expiring preview; never attaches or submits. |
 | `trackly_update_status` | false | false | Sets a tracker stage (saved, dismissed or applied). The same tool reverses it. |
+| `trackly_auto_apply` | false | true | Trackly Apply (cloud): queues a request for Trackly to apply to one job the user explicitly asked for. Destructive because it leads to a real application. |
+| `trackly_auto_apply_status` | true | false | Lists the user's Trackly Apply (cloud) requests and their status. |
 | `trackly_save_application_answers` | false | true | Overwrites saved profile answers. The education list is a confirmed replace-all. |
 | `trackly_grant_sensitive_storage_consent` | false | false | Records consent only. Adds no answers and can be revoked. |
 | `trackly_revoke_sensitive_storage_consent` | false | true | Revokes consent and deletes stored sensitive answers. |
@@ -161,9 +166,11 @@ the host's own browser tool, and only the user clicks Submit.
 The fixture-pinned `mutationAnnotationContract` in
 `scripts/verify-hosted-contract.js` mirrors the runtime pinned in
 `hosted-contract-fixture.json`. The fixture is recaptured from the deployed
-close-ai merge `5d443853272518bcc0f0b673e29d03d9f45715d5` (close-ai #3544, the
-production deploy after the close-ai #3604 directory-parity merge `6a5b05f5d043feba651e8dc7c70f1ea29013308b`;
-it was `6cd11dfb1c5b59dbb11b325c3a4f68a1a3fc8b23` from close-ai #3603,
+close-ai merge `96781f59f208ef839334a2a71954c9ef1b3d7005` (close-ai #3625, the
+production deploy after the close-ai #3536 Trackly Apply (cloud) merge `3ea1ab6455f235a87e53cd367cb8576011da5de0`;
+its nine #3536 paths are inherited from that first parent and the reviewed #3536 head `078cf663dab5b446bf77979f800e916f28715c46`;
+it was `5d443853272518bcc0f0b673e29d03d9f45715d5` from close-ai #3544 after the #3604 directory-parity merge,
+`6cd11dfb1c5b59dbb11b325c3a4f68a1a3fc8b23` from close-ai #3603,
 `7c7032c87d97b3270681281ff33fa3d8887259c9` from close-ai #3433,
 `71e7f9bfa73df85bbd483ee07712a38d386b79a1`, `6be6d4d2105f7de7f491c7b55bfdf00057d193f4`
 from trackly-app/trackly-cli#186, and `dded739620bcdee1e6863324c8f660e6b999d0cc` from trackly-app/trackly-cli#154), retaining
@@ -179,11 +186,12 @@ Accepted backend rule (Alan, 2026-10-24): in `audit` and `enforce` modes, verifi
 
 ### Directory catalogs after close-ai #3604
 
-The same factory also serves the ChatGPT (`/api/plugin/trackly/openai/mcp`, 38
-tools) and Claude (`/api/plugin/trackly/claude/mcp`, 21 tools, plus 16 Trackly
+The same factory also serves the ChatGPT (`/api/plugin/trackly/openai/mcp`, 40
+tools after close-ai #3536) and Claude (`/api/plugin/trackly/claude/mcp`, 21 tools, plus 16 Trackly
 Apply tools for accounts on `TRACKLY_CLAUDE_APPLY_ALLOWLIST`) directory
-catalogs. The table above still describes this package's classic 21-tool
-surface, which close-ai #3604 left byte-identical: the registration helper
+catalogs. The table above describes this package's classic 23-tool surface
+(close-ai #3604 left the 21 tools byte-identical, and #3536 added the two
+Trackly Apply (cloud) tools, which Claude excludes): the registration helper
 returns before registering any name outside `contracts/trackly-plugin-tools.json`
 on the classic surface. The coordinated gate pins that guard as exact AST and
 pins each of the eleven directory-only registrations (profile read and setup
@@ -196,8 +204,8 @@ Directory listing material lives beside this package and is checked by
 `npm run test:plugin-submission`:
 
 - [`listing/openai/`](listing/openai/): the ChatGPT `trackly-openai` 1.0.9 kit:
-  the captured 38-tool catalog, the pinned close-ai package source and portal
-  justifications for the eleven new tools. 1.0.9 updates the existing app
+  the captured 40-tool catalog, the pinned close-ai package source and portal
+  justifications for the thirteen new tools. 1.0.9 updates the existing app
   record; Rescan and approval of every new tool come before submission.
 - [`listing/claude/`](listing/claude/): the Claude v2 listing text, the
   approved consent lines and the 37-tool table. The listing edit waits for the

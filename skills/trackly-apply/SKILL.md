@@ -1,17 +1,24 @@
 ---
 name: trackly-apply
-description: Help users finish Trackly Apply setup and resolve missing profile or resume requirements, then fill user-approved jobs through a supported ATS in a real browser and stop for manual review and submission. Use for requests such as “set up Apply,” “fix my incomplete profile,” “apply to my queue,” or “fill the next application” in Codex or Claude Code on macOS.
+description: Help users finish Trackly Apply (local) setup and resolve missing profile or resume requirements, then fill user-approved jobs through a supported ATS in a real browser and stop for manual review and submission. Use for requests such as “set up Apply,” “fix my incomplete profile,” “apply to my queue,” or “fill the next application” in Codex or Claude Code on macOS.
 ---
 
-# Trackly Apply
+# Trackly Apply (local)
 
 Use Trackly as the source of truth for profile answers, documents, queue decisions, and application state. Use this skill only for reusable browser mechanics; never store personal answers or application logs inside the skill.
 
 Before application work, read [onboarding guidance](references/onboarding.md). Guide the user through only the missing requirements and verify saved answers, the stored default resume, and explicit profile confirmation.
 
+## Trackly Apply (local), Trackly Apply (cloud) and mark applied
+
+This skill is Trackly Apply (local): the user's own AI agent fills the application in the user's browser on their computer and stops before Submit, and the user submits. Two other ways to apply are not this skill:
+
+- **Trackly Apply (cloud):** the user only requests it and Trackly applies to the employer for them; nothing runs on the user's computer. Call `trackly_auto_apply` only when the user explicitly asks Trackly to apply to that job for them, and check progress with `trackly_auto_apply_status` (CLI: `trackly auto-apply <jobId>` and `trackly auto-apply --status`). Never switch a local run to it on your own, for example after a blocker.
+- **Mark applied:** the user applied on their own. Record it with `trackly_update_status` and `action: applied` (CLI: `trackly mark-applied <jobId>`).
+
 ## Skill version
 
-Skill version: `4.9.4`. Before browser readiness read [references/handoff-compatibility.md](references/handoff-compatibility.md). This policy takes precedence over returned-persistence-receipt or finalizer requirements elsewhere when using the documented markHandoff or Claude in Chrome path. Other review and safety gates remain unchanged.
+Skill version: `4.9.5`. Before browser readiness read [references/handoff-compatibility.md](references/handoff-compatibility.md). This policy takes precedence over returned-persistence-receipt or finalizer requirements elsewhere when using the documented markHandoff or Claude in Chrome path. Other review and safety gates remain unchanged.
 
 ## Non-negotiable rules
 

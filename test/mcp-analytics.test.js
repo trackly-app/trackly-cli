@@ -429,7 +429,7 @@ test('Trackly startup configures analytics only after every source tool is regis
   });
 
   assert.equal(configuredServer, server);
-  assert.equal(sourceToolCount, 63);
+  assert.equal(sourceToolCount, 65);
   await server.close();
 });
 
@@ -475,7 +475,7 @@ test('all existing Trackly tools keep context optional when analytics is enabled
   });
 
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, 63);
+  assert.equal(listed.tools.length, 65);
   for (const tool of listed.tools) {
     assert.ok(tool.inputSchema.properties.context, `${tool.name} has optional context`);
     assert.ok(!tool.inputSchema.required?.includes('context'), `${tool.name} does not require context`);

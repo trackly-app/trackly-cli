@@ -4,7 +4,7 @@
   "endpoint": "https://mcp.usetrackly.app/api/plugin/trackly/openai/mcp",
   "source": {
     "repository": "trackly-app/close-ai",
-    "commit": "5d443853272518bcc0f0b673e29d03d9f45715d5",
+    "commit": "96781f59f208ef839334a2a71954c9ef1b3d7005",
     "goldens": [
       "src/mcp/__tests__/fixtures/surface-golden/openai-tools-list.json"
     ],
@@ -102,6 +102,28 @@
       ],
       "toolClass": "write",
       "group": null
+    },
+    {
+      "name": "trackly_auto_apply",
+      "title": "Trackly Apply (cloud): apply to a job",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "scopes": [
+        "apply:write"
+      ],
+      "toolClass": "write",
+      "group": "auto_apply"
+    },
+    {
+      "name": "trackly_auto_apply_status",
+      "title": "Get Trackly Apply (cloud) requests",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:read"
+      ],
+      "toolClass": "read",
+      "group": "auto_apply"
     },
     {
       "name": "trackly_save_application_answers",

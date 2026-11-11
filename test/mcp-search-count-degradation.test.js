@@ -114,7 +114,9 @@ test('real stdio search preserves pages when only their total is unavailable', {
         keywords: 'product manager', limit: 2, offset: 4,
       } });
       assert.notEqual(result.isError, true);
-      assert.deepEqual(payloadOf(result), body);
+      // Count metadata is untouched; each job carries the Trackly Apply (cloud) answer instead of
+      // the REST constant (these fixture jobs have no supported posting URL).
+      assert.deepEqual(payloadOf(result), { ...body, jobs: body.jobs.map(job => ({ ...job, autoApplySupported: false })) });
       assert.equal(fixture.jobsCalls.length, before + 1, 'one page request without a count retry');
       const query = new URL(fixture.jobsCalls.at(-1), 'http://fixture.invalid').searchParams;
       assert.equal(query.get('search'), 'product manager');

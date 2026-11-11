@@ -20,6 +20,19 @@ const {
   trackerRetractShape,
   trackerStageShape,
 } = require('./tracker-tools');
+const {
+  AUTO_APPLY_DESCRIPTION,
+  AUTO_APPLY_SEARCH_FIELD_DESCRIPTION,
+  AUTO_APPLY_STATUS_DESCRIPTION,
+  withAutoApplySupport,
+} = require('../lib/auto-apply');
+const {
+  AUTO_APPLY_ANNOTATIONS,
+  AUTO_APPLY_STATUS_ANNOTATIONS,
+  autoApplyInputSchema,
+  autoApplyStatusInputSchema,
+  createCloudAutoApplyHandlers,
+} = require('./cloud-auto-apply');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
 const MCP_SHUTDOWN_TIMEOUT_MS = 2_000;
@@ -338,7 +351,7 @@ function createServer() {
 
   server.registerTool(
     'trackly_search_jobs',
-    { description: 'Search and filter job postings. Returns one matching page with title, company, location, structured fields and backend pagination. Use jobFunctions for multiple roles, region for multiple regions, and usStates/caProvinces for geographic detail. Work arrangement is independent from geography and employment type. Unknown sponsorship and non-comparable salary data stay visible with exclude_no and salaryFloorUsd. Never invent industry, specialization, exclusion or literal-search controls; ask when sponsorship intent is ambiguous. A numeric total with totalIsLowerBound=true (also in pagination) is only a lower bound. If the total is unavailable, returned matching jobs remain valid. Explain countGuidance and use hasMore/pagination; do not retry just for totals. matchScoreStatus=pending identifies owned waiting work for the current parsed resume and selected description: retryable description parsing or a live job-specific score item. Otherwise a missing score remains not_scored. Explain matchScoreReason: parse_required and score_required describe prerequisites, outside_scoring_window means outside the automatic 30-day window, description_unavailable means no usable description, inactive means a closed posting, and not_scored means unknown. Never estimate a missing numeric score.',
+    { description: 'Search and filter job postings. Returns one matching page with title, company, location, structured fields and backend pagination. Use jobFunctions for multiple roles, region for multiple regions, and usStates/caProvinces for geographic detail. Work arrangement is independent from geography and employment type. Unknown sponsorship and non-comparable salary data stay visible with exclude_no and salaryFloorUsd. Never invent industry, specialization, exclusion or literal-search controls; ask when sponsorship intent is ambiguous. A numeric total with totalIsLowerBound=true (also in pagination) is only a lower bound. If the total is unavailable, returned matching jobs remain valid. Explain countGuidance and use hasMore/pagination; do not retry just for totals. matchScoreStatus=pending identifies owned waiting work for the current parsed resume and selected description: retryable description parsing or a live job-specific score item. Otherwise a missing score remains not_scored. Explain matchScoreReason: parse_required and score_required describe prerequisites, outside_scoring_window means outside the automatic 30-day window, description_unavailable means no usable description, inactive means a closed posting, and not_scored means unknown. Never estimate a missing numeric score. ' + AUTO_APPLY_SEARCH_FIELD_DESCRIPTION,
     inputSchema: z.object({
       function: z.enum(JOB_FUNCTIONS).optional().describe('Job function filter. One of: ' + JOB_FUNCTIONS.join(', ')),
       jobFunctions: z.array(z.enum(JOB_FUNCTIONS)).min(1).max(14).optional().describe('Multiple job functions, combined with OR. Use instead of function. Omit both to request all 14 functions.'),
@@ -438,7 +451,11 @@ function createServer() {
       qs.set('limit', String(params.limit ?? 20));
       if (params.offset !== undefined) qs.set('offset', String(params.offset));
       if (params.keywords !== undefined) qs.set('search', params.keywords);
-      return apiRequest('GET', `/api/jobscout/jobs?${qs.toString()}`, null, false, false, MCP_USER_AGENT);
+      // The REST mapper keeps the retired autoApplySupported constant false; set the Trackly Apply
+      // (cloud) answer and, when one applies, a nextSteps line, as the hosted search does.
+      return withAutoApplySupport(
+        await apiRequest('GET', `/api/jobscout/jobs?${qs.toString()}`, null, false, false, MCP_USER_AGENT),
+      );
     }, 'Failed to search jobs')
   );
 
@@ -549,8 +566,7 @@ function createServer() {
 
   server.tool(
     'trackly_update_status',
-    // Held with cloud auto-apply (lib/auto-apply.js): this is the hosted description. On release,
-    // point it at trackly_auto_apply again, as the hosted tool will.
+    // The hosted description, unchanged by close-ai #3536. trackly_auto_apply says how it differs.
     'Update a job application status (apply, save, or dismiss).',
     {
       id: z.number().describe('Job posting ID'),
@@ -739,6 +755,32 @@ function createServer() {
         source: 'mcp',
       }, false, false, MCP_USER_AGENT);
     }, 'Failed to request company')
+  );
+
+  // Trackly Apply (cloud), mirrored from the hosted MCP (close-ai #3536). Trackly applies for the
+  // user; nothing runs on the user's computer. Requests always send acknowledged: true.
+  const cloudAutoApply = createCloudAutoApplyHandlers(
+    (method, path, body) => apiRequest(method, path, body ?? null, false, false, MCP_USER_AGENT),
+  );
+
+  server.registerTool(
+    'trackly_auto_apply',
+    {
+      description: AUTO_APPLY_DESCRIPTION,
+      inputSchema: autoApplyInputSchema,
+      annotations: AUTO_APPLY_ANNOTATIONS,
+    },
+    wrapTool((params) => cloudAutoApply.autoApply(params), 'Failed to request Trackly Apply (cloud)'),
+  );
+
+  server.registerTool(
+    'trackly_auto_apply_status',
+    {
+      description: AUTO_APPLY_STATUS_DESCRIPTION,
+      inputSchema: autoApplyStatusInputSchema,
+      annotations: AUTO_APPLY_STATUS_ANNOTATIONS,
+    },
+    wrapTool((params) => cloudAutoApply.autoApplyStatus(params), 'Failed to list Trackly Apply (cloud) requests'),
   );
 
   registerApplyTools(server, {

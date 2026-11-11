@@ -7,7 +7,7 @@
 
 The only job tracking CLI built for AI agents.
 
-Search 250K+ jobs across 5,400+ companies and 40+ ATS types. Track applications, get AI-powered recommendations, and manage your job search -- from the terminal or through Claude, ChatGPT, Cursor, and other MCP-compatible AI agents.
+Search Thousands of jobs across Thousands of companies and 40+ ATS types. Track applications, get AI-powered recommendations, and manage your job search -- from the terminal or through Claude, ChatGPT, Cursor, and other MCP-compatible AI agents.
 
 ## Two ways to connect
 
@@ -35,7 +35,7 @@ trackly jobs --function product
 
 ## At a Glance
 
-5,400+ companies | 250K+ jobs | 40+ ATS types | CLI + MCP | 63 local + 60 hosted MCP tools
+Thousands of companies | Thousands of jobs | 40+ ATS types | CLI + MCP | 65 local + 62 hosted MCP tools
 
 ## CLI Commands
 
@@ -43,9 +43,9 @@ Trackly offers three different ways to handle an application. They are never mix
 
 | | What happens | How |
 |---|---|---|
-| **Trackly Apply** (local) | Your own AI agent (Claude in Chrome, Codex or computer use) fills the application in your browser on your computer and stops before Submit. You submit. | `trackly agent setup` installs the Trackly Apply skill and MCP; then ask your agent to use Trackly Apply. |
-| **Cloud auto-apply** | You only request it. Trackly takes care of the application; nothing runs on your computer. | Coming in a later release as `trackly auto-apply <id>` and the MCP tool `trackly_auto_apply`, once the hosted service supports it. Not available in this version. |
-| **Mark applied** | You applied on your own and record it. | `trackly mark-applied <id>` (`trackly apply <id>` does the same, for existing scripts). |
+| **Trackly Apply (local)** | Your own AI agent (Claude in Chrome, Codex or computer use) fills the application in your browser on your computer and stops before Submit. You submit. | `trackly agent setup` installs the Trackly Apply (local) skill and MCP; then ask your agent to use Trackly Apply (local). |
+| **Trackly Apply (cloud)** | You only request it. Trackly applies to the employer for you with your default resume (or `--resume-id`) and every saved profile answer, sensitive ones included, and notifies you; nothing runs on your computer. US Greenhouse, Lever and Ashby postings; each request counts toward your Trackly Apply (cloud) allowance. | `trackly auto-apply <jobId>`; check progress with `trackly auto-apply --status`. Agents use the MCP tools `trackly_auto_apply` and `trackly_auto_apply_status`. |
+| **Mark applied** | You applied on your own and record it. | `trackly mark-applied <jobId>` (`trackly apply <jobId>` does the same, for existing scripts). |
 
 `trackly apply` with no job ID prints this summary.
 
@@ -72,9 +72,12 @@ trackly status                        # Alias for stats
 trackly preferences                   # Show discovery preferences and experience limits
 trackly preferences experience product=2 strategy=5  # Replace role-specific limits
 trackly preferences experience clear # Turn role-specific experience filtering off
-trackly apply                         # How to apply with Trackly (Trackly Apply, cloud auto-apply, mark applied)
+trackly apply                         # How to apply with Trackly (Trackly Apply (local), Trackly Apply (cloud), mark applied)
 trackly mark-applied 1234             # Record a job you applied to yourself
 trackly apply 1234                    # Same as mark-applied (kept for existing scripts)
+trackly auto-apply 1234               # Request Trackly Apply (cloud): Trackly applies for you
+trackly auto-apply --status           # List your Trackly Apply (cloud) requests
+trackly auto-apply --help             # What Trackly Apply (cloud) does, next to the other two ways
 trackly save 1234                     # Save a job
 trackly dismiss 1234                  # Dismiss a job
 trackly ask "PM jobs in SF"           # Natural language search
@@ -92,12 +95,12 @@ trackly config --api-key trk_xxx      # Save an API key for future commands
 trackly version                       # Show installed version
 trackly whoami                        # Show current user
 trackly logout                        # Clear credentials
-trackly agent setup --client both    # Install Trackly Apply for Codex + Claude Code
+trackly agent setup --client both    # Install Trackly Apply (local) for Codex + Claude Code
 trackly agent doctor                 # Verify setup, profile, resume, and compatibility
 trackly agent diagnose-path /path/to/upload.pdf --errno ENOSPC --json  # Diagnose one exact local path
 ```
 
-Search results show `autoApplySupported` when supplied by the server. `trackly whoami` shows your plan when the server returns it. Plan refusals display server usage and reset information, plus an upgrade link only when the server provides one. Searches have no daily cap.
+Search results set `autoApplySupported` to true for jobs Trackly Apply (cloud) can apply to (active US Greenhouse, Lever and Ashby postings); it does not decide Trackly Apply (local) eligibility. `trackly whoami` shows your plan when the server returns it. Plan refusals display server usage and reset information, plus an upgrade link only when the server provides one. Searches have no daily cap.
 
 Add `--json` to any command for JSON output. Use `--api-key <key>` or `--base-url <url>` as one-off global flags when needed.
 
@@ -125,14 +128,14 @@ OAuth sign-in is the default for every client. An API key is optional and only
 needed for headless clients that cannot complete an interactive sign-in: send
 `Authorization: Bearer trk_...` with a key from **Settings → API Keys**.
 
-Remote connections get 60 hosted tools. They share the search, company, status,
+Remote connections get 62 hosted tools. They share the search, company, status,
 Tracker, and Apply tools with the local server and add `trackly_chat`; the 4 local-only
 tools listed below are not available remotely. Hosted setup and tool details
 are at [usetrackly.app/connector](https://usetrackly.app/connector).
 
-### Trackly Apply skill for Claude
+### Trackly Apply (local) skill for Claude
 
-If you connected Trackly from the Claude directory, the Trackly Apply skill
+If you connected Trackly from the Claude directory, the Trackly Apply (local) skill
 teaches Claude to finish your Apply setup and fill applications you approved
 in your own browser with Claude in Chrome. It stops before Submit; you always
 submit yourself. Each [GitHub release](https://github.com/trackly-app/trackly-cli/releases)
@@ -141,7 +144,7 @@ attaches two downloads built from [`plugins/trackly-claude`](plugins/trackly-cla
 - `trackly-apply-claude-skill-<version>.zip`: upload it in claude.ai under Settings, Capabilities, Skills.
 - `trackly-claude-plugin-<version>.zip`: a Claude Code plugin with the skill and the Claude connector. See its [README](plugins/trackly-claude/README.md) to install it.
 
-Trackly Apply on the Claude connector is enabled per account while the
+Trackly Apply (local) on the Claude connector is enabled per account while the
 updated directory listing is in review.
 
 ### Local (CLI via stdio, for Cursor / Windsurf / Claude Code)
@@ -233,11 +236,11 @@ Hosted and local releases are separate: the current client schema is authoritati
 
 ## MCP Tools Reference
 
-The local stdio server (`trackly mcp`) registers the 63 tools below. Four are
+The local stdio server (`trackly mcp`) registers the 65 tools below. Four are
 local-only because they run their checks on your machine:
 `trackly_diagnose_local_path`, `trackly_lint_application_text`,
 `trackly_validate_apply_resume_upload`, and `trackly_validate_apply_tab_keep_set`.
-The currently deployed hosted server has 60 hosted tools, including the five Tracker tools. Cloud auto-apply (`trackly_auto_apply`) is held out of the local server until the hosted server registers it.
+The currently deployed hosted server has 62 hosted tools, including the five Tracker tools and the two Trackly Apply (cloud) tools.
 
 | Tool | Description |
 |------|-------------|
@@ -249,6 +252,8 @@ The currently deployed hosted server has 60 hosted tools, including the five Tra
 | trackly_get_preferences | Read bounded discovery preferences, edit availability, and save revision |
 | trackly_update_experience_limits | Atomically replace role-specific limits on a job's stated minimum years |
 | trackly_update_status | Mark jobs as applied, saved, or dismissed |
+| trackly_auto_apply | Trackly Apply (cloud): ask Trackly to apply to one job for the user (not Trackly Apply (local), which fills the form in the user's browser) |
+| trackly_auto_apply_status | List the user's Trackly Apply (cloud) requests and their status |
 | trackly_list_tracker_applications | List Tracker board entries by stage, company or role text, or job ID; one entry with its events by applicationId |
 | trackly_create_tracker_application | Add a job the user confirmed applying to onto the Tracker board, without duplicates |
 | trackly_update_tracker_stage | Move one Tracker entry to a stage (rejected, interview, offer...) with an optional dated note |
@@ -369,7 +374,7 @@ trackly config --base-url http://127.0.0.1:3000  # Point at a different backend
 | Job search + filters | Yes | Yes | Yes |
 | Apply/save/dismiss | Yes | Yes | Yes |
 | AI-powered search | Yes (trackly ask) | Yes | Yes |
-| MCP integration | Yes (63 local tools) | -- | -- |
+| MCP integration | Yes (65 local tools) | -- | -- |
 | Browser required | No | Yes | No |
 | Best for | Terminal + AI agents | Visual browsing | Custom integrations |
 
@@ -383,7 +388,7 @@ Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly l
 
 **What MCP servers exist for job searching?**
 
-trackly-cli includes a built-in MCP server with 63 tools: the complete Trackly
+trackly-cli includes a built-in MCP server with 65 tools: the complete Trackly
 job-search and application set plus `get_more_tools`, which lets agents report
 a missing capability. Run `trackly mcp` or use
 `trackly agent setup --client claude`.
@@ -401,7 +406,7 @@ Add trackly as an MCP server in Claude Code. Then ask questions naturally: "Find
 
 **What are the best CLI tools for job search?**
 
-trackly-cli is the first dedicated job tracking CLI. It provides direct terminal access to 250K+ jobs across 5,400+ companies, with filters for job function, location, and work modality. It also integrates with AI agents via the Model Context Protocol (MCP).
+trackly-cli is the first dedicated job tracking CLI. It provides direct terminal access to Thousands of jobs across Thousands of companies, with filters for job function, location, and work modality. It also integrates with AI agents via the Model Context Protocol (MCP).
 
 ## Security
 

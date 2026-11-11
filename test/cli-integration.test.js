@@ -27,16 +27,7 @@ test('published package version has a dated changelog section', () => {
 
 // Spin up a temp config (seeded API key) + mock server, run the CLI, return the
 // captured requests and the child result. `respond(req)` may return {status, json}.
-// Cloud auto-apply (`trackly auto-apply`) is held in releases (lib/auto-apply.js). These tests still
-// exercise the held cloud path by preloading the release switch for `auto-apply` commands; pass
-// { heldCloudAutoApply: true } to run the released behavior, where the command does not exist.
-const RELEASE_CLOUD_AUTO_APPLY = `--require=${path.join(__dirname, 'release-cloud-auto-apply.js')}`;
-
-async function runAgainstMock(t, args, respond, options = {}) {
-  const { heldCloudAutoApply, ...childEnv } = options;
-  if (args[0] === 'auto-apply' && !heldCloudAutoApply) {
-    childEnv.NODE_OPTIONS = [childEnv.NODE_OPTIONS, RELEASE_CLOUD_AUTO_APPLY].filter(Boolean).join(' ');
-  }
+async function runAgainstMock(t, args, respond, childEnv = {}) {
   const dir = createTempConfigDir();
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   seedApiKey(dir);
@@ -76,7 +67,7 @@ function query(requests) {
 
 const HUMAN_ENV = { NODE_OPTIONS: `--require=${path.join(__dirname, 'force-tty.js')}`, NO_COLOR: '1' };
 
-test('auto-apply requests cloud auto-apply with acknowledgement and optional resume', async (t) => {
+test('auto-apply requests Trackly Apply (cloud) with acknowledgement and optional resume', async (t) => {
   for (const resumeId of [undefined, 21]) {
     const args = ['auto-apply', '42', ...(resumeId ? ['--resume-id', String(resumeId)] : [])];
     const response = { request: { id: 'request-1', jobId: 42, status: 'queued' } };
@@ -89,7 +80,7 @@ test('auto-apply requests cloud auto-apply with acknowledgement and optional res
       assert.equal(requests[0].url, '/api/jobscout/apply/assist-requests');
       assert.deepEqual(JSON.parse(requests[0].body), { jobId: 42, acknowledged: true, ...(resumeId ? { resumeId } : {}) });
       if (env === HUMAN_ENV) {
-        assert.match(result.stdout, /request-1: queued/);
+        assert.match(result.stdout, /Trackly Apply \(cloud\) request request-1: queued/);
         assert.match(result.stdout, /Trackly will apply and notify you/);
       } else assert.deepEqual(JSON.parse(result.stdout), { ...response, message: 'Trackly will apply and notify you.' });
     }
@@ -105,7 +96,7 @@ test('auto-apply --status lists requests without enqueueing', async (t) => {
       assert.equal(run.requests[0].method, 'GET');
       assert.equal(run.requests[0].url, '/api/jobscout/apply/assist-requests');
       assert.equal(run.requests[0].body, '');
-      if (env === HUMAN_ENV) assert.match(run.result.stdout, requests.length ? /Job 42: submitted.*\n.*Applied successfully/ : /No auto-apply requests/);
+      if (env === HUMAN_ENV) assert.match(run.result.stdout, requests.length ? /Job 42: submitted.*\n.*Applied successfully/ : /No Trackly Apply \(cloud\) requests/);
       else assert.deepEqual(JSON.parse(run.result.stdout), { requests });
     }
   }
@@ -125,7 +116,7 @@ test('malformed auto-apply responses never report success or retry the mutation'
       const { result, requests } = await runAgainstMock(t, args, () => (typeof body === 'string' ? { status: 201, body } : { status: 201, json: body }), env);
       assert.equal(result.code, 1);
       const message = env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message;
-      assert.match(message, /Invalid auto-apply response.*Check your request status/);
+      assert.match(message, /Invalid Trackly Apply \(cloud\) response.*Check your request status/);
       assert.doesNotMatch(result.stdout + result.stderr, /TypeError|Trackly will apply/);
       assert.equal(requests.length, 1);
     }
@@ -156,7 +147,7 @@ test('apply <id> still marks a job applied exactly as in 0.25.0, with a mark-app
   }
 });
 
-test('apply with no job ID explains Trackly Apply, cloud auto-apply and mark applied without any request', async (t) => {
+test('apply with no job ID explains Trackly Apply (local), Trackly Apply (cloud) and mark applied without any request', async (t) => {
   for (const env of [HUMAN_ENV, {}]) {
     const { result, requests } = await runAgainstMock(t, ['apply'], undefined, env);
     assert.equal(requests.length, 0);
@@ -170,29 +161,35 @@ test('apply with no job ID explains Trackly Apply, cloud auto-apply and mark app
     }
     const text = env === HUMAN_ENV ? result.stdout : Object.values(JSON.parse(result.stdout).ways).join('\n');
     assert.match(text, /Trackly Apply \(local\).*your browser on your computer.*stops before Submit.*trackly agent setup/);
-    assert.match(text, /Cloud auto-apply: .*Trackly takes care of the application.*nothing running on your computer/);
-    assert.match(text, /Mark applied: .*trackly mark-applied <id>/);
-    assert.doesNotMatch(text, /trackly auto-apply/, 'the held command is not advertised');
+    assert.match(text, /Trackly Apply \(cloud\): .*trackly auto-apply <jobId>.*Trackly applies for you.*nothing runs on your computer/);
+    assert.match(text, /Mark applied: .*trackly mark-applied <jobId>/);
+    assert.doesNotMatch(text, /cloud auto-apply/i, 'old wording is gone');
+    if (env !== HUMAN_ENV) {
+      // The 0.26.0 JSON keys stay, so existing scripts keep reading them.
+      assert.deepEqual(Object.keys(JSON.parse(result.stdout).ways), ['tracklyApply', 'cloudAutoApply', 'markApplied']);
+    }
   }
 });
 
-test('held release: auto-apply is an unknown command and help does not list it', async (t) => {
-  for (const args of [['auto-apply', '42'], ['auto-apply', '--status'], ['auto-apply', '42', '--resume-id', '7']]) {
-    const { result, requests } = await runAgainstMock(t, args, undefined, { heldCloudAutoApply: true });
-    assert.equal(result.code, 1, args.join(' '));
-    assert.equal(requests.length, 0, `${args.join(' ')} must not reach the API`);
-    assert.match(result.stderr, /Unknown command: auto-apply/);
-  }
+test('help lists all three ways to apply, and auto-apply --help describes Trackly Apply (cloud)', async () => {
   const help = await runCli(['--help']);
+  assert.match(help.stdout, /apply\s+How to apply with Trackly: Trackly Apply \(local\), Trackly Apply \(cloud\), mark applied/);
   assert.match(help.stdout, /mark-applied <id>\s+Record a job you applied to yourself/);
   assert.match(help.stdout, /apply <id>\s+Same as mark-applied/);
-  assert.match(help.stdout, /apply\s+How to apply with Trackly/);
-  assert.doesNotMatch(help.stdout, /auto-apply <id>|auto-apply --status/);
-  // Once released (0.27.0), help lists the cloud command next to the other two.
-  const released = await runCli(['--help'], { NODE_OPTIONS: RELEASE_CLOUD_AUTO_APPLY });
-  assert.match(released.stdout, /auto-apply <id>\s+Request cloud auto-apply: Trackly applies for you/);
-  assert.match(released.stdout, /auto-apply --status\s+List cloud auto-apply requests/);
-  assert.match(released.stdout, /mark-applied <id>\s+Record a job you applied to yourself/);
+  assert.match(help.stdout, /auto-apply <id>\s+Request Trackly Apply \(cloud\): Trackly applies for you/);
+  assert.match(help.stdout, /auto-apply --status\s+List your Trackly Apply \(cloud\) requests/);
+  assert.doesNotMatch(help.stdout, /cloud auto-apply/i);
+  for (const flag of ['--help', '-h']) {
+    const commandHelp = await runCli(['auto-apply', flag]);
+    assert.equal(commandHelp.code, 0, commandHelp.stderr);
+    assert.match(commandHelp.stdout, /^trackly auto-apply: Trackly Apply \(cloud\)/);
+    assert.match(commandHelp.stdout, /Trackly applies to the employer for you/);
+    assert.match(commandHelp.stdout, /Nothing runs on your computer/);
+    assert.match(commandHelp.stdout, /trackly auto-apply <jobId> \[--resume-id <id>\]/);
+    assert.match(commandHelp.stdout, /trackly auto-apply --status/);
+    assert.match(commandHelp.stdout, /Trackly Apply \(local\): .*stops\s+before Submit; you submit\. Set it up with `trackly agent setup`/);
+    assert.match(commandHelp.stdout, /Mark applied: .*trackly mark-applied <jobId>/);
+  }
 });
 
 test('invalid manual tracking commands recommend mark-applied without submitting', async (t) => {
@@ -344,7 +341,7 @@ test('auto-apply 404 reports account availability for enqueue and status', async
     for (const env of [HUMAN_ENV, {}]) {
       const { result, requests } = await runAgainstMock(t, args, () => ({ status: 404, json: { error: 'feature_disabled' } }), env);
       assert.equal(result.code, 1);
-      assert.match(env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message, /Auto-apply is not available for this account yet/);
+      assert.match(env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message, /Trackly Apply \(cloud\) is not available for this account yet/);
       assert.equal(requests.length, 1);
     }
   }
@@ -359,7 +356,7 @@ test('auto-apply preserves JSON and non-JSON 404 diagnostics without raw bodies'
       const { result } = await runAgainstMock(t, ['auto-apply', '42'], () => response, env);
       assert.equal(result.code, 1);
       const text = env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message;
-      assert.match(text, /Auto-apply is not available for this account yet.*API diagnostic:/);
+      assert.match(text, /Trackly Apply \(cloud\) is not available for this account yet.*API diagnostic:/);
       assert.match(text, response.json ? /Not found/ : /non-JSON response/);
       assert.doesNotMatch(result.stdout + result.stderr, /private-proxy-body/);
     }
@@ -827,7 +824,7 @@ test('--json emits structured rollout denials on stdout', async (t) => {
 });
 
 test('Apply maintenance emits resume guidance and never retries the mutation', async (t) => {
-  // Runs for the shipped (held) mark-applied path and for the held cloud auto-apply path.
+  // Runs for the mark-applied path and for the Trackly Apply (cloud) path.
   for (const [command, url] of [
     ['apply', '/api/jobscout/tracker/jobs/1234/stage'],
     ['auto-apply', '/api/jobscout/apply/assist-requests'],
@@ -1030,7 +1027,7 @@ test('agent doctor explains that exact resume validation is deferred to a real A
   assert.ok(result.stdout.includes(
     `CLI: ${packageVersion}; MCP contract: 3.9.4`,
   ));
-  assert.match(result.stdout, /Skill: 4\.9\.4; digest: [a-f0-9]{64}/);
+  assert.match(result.stdout, /Skill: 4\.9\.5; digest: [a-f0-9]{64}/);
   assert.match(result.stdout, /Resume validation: available \(exact bytes are verified during an active Apply run\)/);
 });
 
