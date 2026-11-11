@@ -1218,7 +1218,7 @@ test('documented local MCP tool count matches every registered tool', () => {
     /server\.(?:tool|registerTool)\(\s*['"]([^'"]+)['"]/g
   )].map((match) => match[1]);
 
-  assert.equal(registeredTools.length, 64);
+  assert.equal(registeredTools.length, 63);
   assert.equal(new Set(registeredTools).size, registeredTools.length);
 });
 
@@ -2819,6 +2819,16 @@ test('standalone hosted verifier executes tool, schema, and handler snapshot wir
     ['mcp', 'server.js'],
   ]) {
     fs.copyFileSync(path.join(__dirname, '..', ...relativePath), path.join(temporaryRoot, ...relativePath));
+  }
+  // The verifier also builds the real local catalog at runtime, so the copy needs every MCP
+  // module and the runtime dependencies the server loads.
+  for (const name of fs.readdirSync(path.join(__dirname, '..', 'mcp'))) {
+    if (!fs.existsSync(path.join(temporaryRoot, 'mcp', name))) {
+      fs.cpSync(path.join(__dirname, '..', 'mcp', name), path.join(temporaryRoot, 'mcp', name), { recursive: true });
+    }
+  }
+  for (const name of ['lib', 'node_modules', 'package.json']) {
+    fs.symlinkSync(path.join(__dirname, '..', name), path.join(temporaryRoot, name));
   }
   const fixturePath = path.join(temporaryRoot, 'plugins', 'trackly', 'hosted-contract-fixture.json');
   const originalFixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));

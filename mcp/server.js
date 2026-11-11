@@ -11,7 +11,6 @@ const { registerApplyTools } = require('./apply-tools');
 const { configureMcpAnalytics, shutdownMcpAnalytics } = require('./analytics');
 const { normalizeJobResult, unavailableJobFromError, jobFailureGuidance } = require('../lib/job-result');
 const { planRefusalMessage, planRefusalFields } = require('../lib/formatters');
-const { validateAssistResponse, autoApplyUnavailableError, autoApplyRequestError } = require('../lib/auto-apply');
 const {
   TrackerToolError,
   createTrackerToolHandlers,
@@ -443,31 +442,6 @@ function createServer() {
     }, 'Failed to search jobs')
   );
 
-  server.registerTool(
-    'trackly_auto_apply',
-    {
-      description: 'Request cloud auto-apply for one Trackly job at a US Greenhouse, Lever, or Ashby posting using the account default resume. Trackly submits the application asynchronously and notifies the user. Call only when the user asks Trackly to apply to this job. Check the server autoApplySupported field when present. Returns the request and its current status; check progress with trackly apply --status in the CLI.',
-      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-      inputSchema: z.object({
-        jobId: z.number().int().positive().max(2147483647).describe('Trackly job ID to apply to'),
-      }).strict(),
-    },
-    wrapTool(async ({ jobId }) => {
-      try {
-        const result = await apiRequest('POST', '/api/jobscout/apply/assist-requests', {
-          jobId, acknowledged: true,
-        }, false, false, MCP_USER_AGENT);
-        validateAssistResponse(result, { jobId });
-        return { ...result, message: 'Trackly will apply and notify you.' };
-      } catch (error) {
-        if (error?.status === 404) {
-          throw autoApplyUnavailableError(error);
-        }
-        throw autoApplyRequestError(error);
-      }
-    }, 'Failed to request auto-apply'),
-  );
-
   server.tool(
     'trackly_get_job',
     'Get full details for a Trackly job ID returned by search or your saved queue. Match scores are saved results only. For a missing score, explain matchScoreReason; parse_required/score_required are prerequisites; only matchScoreStatus=pending confirms owned waiting parse or score work, outside_scoring_window is outside the automatic 30-day window, description_unavailable means no usable description, inactive means a closed posting, and not_scored is unknown. Missing or closed postings return availability=unavailable with retryable=false and a next step; do not retry that ID. Failures include a category and retry guidance.',
@@ -575,7 +549,9 @@ function createServer() {
 
   server.tool(
     'trackly_update_status',
-    'Record an application the user already submitted, save a job, or dismiss a job. Does not submit an application; use trackly_auto_apply to request cloud auto-apply.',
+    // Held with cloud auto-apply (lib/auto-apply.js): this is the hosted description. On release,
+    // point it at trackly_auto_apply again, as the hosted tool will.
+    'Update a job application status (apply, save, or dismiss).',
     {
       id: z.number().describe('Job posting ID'),
       action: z.enum(['applied', 'saved', 'dismissed']).describe('Status action'),
@@ -945,6 +921,7 @@ if (require.main === module) {
 
 module.exports = {
   AUTH_HINT,
+  MCP_USER_AGENT,
   createAuthErrorResult,
   createErrorResult,
   configureServerAnalytics,
@@ -952,4 +929,5 @@ module.exports = {
   installMcpSignalHandlers,
   startMcpServer,
   throwMcpResourceError,
+  wrapTool,
 };
