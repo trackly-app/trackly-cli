@@ -79,11 +79,13 @@ test('an MCP client sees the labels through tools/list, with analytics instrumen
   const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
   const { configureMcpAnalytics, shutdownMcpAnalytics } = require('../mcp/analytics');
   const server = createServer();
-  configureMcpAnalytics(server, {
+  const analytics = configureMcpAnalytics(server, {
     env: {},
     loadSdk: () => require('@posthog/mcp'),
     createRelay: () => ({ capture() {}, flush: async () => {}, _shutdown: async () => {} }),
   });
+  // configureMcpAnalytics swallows setup failures; prove instrumentation actually wrapped the tools.
+  assert.equal(analytics?.enabled, true, `analytics instrumentation must start: ${JSON.stringify(analytics)}`);
   const client = new Client({ name: 'tool-families-test', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
