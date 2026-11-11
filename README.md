@@ -35,15 +35,16 @@ trackly jobs --function product
 
 ## At a Glance
 
-5,400+ companies | 250K+ jobs | 40+ ATS types | CLI + MCP | 64 local + 60 hosted MCP tools
+5,400+ companies | 250K+ jobs | 40+ ATS types | CLI + MCP | 63 local + 60 hosted MCP tools
 
 ## CLI Commands
 
-The next coordinated release changes `trackly apply <id>` to authorize cloud
-auto-apply. Before upgrading, change scripts that only record applications to
-`trackly mark-applied <id>`. These source changes have not been published to npm.
+`trackly apply <id>` marks a job applied, as before. `trackly mark-applied <id>`
+does the same and is the name to use in new scripts: cloud auto-apply is planned
+for `trackly apply` once the hosted service supports it, and that change will be
+announced in the changelog.
 
-Plan and auto-apply response errors in `--json` mode emit a structured object
+Plan response errors in `--json` mode emit a structured object
 on stdout and exit nonzero; check the exit code before treating output as a
 successful result.
 
@@ -66,9 +67,8 @@ trackly status                        # Alias for stats
 trackly preferences                   # Show discovery preferences and experience limits
 trackly preferences experience product=2 strategy=5  # Replace role-specific limits
 trackly preferences experience clear # Turn role-specific experience filtering off
-trackly apply 1234                    # Request cloud auto-apply with your default resume
-trackly apply --status                # List auto-apply requests
-trackly mark-applied 1234             # Mark a job you applied to as applied
+trackly apply 1234                    # Mark a job you applied to as applied
+trackly mark-applied 1234             # Same; preferred name in scripts
 trackly save 1234                     # Save a job
 trackly dismiss 1234                  # Dismiss a job
 trackly ask "PM jobs in SF"           # Natural language search
@@ -91,7 +91,7 @@ trackly agent doctor                 # Verify setup, profile, resume, and compat
 trackly agent diagnose-path /path/to/upload.pdf --errno ENOSPC --json  # Diagnose one exact local path
 ```
 
-Cloud auto-apply supports US Greenhouse, Lever, and Ashby postings when the server enables it for your account. `trackly apply <id>` authorizes Trackly to apply and notify you; optional `--resume-id <id>` selects a resume instead of your default. Search results show `autoApplySupported` when supplied by the server. `trackly whoami` shows your plan when the server returns it. Plan refusals display server usage and reset information, plus an upgrade link only when the server provides one. Searches have no daily cap. These additions await the coordinated backend and CLI release.
+Search results show `autoApplySupported` when supplied by the server. `trackly whoami` shows your plan when the server returns it. Plan refusals display server usage and reset information, plus an upgrade link only when the server provides one. Searches have no daily cap.
 
 Add `--json` to any command for JSON output. Use `--api-key <key>` or `--base-url <url>` as one-off global flags when needed.
 
@@ -213,11 +213,11 @@ Hosted and local releases are separate: the current client schema is authoritati
 
 ## MCP Tools Reference
 
-The local stdio server (`trackly mcp`) registers the 64 tools below. Four are
+The local stdio server (`trackly mcp`) registers the 63 tools below. Four are
 local-only because they run their checks on your machine:
 `trackly_diagnose_local_path`, `trackly_lint_application_text`,
 `trackly_validate_apply_resume_upload`, and `trackly_validate_apply_tab_keep_set`.
-The currently deployed hosted server has 60 hosted tools, including the five Tracker tools. This source also adds `trackly_auto_apply`, pending the coordinated backend and CLI release; that release must verify the updated hosted catalog before publication.
+The currently deployed hosted server has 60 hosted tools, including the five Tracker tools. Cloud auto-apply (`trackly_auto_apply`) is held out of the local server until the hosted server registers it.
 
 | Tool | Description |
 |------|-------------|
@@ -234,7 +234,6 @@ The currently deployed hosted server has 60 hosted tools, including the five Tra
 | trackly_update_tracker_stage | Move one Tracker entry to a stage (rejected, interview, offer...) with an optional dated note |
 | trackly_add_tracker_note | Add a dated note to one Tracker entry without changing its stage |
 | trackly_retract_tracker_event | Undo one Tracker event the user names |
-| trackly_auto_apply | Request cloud auto-apply for one job |
 | trackly_ask | Natural language job search |
 | trackly_get_job_brief | Get a network brief, with availability and retry guidance |
 | trackly_contacts_at_company | Search contacts at a specific company |
@@ -350,7 +349,7 @@ trackly config --base-url http://127.0.0.1:3000  # Point at a different backend
 | Job search + filters | Yes | Yes | Yes |
 | Apply/save/dismiss | Yes | Yes | Yes |
 | AI-powered search | Yes (trackly ask) | Yes | Yes |
-| MCP integration | Yes (64 local tools) | -- | -- |
+| MCP integration | Yes (63 local tools) | -- | -- |
 | Browser required | No | Yes | No |
 | Best for | Terminal + AI agents | Visual browsing | Custom integrations |
 
@@ -360,11 +359,11 @@ Web: [usetrackly.app](https://usetrackly.app) | API docs: [usetrackly.app/develo
 
 **How do I track job applications from the terminal?**
 
-Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly login` or configure an API key, then use `trackly jobs` to browse openings and `trackly apply <id>` to request cloud auto-apply. Use `trackly mark-applied <id>` for applications you submitted yourself. All data syncs with the Trackly web app at usetrackly.app.
+Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly login` or configure an API key, then use `trackly jobs` to browse openings and `trackly mark-applied <id>` (or `trackly apply <id>`) for applications you submitted yourself. All data syncs with the Trackly web app at usetrackly.app.
 
 **What MCP servers exist for job searching?**
 
-trackly-cli includes a built-in MCP server with 64 tools: the complete Trackly
+trackly-cli includes a built-in MCP server with 63 tools: the complete Trackly
 job-search and application set plus `get_more_tools`, which lets agents report
 a missing capability. Run `trackly mcp` or use
 `trackly agent setup --client claude`.

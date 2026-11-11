@@ -246,10 +246,27 @@ const LOCAL_ONLY_CONSTANTS = [];
 const HOSTED_ONLY_TOOLS = [
   'trackly_chat',
 ];
-// Source-only addition awaiting the coordinated backend/CLI release. The
-// historical hosted fixture remains unchanged. Full backend verification below
-// still requires the deployed catalog and lock to be recaptured before release.
-const PENDING_HOSTED_TOOLS = ['trackly_auto_apply'];
+// Source-only additions awaiting a coordinated backend/CLI release. Fixture mode
+// tolerates the names listed here; backend verification never does. Empty since
+// trackly_auto_apply was held out of createServer (mcp/cloud-auto-apply.js) until
+// close-ai #3536 ships the hosted tool.
+const PENDING_HOSTED_TOOLS = [];
+
+// The static scan above reads only direct top-level registrations, so a tool
+// registered conditionally, in a helper or through an unscanned module would be
+// invisible to it. Build the real local catalog and require that it equals the
+// statically locked names, so the release check describes what users receive.
+function assertRuntimeLocalCatalog(cliRoot, expectedNames, message) {
+  // Load the checked tree fresh: a cached module from an earlier verification would hide edits.
+  const mcpRoot = `${fs.realpathSync(path.join(cliRoot, 'mcp'))}${path.sep}`;
+  for (const cached of Object.keys(require.cache)) {
+    if (cached.startsWith(mcpRoot)) delete require.cache[cached];
+  }
+  const serverModule = require(path.join(cliRoot, 'mcp', 'server.js'));
+  assert.equal(typeof serverModule.createServer, 'function', 'mcp/server.js must export createServer');
+  const runtimeNames = Object.keys(serverModule.createServer()._registeredTools || {});
+  assert.deepEqual([...runtimeNames].sort(), [...expectedNames].sort(), message);
+}
 
 const parsedSourceCache = new Map();
 
@@ -7467,6 +7484,12 @@ function verifyCheckedInHostedContractFixture(
     localServerSourcePath,
     { mustPrecedeSoleFinalReturn: true },
   );
+  // After every static check, so a static violation keeps its specific message.
+  assertRuntimeLocalCatalog(
+    cliRoot,
+    localNames,
+    'The runtime local MCP catalog must equal its statically scanned registrations',
+  );
   assert.deepEqual(fixture.sourceSha256, {
     pluginServer: lock.publicExecutableContract.pluginServerSha256,
     pluginScopes: lock.publicExecutableContract.pluginScopesSha256,
@@ -9385,6 +9408,11 @@ assert.equal(
   new Set(executableLocalToolNames).size,
   executableLocalToolNames.length,
   'Executable local MCP source must not register a tool name more than once',
+);
+assertRuntimeLocalCatalog(
+  cliRoot,
+  executableLocalToolNames,
+  'The runtime local MCP catalog must equal its statically scanned registrations',
 );
 assert.deepEqual(
   [...executableLocalToolNames].sort(),
