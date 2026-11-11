@@ -1,8 +1,8 @@
 {
   "name": "trackly-cli",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "mcpName": "io.github.trackly-app/trackly",
-  "description": "Search 250K+ jobs across 5,400+ companies with the Trackly CLI and MCP server for Claude, ChatGPT, Codex and Cursor. Filter by role, location, salary and sponsorship; track jobs and prepare applications.",
+  "description": "Search Thousands of jobs across Thousands of companies with the Trackly CLI and MCP server for Claude, ChatGPT, Codex and Cursor. Filter by role, location, salary and sponsorship; track jobs and prepare applications.",
   "bin": {
     "trackly": "./bin/trackly"
   },
