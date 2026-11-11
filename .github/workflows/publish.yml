@@ -82,7 +82,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.proceed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25  # 14-minute attestation step plus setup, tests, publish and MCP Registry
     # One click by any maintainer, self-approval allowed, before anything reaches npm.
     environment: npm-publish
 
@@ -231,26 +231,49 @@ jobs:
       # If a pre-0.2.3 version ever needs re-republishing, temporarily skip this step — do NOT
       # weaken the gate for new releases.
       - name: Verify npm attestations (post-publish)
+        # npm processes publishes asynchronously ("Your package is being processed and may take a
+        # few minutes to become available"). 0.26.0 took about four minutes to appear, so a 30s
+        # check failed a good publish and skipped the MCP Registry steps. Poll for up to 10 minutes;
+        # the step timeout leaves room for one more iteration of two capped npm calls (about 2 minutes).
+        timeout-minutes: 14  # 10-minute window plus one slow final iteration (two capped npm calls)
         run: |
-          # No `set -e` / `pipefail`: a transient `npm view` failure inside the retry loop
-          # must fall through to the next iteration, not kill the workflow. The final exit
-          # status is controlled explicitly below.
+          # GitHub runs this with `bash -eo pipefail`. A transient `npm view` failure inside the retry loop
+          # must fall through to the next iteration, not kill the workflow, so every command in
+          # the loop that can fail sits in an `if` condition or ends in `|| true`. Keep it that
+          # way. The final exit status is controlled explicitly below.
           set -u
           VERSION="${{ steps.npm_publish.outputs.version }}"
-          # Give the registry up to ~30s (3 × 10s) for the attestation to propagate after publish.
-          for i in 1 2 3; do
+          ATTEMPTS=40
+          INTERVAL=15
+          # Bounded by wall-clock time as well as attempts, and each npm call is capped, so one
+          # stalled request cannot outlast the step timeout and swallow the diagnostic below.
+          DEADLINE=$((SECONDS + ATTEMPTS * INTERVAL))
+          NPM_VIEW_FLAGS="--fetch-timeout=30000 --fetch-retries=1"
+          SEEN_VERSION=false
+          for i in $(seq 1 "${ATTEMPTS}"); do
             # `|| true` prevents pipefail-like aborts if npm view transient-fails; grep -q
             # then returns non-zero and we fall through to the retry.
-            ATTESTATIONS="$(npm view "trackly-cli@${VERSION}" dist.attestations --json 2>/dev/null || true)"
+            ATTESTATIONS="$(npm view ${NPM_VIEW_FLAGS} "trackly-cli@${VERSION}" dist.attestations --json 2>/dev/null || true)"
             if echo "${ATTESTATIONS}" | grep -q '"url"'; then
-              echo "✓ Provenance attestations found for trackly-cli@${VERSION}"
+              echo "✓ Provenance attestations found for trackly-cli@${VERSION} (attempt ${i}/${ATTEMPTS})"
               exit 0
             fi
-            echo "Attestations not yet visible; waiting 10s (attempt ${i}/3)..."
-            sleep 10
+            if [ "${SEEN_VERSION}" = false ] && npm view ${NPM_VIEW_FLAGS} "trackly-cli@${VERSION}" version >/dev/null 2>&1; then
+              SEEN_VERSION=true
+              echo "trackly-cli@${VERSION} is visible on npm; waiting for its attestations"
+            fi
+            if [ "${SECONDS}" -ge "${DEADLINE}" ]; then
+              break
+            fi
+            echo "Attestations not yet visible; waiting ${INTERVAL}s (attempt ${i}/${ATTEMPTS})..."
+            sleep "${INTERVAL}"
           done
-          echo "::error::No provenance attestations visible for trackly-cli@${VERSION}"
-          echo "::error::If the publish step reported success, the provenance upload failed silently."
+          if [ "${SEEN_VERSION}" = false ]; then
+            echo "::error::trackly-cli@${VERSION} is still not visible on npm after ${SECONDS}s; check the publish step and the npm package page before rerunning"
+          else
+            echo "::error::trackly-cli@${VERSION} is on npm but no provenance attestations are visible after ${SECONDS}s"
+            echo "::error::If the publish step reported success, the provenance upload failed silently."
+          fi
           echo "::error::If the version was already on npm without provenance (historical pre-0.2.3 re-runs), update this workflow to temporarily bypass."
           exit 1
 
