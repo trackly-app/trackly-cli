@@ -11,16 +11,16 @@
   "privacyPolicyURL": "https://usetrackly.app/privacy",
   "termsOfServiceURL": "https://usetrackly.app/terms",
   "websiteURL": "https://usetrackly.app/plugins/trackly",
-  "submissionBoundary": "The user reviews and submits every application manually.",
+  "submissionBoundary": "Trackly Apply (local) stops before Submit and the user submits. Trackly submits an application only through Trackly Apply (cloud), and only for a job the user explicitly asks Trackly to apply to.",
   "sourcePackage": {
     "repository": "trackly-app/close-ai",
-    "commit": "5d443853272518bcc0f0b673e29d03d9f45715d5",
+    "commit": "96781f59f208ef839334a2a71954c9ef1b3d7005",
     "path": "docs/openai/trackly-openai-1.0.9",
     "checksumManifest": "docs/openai/trackly-openai-1.0.9.sha256",
     "checksumManifestSha256": "819a954d2e942b8a5d8eaefdce888b358706a3e3a7ac9f9d6505b816babe0ebe",
     "fileCount": 18
   },
-  "toolCount": 38,
+  "toolCount": 40,
   "unchangedToolCount": 27,
   "newTools": [
     "trackly_get_application_profile",
@@ -33,7 +33,9 @@
     "trackly_create_tracker_application",
     "trackly_update_tracker_stage",
     "trackly_add_tracker_note",
-    "trackly_retract_tracker_event"
+    "trackly_retract_tracker_event",
+    "trackly_auto_apply",
+    "trackly_auto_apply_status"
   ],
   "newReviewCaseIds": ["profile-setup-status", "request-company"]
 }

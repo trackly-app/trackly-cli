@@ -1,28 +1,27 @@
 {
   "formatVersion": 3,
-  "capturedAt": "2026-11-10T18:31:07-08:00",
+  "capturedAt": "2026-11-10T22:25:07-08:00",
   "sourceRuntime": {
-    "commit": "3cb96b71f84aaa32f0b6f7e8420d222c91e0d57c",
+    "commit": "b5d59e26d59a191c832fd7945d5dc06c25ad5270",
     "parents": [
-      "7bfb47b877858b075060951893149a34249f279e",
-      "6a5b05f5d043feba651e8dc7c70f1ea29013308b"
+      "91ae18b8aab676315f1eb4da2ee82f335a851b9a"
     ],
-    "committedAt": "2026-11-10T08:51:46Z"
+    "committedAt": "2026-11-11T04:17:16Z"
   },
   "mergedRuntime": {
-    "commit": "5d443853272518bcc0f0b673e29d03d9f45715d5",
+    "commit": "96781f59f208ef839334a2a71954c9ef1b3d7005",
     "parents": [
-      "6a5b05f5d043feba651e8dc7c70f1ea29013308b",
-      "3cb96b71f84aaa32f0b6f7e8420d222c91e0d57c"
+      "3ea1ab6455f235a87e53cd367cb8576011da5de0",
+      "b5d59e26d59a191c832fd7945d5dc06c25ad5270"
     ],
-    "committedAt": "2026-11-10T01:56:35-08:00"
+    "committedAt": "2026-11-10T21:01:53-08:00"
   },
   "applyContractVersion": "3.9.3",
-  "pluginContractVersion": "1.0.0",
+  "pluginContractVersion": "1.1.0",
   "publicTools": [
     [
       "trackly_search_jobs",
-      "020c525f1ba7506c50b9848ebaeee8f00e71df6f8e49ce7cbabd8179297a2bb0",
+      "d68920210e7ce2f2547579a580039311a3fa18e5aed191724a8cbcccfe1c854c",
       "226e2a344955b4f5e0d0ffdb5bd1fa00baa86bae94f138c5f61ce335544c68d7"
     ],
     [
@@ -59,6 +58,16 @@
       "trackly_update_status",
       "c9725177eda04b00aa6ab944086f96dbef62f27b0f20fb5658b391fa0c4d9c8b",
       "10538a74b15f1fbc60a2152dfea3e5822ccd6d26225b555bc9e379ea559dcc74"
+    ],
+    [
+      "trackly_auto_apply",
+      "ebd60acdc279039c05a9f61e758a7f9364ad61e42c92b0b04fe6789b8af02323",
+      "191952c8005ec283338dfcd5ecd9bef87b513cdb2bd9d0b2c40c498658cc0621"
+    ],
+    [
+      "trackly_auto_apply_status",
+      "ee7eccbe9c3638c3f04ff0b7d3c53a86e98d879c967e12147074df45510811e1",
+      "aeaf404dafbf95820de7b804e7aae6667f5c384743db139ada6c609cfbedc15f"
     ],
     [
       "trackly_save_application_answers",
@@ -145,6 +154,8 @@
     "trackly_contacts_at_company",
     "trackly_get_company_workspace",
     "trackly_request_company",
+    "trackly_auto_apply",
+    "trackly_auto_apply_status",
     "trackly_get_apply_queue",
     "trackly_get_application_profile",
     "trackly_get_profile_onboarding",
@@ -189,8 +200,8 @@
     "get_more_tools"
   ],
   "sourceSha256": {
-    "pluginServer": "02d771fc45a5b247bd32dbd065770d16a0b08404129d498951fadce50dcb2378",
-    "pluginScopes": "c8a7557be3bc1706dd0565baf2513b1ac191090b385926b5adc5c43e89721d55",
+    "pluginServer": "f035a466a7119db9edca00fb0f33f7f6f95ced01c3d68dd036698980fb6c4ee0",
+    "pluginScopes": "ae9a12656b30a568451892818b10224395cd7f03e13967fd689e770f207d01bf",
     "jobBriefService": "fee263be5b7b05da8db6b9b9e2cb7559a50abeeeab447166f5fe7a889892bc7b",
     "backendUiRedirect": "3d1018e472992626d39299be89ee8e996930fb76ce0f69155f2f63bb6f34d55e",
     "maintenanceMode": "0409b32355a014ecc4d64056bf251fcde5f377400fe4f7485e70795420b25afe",
@@ -199,7 +210,8 @@
     "reviewIdentity": "d03432434c10bbfd0e53f51b2d475f0adf3ada88ac85c2c0534791be0bf03c10",
     "azureRateLimitOptions": "f3e081d25fd066e76c5c622873622909bd6121e86845e09dd99d4cdf0b47778a",
     "authRateLimit": "ce3e53c0c7b0e9df804fb027c061e27948aff5c5b9a1d022064ed7d0a92c11a5",
-    "applicationProfileService": "934ab798cf28efc63257bdd82a9f6719c83f5beb9731e8b521f072d98b751c49"
+    "applicationProfileService": "934ab798cf28efc63257bdd82a9f6719c83f5beb9731e8b521f072d98b751c49",
+    "autoApply": "70ddc98d755977267e9fc1c56380b0d518b5b03d77373c5f3cb55f4c2a527e03"
   },
   "hostedPluginLifecycle": {
     "readinessMissingProfileFields": "canonical_key_and_public_label_only",
@@ -228,6 +240,8 @@
     "resumeHandling": "private_original_preview_exact_approval_verified_attachment_or_manual_unbound",
     "certifyReviewReady": "atomic_checkpoint_truth_outcome_verified_original_or_manual_unbound",
     "reconcileManualSubmission": "atomic_current_epoch_evidence_outcome",
-    "submissionBoundary": "manual_only_no_submit_tool"
+    "submissionBoundary": "browser_apply_stops_before_submit; only cloudAutoApply submits, and only on an explicit user request",
+    "cloudAutoApply": "explicit_user_request_queues_trackly_submitted_assist_request",
+    "cloudAutoApplyLimitRefusal": "openai_and_classic_never_carry_upgrade_url; claude_and_muse_have_no_auto_apply_tool"
   }
 }

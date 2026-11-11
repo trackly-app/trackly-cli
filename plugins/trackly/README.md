@@ -4,7 +4,7 @@ The trackly plugin package for ChatGPT and Codex.
 
 **Hero feature:** trackly Apply (local)
 
-trackly finds openings as they appear using your preferences and job metadata. You decide what to pursue. trackly Apply (local) fills approved applications for your review. You submit manually.
+trackly finds openings as they appear using your preferences and job metadata. You decide what to pursue. trackly Apply (local) fills approved applications for your review, and you submit them. trackly Apply (cloud) applies for you only when you ask it to for a specific job.
 
 ## What is included
 
@@ -20,7 +20,7 @@ An account is required. trackly is free for all users, with initial availability
 
 ## Safety boundary
 
-The plugin may fill an approved application and prepare it for review. It never activates the final Submit control. Only the user submits an application.
+The plugin may fill an approved application and prepare it for review (trackly Apply (local)). It never activates the final Submit control. Trackly submits an application only through trackly Apply (cloud) (`trackly_auto_apply`), and only for a job the user explicitly asks Trackly to apply to.
 
 ## Connection
 

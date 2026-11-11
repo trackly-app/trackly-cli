@@ -32,7 +32,7 @@ test('plan refusals use only server feature, counts, reset and optional link', (
   }
   assert.equal(fmt.planRefusalMessage({ status: 429, error: 'slow_down' }), 'Rate limited, try again shortly.');
   assert.equal(fmt.planRefusalMessage({ status: 404, error: 'feature_disabled' }), 'This feature is not available for this account yet.');
-  assert.equal(fmt.planRefusalMessage({ status: 404, error: 'feature_disabled', feature: 'assist_request' }), 'Auto-apply is not available for this account yet.');
+  assert.equal(fmt.planRefusalMessage({ status: 404, error: 'feature_disabled', feature: 'assist_request' }), 'Trackly Apply (cloud) is not available for this account yet.');
   for (const feature of ['constructor', '__proto__', '\u001b[31m']) {
     assert.equal(fmt.planRefusalMessage({ status: 429, error: 'limit_reached', feature }), 'Your Trackly plan limit for this feature has been reached.');
   }
@@ -53,14 +53,21 @@ test('malformed plan fields cannot become prose, script data, or actionable link
   assert.match(fmt.planRefusalMessage({ status: 429, error: 'limit_reached', limit: 7 }), /Limit: 7\./);
 });
 
-test('search output preserves server auto-apply support and omits unknown support', () => {
-  for (const value of [true, false, undefined]) {
-    const job = { id: 42, title: 'PM', ...(value === undefined ? {} : { autoApplySupported: value }) };
-    const human = capture(() => fmt.outputJobs([job]), { tty: true });
-    if (value === undefined) assert.doesNotMatch(human, /Auto-apply/);
-    else assert.match(human, new RegExp(`Auto-apply supported: ${value ? 'Yes' : 'No'}`));
-    assert.deepEqual(JSON.parse(capture(() => fmt.outputJobs([job]))), [job]);
+test('search output reports Trackly Apply (cloud) support from the posting, not the REST constant', () => {
+  const supported = { id: 42, title: 'PM', isUs: true, isActive: true, jobUrl: 'https://jobs.ashbyhq.com/acme/42', autoApplySupported: false };
+  for (const [job, expected] of [
+    [supported, true],
+    [{ id: 43, title: 'PM', isUs: false, jobUrl: 'https://jobs.ashbyhq.com/acme/43', autoApplySupported: true }, false],
+    [{ id: 44, title: 'PM', isUs: true, jobUrl: 'https://careers.example.com/44' }, false],
+    [{ id: 45, title: 'PM' }, false],
+    [{ id: 46, title: 'PM', isUs: true, isActive: false, jobUrl: 'https://jobs.ashbyhq.com/acme/46' }, false],
+  ]) {
+    const human = capture(() => fmt.outputJobs([job]), { tty: true }).replace(/\x1b\[[0-9;]*m/g, '');
+    if (expected) assert.match(human, new RegExp(`Trackly Apply \\(cloud\\) supported: trackly auto-apply ${job.id}`));
+    else assert.doesNotMatch(human, /Trackly Apply \(cloud\)|Auto-apply/);
+    assert.deepEqual(JSON.parse(capture(() => fmt.outputJobs([job]))), [{ ...job, autoApplySupported: expected }]);
   }
+  assert.equal(supported.autoApplySupported, false, 'the server payload is not mutated');
 });
 
 // Capture console.log output. tty=true → human/colored branch; tty=false → JSON branch.

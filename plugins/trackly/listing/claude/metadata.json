@@ -26,5 +26,5 @@
     "claudeAiDownload": "trackly-apply-claude-skill-<version>.zip",
     "claudeCodeDownload": "trackly-claude-plugin-<version>.zip"
   },
-  "sourceCommit": "5d443853272518bcc0f0b673e29d03d9f45715d5"
+  "sourceCommit": "96781f59f208ef839334a2a71954c9ef1b3d7005"
 }

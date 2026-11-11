@@ -72,11 +72,11 @@ API-key creation attempts.
 
 ### Applying: three different things
 
-- **Trackly Apply (local)**: your own AI agent fills the form in your browser and stops before Submit; you submit. It runs through the Trackly Apply skill and the Trackly Apply (local) and Apply step tools below, set up with `trackly agent setup`.
-- **Trackly Apply (cloud)**: Trackly applies for you and nothing runs on your computer. The local `trackly_auto_apply` tool and the `trackly auto-apply` command are held until the hosted service ships them.
-- **Job status · Mark applied**: you applied on your own. Record it with `trackly_update_status` (`action: "applied"`), or `trackly mark-applied <id>` in the CLI. Recording applied also records the job on the `/tracker` board, so there is no separate Tracker step; later outcomes go to `trackly_update_tracker_stage`.
+- **Trackly Apply (local)**: the user's own agent fills the application in the user's browser on their machine and stops before Submit; the user submits. It runs through the Trackly Apply (local) skill and the Trackly Apply (local) and Apply step tools below, set up with `trackly agent setup`.
+- **Trackly Apply (cloud)**: the user only requests it and Trackly applies to the employer for them with the default resume and every saved profile answer, sensitive ones included; nothing runs on the user's machine. Use `trackly_auto_apply` for one job the user explicitly asked Trackly to apply to, and `trackly_auto_apply_status` for progress (CLI: `trackly auto-apply <jobId>` and `trackly auto-apply --status`).
+- **Mark applied**: the user applied on their own. Record it with `trackly_update_status` (`action: "applied"`), or `trackly mark-applied <id>` in the CLI. Recording applied also records the job on the `/tracker` board, so there is no separate Tracker step; later outcomes go to `trackly_update_tracker_stage`.
 
-Pick the one the user asked for; never submit on the user's behalf through Trackly Apply (local).
+Pick the one the user asked for. Trackly Apply (local) never submits; Trackly submits only through Trackly Apply (cloud), and only on the user's explicit request.
 
 ### Available Tools
 
@@ -88,7 +88,7 @@ steps, so they are not standalone actions. Tool names never change.
 
 #### Jobs
 
-- **trackly_search_jobs** — Search/filter jobs. A successful page may have `total: null`, `pagination.total: null` and `countStatus: "unavailable"` when its total cannot be computed. The returned jobs remain valid: explain `countGuidance`, use `hasMore` and pagination to continue, and avoid retrying just to obtain a total. Zero is a known count; null is unknown. A numeric `total` with `totalIsLowerBound: true` (also in `pagination`) means at least that many matches, not an exact count. `false` marks a known exact total; `null` leaves the total unknown. Natural-language `trackly_ask` preserves these page fields: `total`, `totalIsLowerBound`, `countStatus`, `countGuidance`, `hasMore`, `pagination`, and `recencyStats`. It keeps the ask interpretation and validated continuation URL authoritative; unrelated jobs-page fields are omitted. It returns one page and takes no pagination input: continue there with `trackly_search_jobs` and `offset`. Genuine page failures remain tool errors.
+- **trackly_search_jobs** — Search/filter jobs. A successful page may have `total: null`, `pagination.total: null` and `countStatus: "unavailable"` when its total cannot be computed. The returned jobs remain valid: explain `countGuidance`, use `hasMore` and pagination to continue, and avoid retrying just to obtain a total. Zero is a known count; null is unknown. A numeric `total` with `totalIsLowerBound: true` (also in `pagination`) means at least that many matches, not an exact count. `false` marks a known exact total; `null` leaves the total unknown. Natural-language `trackly_ask` preserves these page fields: `total`, `totalIsLowerBound`, `countStatus`, `countGuidance`, `hasMore`, `pagination`, and `recencyStats`. It keeps the ask interpretation and validated continuation URL authoritative; unrelated jobs-page fields are omitted. It returns one page and takes no pagination input: continue there with `trackly_search_jobs` and `offset`. Genuine page failures remain tool errors. Each job carries `autoApplySupported: true` when `trackly_auto_apply` can request Trackly Apply (cloud) for it (an active US Greenhouse, Lever or Ashby posting), and the page adds a `nextSteps` line when some of those jobs are not applied to or dismissed yet. It does not decide Trackly Apply (local) eligibility.
   - `function` (one value) or `jobFunctions` (nonempty array, OR; use one spelling only). The 14 values are: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`
   - `region`: nonempty array of `us`, `europe`, `latam`, `middle_east`, `asia`, `africa`, `canada`, `oceania`, `remote`, `unknown`, combined with OR. Use instead of `locationFilter`; unlike its legacy list form, this supports US plus other regions.
   - `usStates`: nonempty array of US codes `AL`, `AK`, `AZ`, `AR`, `CA`, `CO`, `CT`, `DC`, `DE`, `FL`, `GA`, `HI`, `ID`, `IL`, `IN`, `IA`, `KS`, `KY`, `LA`, `ME`, `MD`, `MA`, `MI`, `MN`, `MS`, `MO`, `MT`, `NE`, `NV`, `NH`, `NJ`, `NM`, `NY`, `NC`, `ND`, `OH`, `OK`, `OR`, `PA`, `RI`, `SC`, `SD`, `TN`, `TX`, `UT`, `VT`, `VA`, `WA`, `WV`, `WI`, `WY`, `PR`, `REMOTE`.
@@ -253,6 +253,13 @@ Version 3.7 adds public exact-member recovery and scoped review-handoff claims,
 plus local tab-finalizer and resume-upload proof validators. Recovery candidates
 are bounded and value-free. The local helpers perform no browser actions and
 send no tab IDs, filenames, paths, page text, or form values to Trackly.
+
+#### Trackly Apply (cloud)
+
+Trackly applies for you; nothing runs on your computer.
+
+- **trackly_auto_apply** — Request Trackly Apply (cloud) for one Trackly job: Trackly applies to the employer for the user with the account's default resume and every saved application profile answer, sensitive ones included, then notifies the user. Nothing runs on the user's computer, and no browser form is filled. This is not Trackly Apply (local), where the user's own agent fills the form in the user's browser and stops before Submit, and not `trackly_update_status` (`applied`), which only records an application the user made. Call it only for a job the user explicitly asked Trackly to apply to. The request always sends `acknowledged: true`: the request is the user's consent for Trackly staff to use those answers. Supported for active US Greenhouse, Lever and Ashby postings (`autoApplySupported: true` in search results); each request counts toward the account's allowance. Input: `jobId` only (strict). Returns `request` (`id`, `jobId`, `company`, `jobTitle`, `status`) and a fixed message. An interrupted or failed enqueue may still have created the request: check `trackly_auto_apply_status` before requesting again. Plan limits return the server's usage and reset fields, never a constructed link.
+- **trackly_auto_apply_status** — List the user's Trackly Apply (cloud) requests, newest first, with `status` (`queued`, `claimed`, `submitted`, `failed` or `cancelled`), optionally for up to 200 `jobIds`. Read-only. Returns at most 50 requests plus `hasMore`.
 
 #### Feedback
 

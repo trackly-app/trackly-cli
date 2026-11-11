@@ -1,19 +1,19 @@
 # ChatGPT listing kit: trackly-openai 1.0.9
 
-This kit is the portal companion for the ChatGPT app package `trackly-openai` 1.0.9. The package itself lives in close-ai at `docs/openai/trackly-openai-1.0.9/` (18 files, hashes in `docs/openai/trackly-openai-1.0.9.sha256`) and was first deployed with close-ai #3604 (merge `6a5b05f5`, 2026-11-10 00:46 PST). [`metadata.json`](metadata.json) and [`tools.json`](tools.json) are pinned to the current production deploy `5d443853` (close-ai #3544, deployed 2026-11-10 02:48 PST): the 38-tool catalog is captured from its `openai-tools-list.json` golden and directory registry, and the package checksum manifest is unchanged.
+This kit is the portal companion for the ChatGPT app package `trackly-openai` 1.0.9. The package itself lives in close-ai at `docs/openai/trackly-openai-1.0.9/` (18 files, hashes in `docs/openai/trackly-openai-1.0.9.sha256`) and was first deployed with close-ai #3604 (merge `6a5b05f5`, 2026-11-10 00:46 PST). [`metadata.json`](metadata.json) and [`tools.json`](tools.json) are pinned to the current production deploy `96781f59` (deployed 2026-11-10 10:18 PM PST, after close-ai #3536 added Trackly Apply (cloud)): the 40-tool catalog is captured from its `openai-tools-list.json` golden and directory registry, and the package checksum manifest is unchanged.
 
-This is not the classic Codex plugin in `plugins/trackly/` (21 tools on `/api/plugin/trackly/mcp`). The ChatGPT app uses its own endpoint:
+This is not the classic Codex plugin in `plugins/trackly/` (23 tools on `/api/plugin/trackly/mcp`). The ChatGPT app uses its own endpoint:
 
 `https://mcp.usetrackly.app/api/plugin/trackly/openai/mcp`
 
 ## Portal order (Kevin's local session)
 
-1. Confirm production serves the 38 tools (done on close-ai #3601 after the PR1 deploy).
+1. Confirm production serves the 40 tools (done after the close-ai #3536 deploy on 2026-11-10 with the directory reviewer test account).
 2. In the OpenAI Platform portal, open the **existing** trackly app record and run **Rescan**. Never create a new app: a second app with the same MCP URL is rejected.
 3. Wait until every new tool below is approved. Paste the justification column when the portal asks.
 4. Upload the 1.0.9 package ZIP as an update to the same record and submit it for review. Submission and publication each need Kevin's separate approval, as `RELEASE-GATES.md` requires.
 
-The 27 existing tool schemas and annotations are unchanged from 1.0.8, so 1.0.8 skills keep working until 1.0.9 is approved. Two existing descriptions changed after PR1: close-ai #3544 added match-score status and lower-bound count wording to `trackly_search_jobs` and `trackly_get_job`. The Rescan will show those two description edits next to the eleven new tools. Close-ai #3619 then gave every tool a family title (`<Family> · <Action>`, for example "Tracker · Move stage") and a description that starts with the family tag (for example `[Tracker]`; Apply protocol steps use "Apply step · <Action>" and `[Trackly Apply · protocol step]`), and rewrote the `trackly_update_status` and Tracker descriptions so recording applied also records the job on the Tracker. The Rescan shows those title and description edits on all 38 tools; no tool name, schema, annotation hint or scope changed.
+The 27 existing tool schemas and annotations are unchanged from 1.0.8, so 1.0.8 skills keep working until 1.0.9 is approved. Two existing descriptions changed after PR1: close-ai #3544 added match-score status and lower-bound count wording to `trackly_search_jobs` and `trackly_get_job`. close-ai #3536 then appended the Trackly Apply (cloud) `autoApplySupported` sentence to the `trackly_search_jobs` description and added the two Trackly Apply (cloud) tools. The Rescan will show those description edits next to the thirteen new tools. Close-ai #3619 then gave every tool a family title (`<Family> · <Action>`, for example "Tracker · Move stage") and a description that starts with the family tag (for example `[Tracker]`; Apply protocol steps use "Apply step · <Action>" and `[Trackly Apply · protocol step]`), and rewrote the `trackly_update_status` and Tracker descriptions so recording applied also records the job on the Tracker. The Rescan shows those title and description edits on every tool; no tool name, schema, annotation hint or scope changed.
 
 ## New tools
 
@@ -32,6 +32,8 @@ The 27 existing tool schemas and annotations are unchanged from 1.0.8, so 1.0.8 
 | `trackly_update_tracker_stage` | Tracker · Move stage | false | true | `tracking:write` | Moves one Tracker entry to a new stage, with history and undo. |
 | `trackly_add_tracker_note` | Tracker · Add note | false | false | `tracking:write` | Adds a dated note to one Tracker entry without changing its stage. |
 | `trackly_retract_tracker_event` | Tracker · Undo an event | false | true | `tracking:write` | Undoes one Tracker event; it stays in history marked as retracted. |
+| `trackly_auto_apply` | Trackly Apply (cloud) · Request | false | true | `apply:write` | Trackly Apply (cloud): queues a request for Trackly to apply to one job the user explicitly asked Trackly to apply to. Destructive because it leads to a real application. Nothing runs on the user's computer. |
+| `trackly_auto_apply_status` | Trackly Apply (cloud) · Check requests | true | false | `apply:read` | Lists the user's Trackly Apply (cloud) requests and their status. |
 
 ## New review cases
 
@@ -48,4 +50,4 @@ Adds tools to read the saved application profile and what setup still needs, lis
 
 ## Rollback
 
-Each new tool group can be switched off without a deploy through `TRACKLY_DIRECTORY_DISABLED_TOOL_GROUPS` (`openai:profile_read`, `openai:tracker`, `openai:request_company`, `openai:companies`, `openai:preferences`, `openai:apply_queue`). A switched-off tool stays listed and answers `temporarily_unavailable`. Prefer this to removing a tool: a removed tool may need approval again later.
+Each new tool group can be switched off without a deploy through `TRACKLY_DIRECTORY_DISABLED_TOOL_GROUPS` (`openai:profile_read`, `openai:tracker`, `openai:request_company`, `openai:companies`, `openai:preferences`, `openai:apply_queue`, `openai:auto_apply`). A switched-off tool stays listed and answers `temporarily_unavailable`. Prefer this to removing a tool: a removed tool may need approval again later.

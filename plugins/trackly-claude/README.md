@@ -2,7 +2,7 @@
 
 This folder is the source of two downloads published with each trackly-cli release:
 
-- `trackly-apply-claude-skill-<version>.zip`: the Trackly Apply skill for claude.ai. Upload it in Claude under Settings, then Capabilities, then Skills.
+- `trackly-apply-claude-skill-<version>.zip`: the Trackly Apply (local) skill for claude.ai. Upload it in Claude under Settings, then Capabilities, then Skills.
 - `trackly-claude-plugin-<version>.zip`: a Claude Code plugin that bundles the same skill with the Trackly Claude connector.
 
 Both connect to the Trackly Claude connector:

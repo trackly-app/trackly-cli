@@ -30,6 +30,8 @@ const OPENAI_NEW_TOOLS = Object.freeze([
   'trackly_request_company', 'trackly_update_experience_limits', 'trackly_get_apply_queue',
   'trackly_list_tracker_applications', 'trackly_create_tracker_application', 'trackly_update_tracker_stage',
   'trackly_add_tracker_note', 'trackly_retract_tracker_event',
+  // Trackly Apply (cloud), close-ai #3536: listed on the ChatGPT endpoint, so the 1.0.9 Rescan shows them too.
+  'trackly_auto_apply', 'trackly_auto_apply_status',
 ]);
 // Browser surfaces other directories accept; the Claude connector rejects them.
 const NON_CLAUDE_SURFACES = Object.freeze(['codex_in_app', 'chrome_extension']);
@@ -118,7 +120,7 @@ function checkOpenaiKit(check, { root: ROOT, listing: LISTING }) {
   check(metadata.toolCount === catalog.tools.length, `OpenAI kit toolCount must equal the ${catalog.tools.length}-tool catalog`);
   check(
     JSON.stringify(metadata.newTools) === JSON.stringify(OPENAI_NEW_TOOLS),
-    'OpenAI kit newTools must be the eleven additive 1.0.9 tools in order',
+    'OpenAI kit newTools must be the thirteen additive 1.0.9 tools in order',
   );
   check(metadata.toolCount - metadata.newTools.length === metadata.unchangedToolCount, 'OpenAI kit tool counts must add up');
   for (const name of metadata.newTools) check(names.has(name), `OpenAI kit new tool is not in the catalog: ${name}`);

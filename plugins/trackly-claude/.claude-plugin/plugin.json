@@ -1,7 +1,7 @@
 {
   "name": "trackly",
-  "version": "1.0.1",
-  "description": "Trackly Apply for Claude: finish Trackly Apply setup and fill approved job applications in your browser with Claude in Chrome. You always submit them yourself.",
+  "version": "1.0.2",
+  "description": "Trackly Apply (local) for Claude: finish Trackly Apply (local) setup and fill approved job applications in your browser with Claude in Chrome. You always submit them yourself.",
   "author": {
     "name": "trackly",
     "email": "hello@usetrackly.app",

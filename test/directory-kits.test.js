@@ -51,8 +51,14 @@ test('directory kits, Claude plugin and Claude skill pass the offline checks', (
 });
 
 test('captured catalogs match the deployed directory counts', () => {
-  assert.equal(openaiCatalog.tools.length, 38);
+  assert.equal(openaiCatalog.tools.length, 40);
   assert.equal(claudeCatalog.tools.length, 37);
+  // Trackly Apply (cloud) is on ChatGPT only (close-ai #3536); Claude's consent says the user submits.
+  const openaiNames = new Set(openaiCatalog.tools.map(({ name }) => name));
+  for (const name of ['trackly_auto_apply', 'trackly_auto_apply_status']) {
+    assert.equal(openaiNames.has(name), true, name);
+    assert.equal(claudeCatalog.tools.some((tool) => tool.name === name), false, name);
+  }
   assert.equal(claudeCatalog.tools.filter(({ listedFor }) => listedFor === 'all_users').length, 21);
   assert.equal(claudeCatalog.tools.filter(({ listedFor }) => listedFor === 'apply_allowlist').length, 16);
   const claudeNames = new Set(claudeCatalog.tools.map(({ name }) => name));

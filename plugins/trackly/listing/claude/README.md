@@ -4,7 +4,7 @@ This kit is the material for the Claude directory listing edit that announces th
 
 Connector URL: `https://mcp.usetrackly.app/api/plugin/trackly/claude/mcp`
 
-[`metadata.json`](metadata.json) holds the structured fields and the consent lines approved on 2026-11-09. [`tools.json`](tools.json) is the catalog captured from close-ai's `claude-tools-list.json` and `claude-apply-allowlisted-tools-list.json` goldens and directory registry at the current production deploy `5d443853` (close-ai #3544, after PR1 close-ai #3604).
+[`metadata.json`](metadata.json) holds the structured fields and the consent lines approved on 2026-11-09. [`tools.json`](tools.json) is the catalog captured from close-ai's `claude-tools-list.json` and `claude-apply-allowlisted-tools-list.json` goldens and directory registry at the current production deploy `96781f59` (deployed 2026-11-10 10:18 PM PST, after close-ai #3536). The Claude catalog is unchanged from `5d443853`: close-ai #3536 excludes both Trackly Apply (cloud) tools from Claude, because this listing's consent says the user always submits.
 
 ## Listing text
 
@@ -20,7 +20,7 @@ Trackly watches employers' career pages and shows you new openings that match yo
 - show your saved Trackly application profile and what it still needs, and save answers you confirm;
 - keep your Tracker board current: add a job you applied to, move it to a new stage, add notes and undo a change;
 - ask Trackly to monitor a company it does not track yet;
-- with the Trackly Apply skill and Claude in Chrome, fill an application you approved in your own browser and stop before Submit. You always submit it yourself.
+- with the Trackly Apply (local) skill and Claude in Chrome, fill an application you approved in your own browser and stop before Submit. You always submit it yourself.
 
 Trackly never submits an application, never contacts an employer site from its servers, and reports equal-opportunity and identity-document answers only as answered, declined or blank. An account is required; Trackly is free and available in the United States.
 
