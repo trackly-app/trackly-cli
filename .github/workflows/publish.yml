@@ -82,7 +82,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.proceed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25  # 12-minute attestation window plus setup, tests, publish and MCP Registry
+    timeout-minutes: 25  # 14-minute attestation step plus setup, tests, publish and MCP Registry
     # One click by any maintainer, self-approval allowed, before anything reaches npm.
     environment: npm-publish
 
@@ -233,10 +233,11 @@ jobs:
       - name: Verify npm attestations (post-publish)
         # npm processes publishes asynchronously ("Your package is being processed and may take a
         # few minutes to become available"). 0.26.0 took about four minutes to appear, so a 30s
-        # check failed a good publish and skipped the MCP Registry steps. Poll for up to 10 minutes.
-        timeout-minutes: 12
+        # check failed a good publish and skipped the MCP Registry steps. Poll for up to 10 minutes;
+        # the step timeout leaves room for one more iteration of two capped npm calls (about 2 minutes).
+        timeout-minutes: 14  # 10-minute window plus one slow final iteration (two capped npm calls)
         run: |
-          # GitHub runs this with `bash -e`. A transient `npm view` failure inside the retry loop
+          # GitHub runs this with `bash -eo pipefail`. A transient `npm view` failure inside the retry loop
           # must fall through to the next iteration, not kill the workflow, so every command in
           # the loop that can fail sits in an `if` condition or ends in `|| true`. Keep it that
           # way. The final exit status is controlled explicitly below.

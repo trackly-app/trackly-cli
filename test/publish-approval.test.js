@@ -22,7 +22,10 @@ test("the post-publish attestation check waits for npm's asynchronous processing
   // 0.26.0 became visible about four minutes after publish; a 30s check failed a good release.
   assert.ok(attempts * interval >= 600, `attestation wait is only ${attempts * interval}s`);
   const timeout = Number(step.match(/timeout-minutes: (\d+)/)[1]);
-  assert.ok(timeout * 60 > attempts * interval, "the step timeout must exceed the polling window");
+  // One more iteration can start just before the deadline: two npm calls capped by --fetch-timeout
+  // with one retry each. The step timeout must leave room for it, so the final message prints.
+  const fetchTimeout = Number(step.match(/--fetch-timeout=(\d+)/)[1]) / 1000;
+  assert.ok(timeout * 60 >= attempts * interval + 4 * fetchTimeout, "the step timeout must cover the window plus one slow iteration");
   // The loop is driven by those values, bounded by wall-clock time, and each npm call is capped.
   assert.match(step, /for i in \$\(seq 1 "\$\{ATTEMPTS\}"\); do/);
   assert.match(step, /sleep "\$\{INTERVAL\}"/);
