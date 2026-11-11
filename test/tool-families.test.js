@@ -39,7 +39,8 @@ test('the registry lists the approved families in catalog order', () => {
     assert.ok(toolTitle(name).length <= TITLE_MAX_LENGTH, `${name} title is longer than ${TITLE_MAX_LENGTH}`);
     assert.doesNotMatch(action, /[[\]]/, `${name} action must not contain brackets`);
   }
-  assert.equal(TOOL_FAMILIES.find(({ label }) => label === 'Apply step').tag, 'Trackly Apply · protocol step');
+  assert.equal(TOOL_FAMILIES.find(({ label }) => label === 'Apply step').tag, '[Trackly Apply · protocol step]');
+  assert.equal(TOOL_FAMILIES.find(({ label }) => label === 'Apply step').heading, 'Apply steps');
   for (const name of LOCAL_ONLY_TOOL_NAMES) assert.ok(toolFamily(name), `${name} needs a family`);
   assert.equal(toolTitle('trackly_lint_application_text'), 'Profile · Check answer text');
   for (const name of ['trackly_diagnose_local_path', 'trackly_validate_apply_resume_upload', 'trackly_validate_apply_tab_keep_set']) {
@@ -58,7 +59,7 @@ test('every npm tool lists its family title and exactly one description tag', ()
     assert.ok(family, `${name} has no family`);
     assert.equal(tool.title, toolTitle(name), name);
     assert.equal(tool.annotations?.title, tool.title, `${name} annotations.title must equal its title`);
-    assert.ok(tool.description.startsWith(`[${family.tag}] `), `${name} must start with its family tag`);
+    assert.ok(tool.description.startsWith(`${family.tag} `), `${name} must start with its family tag`);
     const plain = plainDescription(name, tool.description);
     assert.ok(plain.length > 0 && !plain.startsWith('['), `${name} must carry exactly one tag over a tag-free source description`);
     if (protocol) {
@@ -68,7 +69,7 @@ test('every npm tool lists its family title and exactly one description tag', ()
     }
   }
   const local = tools.trackly_get_apply_queue.description;
-  assert.match(local, /^\[Trackly Apply \(local\)\] Your own AI agent fills the form in your browser and stops before Submit; you submit\. /);
+  assert.match(local, /^\[Trackly Apply \(local\)\] Your own AI agent fills the application in your browser and stops before Submit; you submit\. /);
 });
 
 test('labels keep existing annotation hints', () => {
@@ -157,13 +158,13 @@ function sections(markdown, headingPrefix, itemPattern) {
 
 function assertFamilyGrouping(found, documentName) {
   const labels = found.map(({ heading }) => heading);
-  const expectedOrder = FAMILY_ORDER.filter((label) => labels.includes(label));
+  const expectedOrder = TOOL_FAMILIES.map(({ heading }) => heading).filter((heading) => labels.includes(heading));
   assert.deepEqual(labels, expectedOrder, `${documentName} family headings must follow the registry order`);
   const npm = new Set(Object.keys(registeredTools()));
   const listed = [];
   for (const { heading, names } of found) {
     for (const name of names) {
-      assert.equal(toolFamily(name)?.family.label, heading, `${documentName} lists ${name} under ${heading}`);
+      assert.equal(toolFamily(name)?.family.heading, heading, `${documentName} lists ${name} under ${heading}`);
       listed.push(name);
     }
   }
@@ -193,7 +194,7 @@ test('docs/trackly-tools.md groups every tool under its family', () => {
 
 test('descriptionPrefix is the tag plus the family sentence', () => {
   assert.equal(descriptionPrefix('trackly_get_job'), '[Jobs] ');
-  assert.equal(descriptionPrefix('trackly_auto_apply'), '[Trackly Apply (cloud)] Trackly applies for you and nothing runs on your computer. ');
+  assert.equal(descriptionPrefix('trackly_auto_apply'), '[Trackly Apply (cloud)] Trackly applies for you; nothing runs on your computer. ');
   assert.equal(descriptionPrefix('trackly_claim_apply_batch'), `${PROTOCOL_TAG}${PROTOCOL_SENTENCE} `);
 });
 
@@ -204,4 +205,50 @@ test('the classic plugin release gates table carries every classic tool with its
     .publicTools.map(([name]) => name);
   assert.deepEqual(rows.map(([, name]) => name).sort(), [...classic].sort());
   for (const [, name, title] of rows) assert.equal(title.trim(), toolTitle(name), name);
+});
+
+const { compareWithBackend, verifyBackendDir } = require('../scripts/verify-tool-families');
+const NPM_ONLY = ['trackly_diagnose_local_path', 'trackly_validate_apply_resume_upload', 'trackly_validate_apply_tab_keep_set'];
+
+/** A minimal close-ai registry in its literal shape, built from the npm mirror. */
+function syntheticBackendSource() {
+  const familyLines = TOOL_FAMILIES.map(({ id, label, heading, tag, sentence }) => {
+    const options = [];
+    if (heading !== label) options.push(`heading: ${JSON.stringify(heading)}`);
+    if (tag !== `[${label}]`) options.push(`tag: ${JSON.stringify(tag)}`);
+    if (sentence) options.push(`sentence: ${JSON.stringify(sentence)}`, `openaiSentence: ${JSON.stringify(sentence)}`);
+    return `  defineFamily(${JSON.stringify(id)}, ${JSON.stringify(label)}${options.length ? `, { ${options.join(', ')} }` : ''}),`;
+  });
+  const entryLines = Object.entries(TOOL_ACTIONS)
+    .filter(([name]) => !NPM_ONLY.includes(name))
+    .map(([name, [id, action]]) => `  ${name}: family(${JSON.stringify(id)}, ${JSON.stringify(action)}),`);
+  return [
+    'export const TOOL_FAMILIES: readonly ToolFamily[] = Object.freeze([',
+    ...familyLines,
+    ']);',
+    'export const TOOL_FAMILY_ENTRIES = Object.freeze({',
+    ...entryLines,
+    '} satisfies Record<string, ToolFamilyEntry>);',
+  ].join('\n');
+}
+
+test('the close-ai registry comparison passes on a match and names every drift', () => {
+  const source = syntheticBackendSource();
+  assert.deepEqual(compareWithBackend(source), []);
+  const drifted = compareWithBackend(source
+    .replace('trackly_bind_apply_surface: family("apply_step", "Bind browser tab")', 'trackly_bind_apply_surface: family("apply_step", "Bind tab")')
+    .replace('  trackly_chat: family("chat", "Ask Trackly"),\n', '  trackly_chat: family("chat", "Ask Trackly"),\n  trackly_new_hosted_tool: family("jobs", "New"),\n')
+    .replace('sentence: "Trackly applies for you; nothing runs on your computer."', 'sentence: "Trackly applies for you."'));
+  assert.ok(drifted.some((error) => error.includes('trackly_bind_apply_surface: npm apply_step "Bind browser tab", close-ai apply_step "Bind tab"')), drifted.join('\n'));
+  assert.ok(drifted.some((error) => error.includes("trackly_new_hosted_tool is in close-ai's registry but not in mcp/tool-families.js")), drifted.join('\n'));
+  assert.ok(drifted.some((error) => error.startsWith('families differ')), drifted.join('\n'));
+  // A tool dropped from close-ai without being declared npm-only is drift too.
+  const missing = compareWithBackend(source.replace('  trackly_chat: family("chat", "Ask Trackly"),\n', ''));
+  assert.ok(missing.some((error) => error.startsWith('trackly_chat is in mcp/tool-families.js but neither')), missing.join('\n'));
+});
+
+test('npm families equal the close-ai registry (backend mode)', {
+  skip: process.env.TRACKLY_BACKEND_DIR ? false : 'set TRACKLY_BACKEND_DIR to a close-ai checkout',
+}, () => {
+  assert.deepEqual(verifyBackendDir(path.resolve(process.env.TRACKLY_BACKEND_DIR)), []);
 });

@@ -193,7 +193,7 @@ The five Tracker tools call the same backend routes as the `/tracker` board with
 
 #### Trackly Apply (local)
 
-Your own AI agent fills the form in your browser and stops before Submit; you submit.
+Your own AI agent fills the application in your browser and stops before Submit; you submit.
 
 - **trackly_get_apply_queue** — Get user-approved check-later jobs in deterministic execution order.
 - **trackly_list_apply_access_deferments** — List the current user's persistent job/company/provider access deferments. Returns only scope identities; never provider names, URLs, or raw text.
@@ -201,7 +201,7 @@ Your own AI agent fills the form in your browser and stops before Submit; you su
 - **trackly_clear_apply_access_deferment** — Clear one deferment listed or created in the current MCP session. Exact same-session replay is idempotent; after restart, refresh the active list instead of replaying an undiscovered cleared ID.
 - **trackly_stop_apply_execution** — Stop an execution with optimistic revision and idempotency guards.
 
-#### Apply step
+#### Apply steps
 
 Called by the Trackly Apply skill during a run, using IDs from earlier steps, not as a standalone action.
 

@@ -60,7 +60,7 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
       assert.ok(tool);
       assert.deepEqual(tool.annotations, { title: 'Trackly Apply (cloud) · Request', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true });
       assert.equal(tool.title, 'Trackly Apply (cloud) · Request');
-      assert.match(tool.description, /^\[Trackly Apply \(cloud\)\] Trackly applies for you and nothing runs on your computer\. /);
+      assert.match(tool.description, /^\[Trackly Apply \(cloud\)\] Trackly applies for you; nothing runs on your computer\. /);
       assert.deepEqual(Object.keys(tool.inputSchema.properties), ['jobId']);
       assert.deepEqual(tool.inputSchema.required, ['jobId']);
       assert.equal(tool.inputSchema.additionalProperties, false);

@@ -10966,6 +10966,14 @@ assertWrappedHandlerAst(
   hostedPluginSourcePath,
 );
 
+// close-ai #3619 (KTD11): mcp/tool-families.js must equal close-ai's family
+// registry for every shared tool name, so npm titles and tags cannot drift.
+assert.deepEqual(
+  require('./verify-tool-families').verifyBackendDir(backendRoot),
+  [],
+  'mcp/tool-families.js drifted from close-ai src/mcp/tool-families.ts',
+);
+
 console.log(
   `Trackly Apply local contract ${local.contractVersion} matches shared hosted contract ${sharedLocal.contractVersion}; the ${hostedPluginTools.length}-tool public plugin facade matches at ${hostedPluginContract.contractVersion}.`,
 );

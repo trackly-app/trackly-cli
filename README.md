@@ -300,7 +300,7 @@ Every tool has a family title (`<Family> · <Action>`), and its description star
 
 ### Trackly Apply (local)
 
-Your own AI agent fills the form in your browser and stops before Submit; you submit.
+Your own AI agent fills the application in your browser and stops before Submit; you submit.
 
 | Title | Tool | Description |
 |-------|------|-------------|
@@ -310,7 +310,7 @@ Your own AI agent fills the form in your browser and stops before Submit; you su
 | Trackly Apply (local) · Clear a deferment | trackly_clear_apply_access_deferment | Clear one discovered user access deferment |
 | Trackly Apply (local) · Stop a run | trackly_stop_apply_execution | Stop an execution without changing saved-job state |
 
-### Apply step
+### Apply steps
 
 Internal steps of a Trackly Apply (local) run. The Trackly Apply skill calls them with IDs from earlier steps; they are not standalone actions.
 

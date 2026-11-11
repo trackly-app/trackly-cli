@@ -17,36 +17,43 @@ const { McpServer: SdkMcpServer } = require('@modelcontextprotocol/sdk/server/mc
 const TITLE_SEPARATOR = ' · ';
 const TITLE_MAX_LENGTH = 64;
 
-// Catalog order. `sentence` follows the tag at the start of each description.
+function defineFamily(id, label, options = {}) {
+  return Object.freeze({
+    id,
+    label,
+    // Catalog and docs heading for the family.
+    heading: options.heading ?? label,
+    // Description prefix, followed by one space.
+    tag: options.tag ?? `[${label}]`,
+    // Sentence after the tag. close-ai also keeps an `openaiSentence` for the
+    // ChatGPT surface, which the npm server never serves.
+    sentence: options.sentence ?? null,
+    protocol: id === 'apply_step',
+  });
+}
+
+// Families in catalog order, as in close-ai TOOL_FAMILIES.
 const TOOL_FAMILIES = Object.freeze([
-  Object.freeze({ id: 'jobs', label: 'Jobs', tag: 'Jobs', sentence: '' }),
-  Object.freeze({ id: 'companies', label: 'Companies', tag: 'Companies', sentence: '' }),
-  Object.freeze({ id: 'network', label: 'Network', tag: 'Network', sentence: '' }),
-  Object.freeze({ id: 'preferences', label: 'Preferences', tag: 'Preferences', sentence: '' }),
-  Object.freeze({ id: 'profile', label: 'Profile', tag: 'Profile', sentence: '' }),
-  Object.freeze({ id: 'job_status', label: 'Job status', tag: 'Job status', sentence: '' }),
-  Object.freeze({ id: 'tracker', label: 'Tracker', tag: 'Tracker', sentence: '' }),
-  Object.freeze({
-    id: 'apply_local',
-    label: 'Trackly Apply (local)',
-    tag: 'Trackly Apply (local)',
-    sentence: 'Your own AI agent fills the form in your browser and stops before Submit; you submit.',
+  defineFamily('jobs', 'Jobs'),
+  defineFamily('companies', 'Companies'),
+  defineFamily('network', 'Network'),
+  defineFamily('preferences', 'Preferences'),
+  defineFamily('profile', 'Profile'),
+  defineFamily('job_status', 'Job status'),
+  defineFamily('tracker', 'Tracker'),
+  defineFamily('apply_local', 'Trackly Apply (local)', {
+    sentence: 'Your own AI agent fills the application in your browser and stops before Submit; you submit.',
   }),
-  Object.freeze({
-    id: 'apply_step',
-    label: 'Apply step',
-    tag: 'Trackly Apply · protocol step',
+  defineFamily('apply_step', 'Apply step', {
+    heading: 'Apply steps',
+    tag: '[Trackly Apply · protocol step]',
     sentence: 'Called by the Trackly Apply skill during a run, using IDs from earlier steps, not as a standalone action.',
-    protocol: true,
   }),
-  Object.freeze({
-    id: 'apply_cloud',
-    label: 'Trackly Apply (cloud)',
-    tag: 'Trackly Apply (cloud)',
-    sentence: 'Trackly applies for you and nothing runs on your computer.',
+  defineFamily('apply_cloud', 'Trackly Apply (cloud)', {
+    sentence: 'Trackly applies for you; nothing runs on your computer.',
   }),
-  Object.freeze({ id: 'chat', label: 'Chat', tag: 'Chat', sentence: '' }),
-  Object.freeze({ id: 'feedback', label: 'Feedback', tag: 'Feedback', sentence: '' }),
+  defineFamily('chat', 'Chat'),
+  defineFamily('feedback', 'Feedback'),
 ]);
 
 const FAMILY_BY_ID = new Map(TOOL_FAMILIES.map((family) => [family.id, family]));
@@ -183,7 +190,7 @@ function toolTitle(name) {
 /** "[<Family>] " plus the family sentence, prepended to the source description. */
 function descriptionPrefix(name) {
   const { family } = requireToolFamily(name);
-  return `[${family.tag}] ${family.sentence ? `${family.sentence} ` : ''}`;
+  return `${family.tag} ${family.sentence ? `${family.sentence} ` : ''}`;
 }
 
 function labelDescription(name, description) {
