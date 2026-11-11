@@ -32,7 +32,7 @@ const TRACKER_TOOLS = [
 const PRIVATE_EMAIL = 'recruiter.private@example.com';
 const BASE = '/api/jobscout/waypoint/applications';
 const SOURCES = '/api/jobscout/waypoint/sources';
-const HOSTED_FIXTURE = path.join(__dirname, 'fixtures', 'tracker', 'hosted-tracker-tools-6cd11dfb.json');
+const HOSTED_FIXTURE = path.join(__dirname, 'fixtures', 'tracker', 'hosted-tracker-tools-8f7ba68e.json');
 
 const laDate = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 
@@ -364,7 +364,7 @@ test('Tracker tools: registration, schemas and hosted parity', async (t) => {
     });
   });
 
-  await t.test('tools/list matches the hosted MCP at close-ai 6cd11dfb exactly (names, descriptions, schemas, annotations)', async () => {
+  await t.test('tools/list matches the hosted MCP at close-ai 8f7ba68e exactly (names, descriptions, schemas, annotations)', async () => {
     const hosted = JSON.parse(fs.readFileSync(HOSTED_FIXTURE, 'utf8'));
     assert.deepEqual(hosted.map((tool) => tool.name), TRACKER_TOOLS);
     // The hosted server injects the analytics context property itself; locally analytics does it at startup.

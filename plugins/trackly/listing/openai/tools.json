@@ -4,7 +4,7 @@
   "endpoint": "https://mcp.usetrackly.app/api/plugin/trackly/openai/mcp",
   "source": {
     "repository": "trackly-app/close-ai",
-    "commit": "96781f59f208ef839334a2a71954c9ef1b3d7005",
+    "commit": "8f7ba68e73280afec40fd5d674a6f2bb774bfa06",
     "goldens": [
       "src/mcp/__tests__/fixtures/surface-golden/openai-tools-list.json"
     ],
@@ -13,7 +13,7 @@
   "tools": [
     {
       "name": "trackly_search_jobs",
-      "title": "Search jobs with trackly",
+      "title": "Jobs · Search",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -25,7 +25,7 @@
     },
     {
       "name": "trackly_get_job",
-      "title": "Get job details",
+      "title": "Jobs · Get details",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -37,7 +37,7 @@
     },
     {
       "name": "trackly_search_companies",
-      "title": "Search tracked companies",
+      "title": "Companies · Search",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -48,7 +48,7 @@
     },
     {
       "name": "trackly_get_job_brief",
-      "title": "Get a job brief",
+      "title": "Network · Get job brief",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -59,7 +59,7 @@
     },
     {
       "name": "trackly_get_preferences",
-      "title": "Get job preferences",
+      "title": "Preferences · Get",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -70,7 +70,7 @@
     },
     {
       "name": "trackly_get_apply_readiness",
-      "title": "Check trackly Apply readiness",
+      "title": "Trackly Apply (local) · Check readiness",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -83,7 +83,7 @@
     },
     {
       "name": "trackly_lint_application_text",
-      "title": "Lint application text",
+      "title": "Profile · Check answer text",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -94,7 +94,7 @@
     },
     {
       "name": "trackly_update_status",
-      "title": "Update job status",
+      "title": "Job status · Mark applied, saved or dismissed",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -105,7 +105,7 @@
     },
     {
       "name": "trackly_auto_apply",
-      "title": "Trackly Apply (cloud): apply to a job",
+      "title": "Trackly Apply (cloud) · Request",
       "readOnlyHint": false,
       "destructiveHint": true,
       "scopes": [
@@ -116,7 +116,7 @@
     },
     {
       "name": "trackly_auto_apply_status",
-      "title": "Get Trackly Apply (cloud) requests",
+      "title": "Trackly Apply (cloud) · Check requests",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -127,7 +127,7 @@
     },
     {
       "name": "trackly_save_application_answers",
-      "title": "Save approved application answers",
+      "title": "Profile · Save answers",
       "readOnlyHint": false,
       "destructiveHint": true,
       "scopes": [
@@ -138,7 +138,7 @@
     },
     {
       "name": "trackly_grant_sensitive_storage_consent",
-      "title": "Allow encrypted sensitive-answer storage",
+      "title": "Profile · Allow sensitive-answer storage",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -150,7 +150,7 @@
     },
     {
       "name": "trackly_revoke_sensitive_storage_consent",
-      "title": "Revoke sensitive-answer storage",
+      "title": "Profile · Revoke sensitive-answer storage",
       "readOnlyHint": false,
       "destructiveHint": true,
       "scopes": [
@@ -162,7 +162,7 @@
     },
     {
       "name": "trackly_get_application_profile",
-      "title": "Get your application profile",
+      "title": "Profile · Get",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -173,7 +173,7 @@
     },
     {
       "name": "trackly_get_profile_onboarding",
-      "title": "Get profile setup status",
+      "title": "Profile · Get setup status",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -184,7 +184,7 @@
     },
     {
       "name": "trackly_list_companies",
-      "title": "List tracked companies",
+      "title": "Companies · List tracked",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -195,7 +195,7 @@
     },
     {
       "name": "trackly_request_company",
-      "title": "Ask Trackly to monitor a company",
+      "title": "Companies · Request monitoring",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -207,7 +207,7 @@
     },
     {
       "name": "trackly_update_experience_limits",
-      "title": "Set years-of-experience limits",
+      "title": "Preferences · Set experience limits",
       "readOnlyHint": false,
       "destructiveHint": true,
       "scopes": [
@@ -218,7 +218,7 @@
     },
     {
       "name": "trackly_list_tracker_applications",
-      "title": "List Tracker entries",
+      "title": "Tracker · List entries",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -229,7 +229,7 @@
     },
     {
       "name": "trackly_create_tracker_application",
-      "title": "Add a job to the Tracker",
+      "title": "Tracker · Add a job",
       "readOnlyHint": false,
       "destructiveHint": true,
       "scopes": [
@@ -241,7 +241,7 @@
     },
     {
       "name": "trackly_update_tracker_stage",
-      "title": "Move a Tracker entry",
+      "title": "Tracker · Move stage",
       "readOnlyHint": false,
       "destructiveHint": true,
       "scopes": [
@@ -252,7 +252,7 @@
     },
     {
       "name": "trackly_add_tracker_note",
-      "title": "Add a Tracker note",
+      "title": "Tracker · Add note",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -263,7 +263,7 @@
     },
     {
       "name": "trackly_retract_tracker_event",
-      "title": "Retract a Tracker event",
+      "title": "Tracker · Undo an event",
       "readOnlyHint": false,
       "destructiveHint": true,
       "scopes": [
@@ -274,7 +274,7 @@
     },
     {
       "name": "trackly_get_apply_queue",
-      "title": "Get your Apply queue",
+      "title": "Trackly Apply (local) · Get queue",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -285,7 +285,7 @@
     },
     {
       "name": "trackly_list_apply_access_deferments",
-      "title": "List Apply access deferments",
+      "title": "Trackly Apply (local) · List deferments",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -296,7 +296,7 @@
     },
     {
       "name": "trackly_defer_apply_access",
-      "title": "Defer Apply access for a job, company, or provider",
+      "title": "Trackly Apply (local) · Defer a job, company or provider",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -307,7 +307,7 @@
     },
     {
       "name": "trackly_clear_apply_access_deferment",
-      "title": "Clear an Apply access deferment",
+      "title": "Trackly Apply (local) · Clear a deferment",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -318,7 +318,7 @@
     },
     {
       "name": "trackly_start_or_resume_apply",
-      "title": "Start or resume trackly Apply",
+      "title": "Trackly Apply (local) · Start or resume",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -330,7 +330,7 @@
     },
     {
       "name": "trackly_get_apply_progress",
-      "title": "Get authoritative Apply progress",
+      "title": "Trackly Apply (local) · Get progress",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -343,7 +343,7 @@
     },
     {
       "name": "trackly_get_apply_snapshot",
-      "title": "Get an Apply member snapshot",
+      "title": "Apply step · Get member snapshot",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -356,7 +356,7 @@
     },
     {
       "name": "trackly_approve_apply_resume",
-      "title": "Approve an exact resume for Apply",
+      "title": "Apply step · Approve resume",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -367,7 +367,7 @@
     },
     {
       "name": "trackly_bind_apply_surface",
-      "title": "Bind an Apply browser surface",
+      "title": "Apply step · Bind browser tab",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -378,7 +378,7 @@
     },
     {
       "name": "trackly_record_apply_dispositions",
-      "title": "Record Apply access dispositions",
+      "title": "Apply step · Record access results",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -389,7 +389,7 @@
     },
     {
       "name": "trackly_resume_parked_apply_member",
-      "title": "Resume a parked Apply member",
+      "title": "Apply step · Resume a parked job",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -400,7 +400,7 @@
     },
     {
       "name": "trackly_record_apply_observations",
-      "title": "Record Apply browser observations",
+      "title": "Apply step · Record form observations",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -411,7 +411,7 @@
     },
     {
       "name": "trackly_advance_apply_execution",
-      "title": "Advance an Apply execution",
+      "title": "Apply step · Advance run",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -422,7 +422,7 @@
     },
     {
       "name": "trackly_prepare_resume_artifact",
-      "title": "Preview your saved resume",
+      "title": "Trackly Apply (local) · Preview resume",
       "readOnlyHint": true,
       "destructiveHint": false,
       "scopes": [
@@ -433,7 +433,7 @@
     },
     {
       "name": "trackly_certify_review_ready",
-      "title": "Mark an application ready for review",
+      "title": "Apply step · Mark ready for review",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -444,7 +444,7 @@
     },
     {
       "name": "trackly_reconcile_manual_submission",
-      "title": "Reconcile a manual submission",
+      "title": "Apply step · Record a manual submission",
       "readOnlyHint": false,
       "destructiveHint": false,
       "scopes": [
@@ -455,7 +455,7 @@
     },
     {
       "name": "trackly_stop_apply",
-      "title": "Stop trackly Apply",
+      "title": "Trackly Apply (local) · Stop",
       "readOnlyHint": false,
       "destructiveHint": true,
       "scopes": [

@@ -13,7 +13,7 @@ const { HOSTED_RESUME_SECURITY_SOURCE_SHA256, assertHostedResumeSecuritySourceSn
 const assertResumeGlobalParserCarveout = createResumeParserVerifier({ activeNamedDefinitionAst, staticMemberName, parseFullSource, canonicalSchemaAst });
 
 const sha256ExactBytes = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-const CHECKED_IN_HOSTED_FIXTURE_SHA256 = 'baa50f8bbfc0cdaf13a5726a95e00e671b2d4cbfba910d2f55a6873f6cf4f824';
+const CHECKED_IN_HOSTED_FIXTURE_SHA256 = 'ad0121aed5f6e9c3cf719b22873793596d976f826a4c3db26c94bac6c64b7756';
 const HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256 = Object.freeze({
   applyCheckpointActionVariant: '6d83fd691e69b578f683c5e367cc1706a8f74b336e0ff435195f580c2350587c',
   applyCheckpointActionSchema: '6f0b0698b13997eda7100ec00720fff199d936270d232c7de5f55a8fcef2c2ab',
@@ -59,6 +59,9 @@ const HOSTED_GENERAL_RATE_LIMIT_SHA256 = 'c724c5215e1014a5e4cb598cb8487a4524e51e
 // from tools/list, gates every directory call on the runtime flags before the handler
 // (KTD8), registers Claude's split Apply tools from the OpenAI split definitions behind
 // claudeGuarded (KTD6, KTD4), and skips switched-off OpenAI split definitions.
+// close-ai #3619 (recaptured at 8f7ba68e): every surface except Muse registers with the
+// family title and tag from tool-families.ts (withToolFamilyLabels, locked below), and
+// Claude's trackly_update_status keeps the status-story text registered for its Tracker group.
 const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' && options.surface !== 'openai' && options.surface !== 'muse'
     && options.surface !== 'claude') {
     throw new Error('Unknown plugin tool surface');
@@ -150,8 +153,13 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
           return reason ? directoryUnavailableResult(reason) : toolHandler(params);
         }
         : toolHandler;
+      // Family titles and description tags (#3619) on every surface except
+      // Muse, whose partner-reviewed copy stays byte-identical (KTD3).
+      const labeledConfig = options.surface === 'muse'
+        ? toolConfig
+        : withToolFamilyLabels(toolName, toolConfig, options.surface);
       return server.registerTool<z.ZodRawShape, z.ZodRawShape>(toolName, {
-        ...toolConfig,
+        ...labeledConfig,
         _meta: { ...toolConfig._meta, securitySchemes },
       } as any, (params, extra) => captureHostedMcpTool(
         toolName, extra.requestId, () => gatedHandler(params),
@@ -209,7 +217,7 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
       return register(name, {
         ...rest,
         title: entry.title,
-        description: entry.description,
+        description: name === 'trackly_update_status' ? config.description : entry.description,
         inputSchema: claudeInputSchema(name, discovered.inputSchema),
         annotations: claudeToolAnnotations(name),
         ...(meta ? { _meta: meta } : {}),
@@ -249,7 +257,13 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
   };`;
 // close-ai #3604: the five Tracker tools share one handler set bound to this factory's
 // requestApi and authToken; directory results drop Tracker contact fields (R9).
-const HOSTED_PLUGIN_FACTORY_INTER_REGISTRATION_SOURCE = `const tracker = createTrackerToolHandlers(requestApi, authToken);
+// close-ai #3619 (recaptured at 8f7ba68e): the one status story reads, per surface, whether the
+// directory's Tracker tools are switched off; trackly_update_status then names no Tracker tool and
+// sends trackerSync: false there. Only the directory registry gate decides it.
+const HOSTED_PLUGIN_FACTORY_INTER_REGISTRATION_SOURCE = `const statusDirectory = directorySurfaceOf(options.surface);
+  const trackerToolsOff = statusDirectory !== null
+    && directoryToolUnavailableReason('trackly_update_tracker_stage', statusDirectory, options.userId) !== null;
+  const tracker = createTrackerToolHandlers(requestApi, authToken);
   const trackerTool = (run: (params: any) => Promise<unknown>, fallback: string) => wrapTool(
     async (params) => withoutTrackerContacts(await run(params)), fallback,
   );`;
@@ -258,6 +272,14 @@ const HOSTED_PLUGIN_FACTORY_INTER_REGISTRATION_SOURCE = `const tracker = createT
 const HOSTED_PLUGIN_FACTORY_TAIL_SUFFIX_SOURCE = `if (hiddenToolNames.size > 0) hideToolsFromList(server, hiddenToolNames);`;
 
 // Exact reviewed telemetry helpers; attribution cannot become request authority.
+// close-ai #3619 (recaptured at 8f7ba68e): how src/mcp/tool-families.ts builds a title and
+// prefixes a description. mcp/tool-families.js mirrors exactly this composition.
+const HOSTED_TOOL_FAMILY_COMPOSITION_AST_SHA256 = Object.freeze({
+  toolFamilyTitle: 'a70f2bdb27699cefc2f415d5b088d8a8099b2d1154629d5c8787ae1a1128e88f',
+  toolFamilyDescription: '5c2659290bea682c9ba746d82b71054572d42bc996bd211b74894ae003182da4',
+  withToolFamilyLabels: 'b3a2e481b41dd6b63acd822d880a46911fdf888970ffd05c86a37dff4c1e8ae1',
+});
+
 const HOSTED_MCP_ANALYTICS_HELPER_AST_SHA256 = Object.freeze({
   "runWithHostedMcpToolContext": "a1a973ac01a2943d4e5751bd61c32e290d49069bbc7db05925e67956156f93f5",
   "captureHostedMcpTool": "d661823521f8d974ffa3ecdc608f9dd5c6cec9a79eda441ad9b87bf8e2afcc4f",
@@ -618,7 +640,9 @@ function directHostedToolRegistrationsInNamedFactory(
   {
     // close-ai #3603 (recaptured at 6cd11dfb): the helper forwards optional MCP
     // tool annotations unchanged; scope, analytics context and handler wrapping are as reviewed.
-    helperAstSha256 = '5ddf00c88db53eeeea74e50d63cc1a0383de5ec20c3e44e1d7655e1c8f70df5b',
+    // close-ai #3619 (recaptured at 8f7ba68e): it adds the family title, annotations.title and
+    // description tag through withToolFamilyLabels(toolName, ..., 'hosted') and changes nothing else.
+    helperAstSha256 = '1aa48dac5ecb68d402ab46034568b0e3254ea5d6a4c9105d9544bd4b411b8f1e',
   } = {},
 ) {
   const ast = parseFullSource(source, sourcePath);
@@ -940,106 +964,19 @@ const HOSTED_DEPLOYABLE_PATHS = Object.freeze([
   // close-ai #3536: Trackly Apply (cloud) descriptors, request body and refusals (whole-byte
   // locked as autoApply). Absent in reviewed source b5d59e26, so it is an inherited record.
   'src/mcp/auto-apply.ts',
+  // close-ai #3619 (recaptured at 8f7ba68e): the plugin trackly_update_status text comes from
+  // status-story.ts, and every family title and description tag from tool-families.ts. Both are
+  // whole-byte locked (statusStory, toolFamilies), so a wording or separator change needs a recapture.
+  'src/mcp/status-story.ts',
+  'src/mcp/tool-families.ts',
 ]);
 
-// Recaptured from reviewed source b5d59e26 (close-ai #3625 head) and deployed merge
-// 96781f59, the production deploy (run 42965813816) after #3536 (Trackly Apply (cloud), 3ea1ab64).
-// The #3625 head branched before #3536 merged, so the nine deployable paths #3536 changed
-// and src/mcp/auto-apply.ts, which #3536 added, are inherited from first parent 3ea1ab64
-// with the reviewed #3536 head 078cf663 bytes; the other 41 deployable paths preserve the
-// reviewed b5d59e26 bytes.
-const REVIEWED_INHERITED_BASELINE = Object.freeze([
-  Object.freeze({
-    sourceCommit: 'b5d59e26d59a191c832fd7945d5dc06c25ad5270',
-    mergeCommit: '96781f59f208ef839334a2a71954c9ef1b3d7005',
-    firstParent: '3ea1ab6455f235a87e53cd367cb8576011da5de0',
-    relativePath: 'contracts/trackly-plugin-tools.json',
-    sourceSha256: '382cb1494bbf433f4ebfeabb108dbcb0b7cb95b4f6a1049d2b7f2abb594b13da',
-    inheritedSha256: '4471ab33837ee10780a1dd452ae854532fa7d98a68beec8cee043d71994cdabc',
-    originCommit: '078cf663dab5b446bf77979f800e916f28715c46', // close-ai #3536 head (Trackly Apply (cloud) tools)
-  }),
-  Object.freeze({
-    sourceCommit: 'b5d59e26d59a191c832fd7945d5dc06c25ad5270',
-    mergeCommit: '96781f59f208ef839334a2a71954c9ef1b3d7005',
-    firstParent: '3ea1ab6455f235a87e53cd367cb8576011da5de0',
-    relativePath: 'src/mcp/server.ts',
-    sourceSha256: '712b57105cd972afeb6761d88c8889e0645003d1d322fb08b8695996a519bcc8',
-    inheritedSha256: '5aa3d7a81b971243d0a3271df3fcea877b29d7632818bc4af8e6d7c56bf5a618',
-    originCommit: '078cf663dab5b446bf77979f800e916f28715c46', // close-ai #3536 head (Trackly Apply (cloud) tools)
-  }),
-  Object.freeze({
-    sourceCommit: 'b5d59e26d59a191c832fd7945d5dc06c25ad5270',
-    mergeCommit: '96781f59f208ef839334a2a71954c9ef1b3d7005',
-    firstParent: '3ea1ab6455f235a87e53cd367cb8576011da5de0',
-    relativePath: 'src/mcp/plugin-server.ts',
-    sourceSha256: '02d771fc45a5b247bd32dbd065770d16a0b08404129d498951fadce50dcb2378',
-    inheritedSha256: 'f035a466a7119db9edca00fb0f33f7f6f95ced01c3d68dd036698980fb6c4ee0',
-    originCommit: '078cf663dab5b446bf77979f800e916f28715c46', // close-ai #3536 head (Trackly Apply (cloud) tools)
-  }),
-  Object.freeze({
-    sourceCommit: 'b5d59e26d59a191c832fd7945d5dc06c25ad5270',
-    mergeCommit: '96781f59f208ef839334a2a71954c9ef1b3d7005',
-    firstParent: '3ea1ab6455f235a87e53cd367cb8576011da5de0',
-    relativePath: 'src/mcp/__tests__/plugin-server.test.ts',
-    sourceSha256: 'e51b343785a5ec79a8c222b43a9148f60b2a6f590432859128cad5368e3eed26',
-    inheritedSha256: '40047a63c81b5a10fa7323bdcafb7b445d13cd927ee04344d638492dc9c4ccc4',
-    originCommit: '078cf663dab5b446bf77979f800e916f28715c46', // close-ai #3536 head (Trackly Apply (cloud) tools)
-  }),
-  Object.freeze({
-    sourceCommit: 'b5d59e26d59a191c832fd7945d5dc06c25ad5270',
-    mergeCommit: '96781f59f208ef839334a2a71954c9ef1b3d7005',
-    firstParent: '3ea1ab6455f235a87e53cd367cb8576011da5de0',
-    relativePath: 'src/mcp/plugin-scopes.ts',
-    sourceSha256: 'c8a7557be3bc1706dd0565baf2513b1ac191090b385926b5adc5c43e89721d55',
-    inheritedSha256: 'ae9a12656b30a568451892818b10224395cd7f03e13967fd689e770f207d01bf',
-    originCommit: '078cf663dab5b446bf77979f800e916f28715c46', // close-ai #3536 head (Trackly Apply (cloud) tools)
-  }),
-  Object.freeze({
-    sourceCommit: 'b5d59e26d59a191c832fd7945d5dc06c25ad5270',
-    mergeCommit: '96781f59f208ef839334a2a71954c9ef1b3d7005',
-    firstParent: '3ea1ab6455f235a87e53cd367cb8576011da5de0',
-    relativePath: 'src/mcp/directory-surface-registry.ts',
-    sourceSha256: '9be714555bcc7410fdda47c5a02488efad4949339dfa25d505030ef5045b4f38',
-    inheritedSha256: '63a5663b5ef412c09bfceb75b392a574032cd37c78279a6f863d4742fe073758',
-    originCommit: '078cf663dab5b446bf77979f800e916f28715c46', // close-ai #3536 head (Trackly Apply (cloud) tools)
-  }),
-  Object.freeze({
-    sourceCommit: 'b5d59e26d59a191c832fd7945d5dc06c25ad5270',
-    mergeCommit: '96781f59f208ef839334a2a71954c9ef1b3d7005',
-    firstParent: '3ea1ab6455f235a87e53cd367cb8576011da5de0',
-    relativePath: 'src/mcp/mcp-scopes.ts',
-    sourceSha256: 'd5132b49d9c0a70c4b1f41de5de3dcaf7bd43be1df11f8c2af9277d7a9885a34',
-    inheritedSha256: '1d768b9640b792da23d5da63f9b71954a13de9064d4c9448ece2eac23ee88158',
-    originCommit: '078cf663dab5b446bf77979f800e916f28715c46', // close-ai #3536 head (Trackly Apply (cloud) tools)
-  }),
-  Object.freeze({
-    sourceCommit: 'b5d59e26d59a191c832fd7945d5dc06c25ad5270',
-    mergeCommit: '96781f59f208ef839334a2a71954c9ef1b3d7005',
-    firstParent: '3ea1ab6455f235a87e53cd367cb8576011da5de0',
-    relativePath: 'src/routes/trackly-apply.ts',
-    sourceSha256: '1db583730bcd684e8489579bc1e907f807db63db266d917ee63839e55c853b2c',
-    inheritedSha256: '63ad86e441c2f2eaff7e815ee09e333fb52e51552fa95a37371e32279e481835',
-    originCommit: '078cf663dab5b446bf77979f800e916f28715c46', // close-ai #3536 head (Trackly Apply (cloud) tools)
-  }),
-  Object.freeze({
-    sourceCommit: 'b5d59e26d59a191c832fd7945d5dc06c25ad5270',
-    mergeCommit: '96781f59f208ef839334a2a71954c9ef1b3d7005',
-    firstParent: '3ea1ab6455f235a87e53cd367cb8576011da5de0',
-    relativePath: 'src/routes/auth.ts',
-    sourceSha256: 'a11b6e8398317315f416f7fa6697efcf92a478396e8fe14a6cf330b1b015d1bc',
-    inheritedSha256: 'ee284c1c7226aeb5cc21ffb30bb31efd3d2bc310e65f041d57ab4acc5ea41361',
-    originCommit: '078cf663dab5b446bf77979f800e916f28715c46', // close-ai #3536 head (Trackly Apply (cloud) tools)
-  }),
-  Object.freeze({
-    sourceCommit: 'b5d59e26d59a191c832fd7945d5dc06c25ad5270',
-    mergeCommit: '96781f59f208ef839334a2a71954c9ef1b3d7005',
-    firstParent: '3ea1ab6455f235a87e53cd367cb8576011da5de0',
-    relativePath: 'src/mcp/auto-apply.ts',
-    sourceSha256: null, // absent in the reviewed #3625 head
-    inheritedSha256: '70ddc98d755977267e9fc1c56380b0d518b5b03d77373c5f3cb55f4c2a527e03',
-    originCommit: '078cf663dab5b446bf77979f800e916f28715c46', // close-ai #3536 head (Trackly Apply (cloud) tools)
-  }),
-]);
+// Recaptured from reviewed source 9d495993 (close-ai #3635 head, MCP tool families) and
+// deployed merge 8f7ba68e (deploy run 43001328904, 2026-11-11 3:03 AM PST), which also
+// carries #3631 (one status story) and #3641 through first parent 92c6e576. The #3635
+// head already merged main after #3631, and the first parent changed none of the 51
+// deployable paths, so every one preserves the reviewed bytes; no inherited exception applies.
+const REVIEWED_INHERITED_BASELINE = Object.freeze([]);
 
 function gitPathExists(repository, commit, file) {
   try {
@@ -1164,6 +1101,9 @@ function verifyHostedSnapshotGitProvenance(cliRoot, backendRoot) {
     // refusals and search-flag wording come from this file; the posting-host scope it applies
     // comes from assist-requests.ts and is AST-locked against lib/auto-apply.js below.
     autoApply: 'src/mcp/auto-apply.ts',
+    // close-ai #3619: the one status story and the family registry (titles, tags, sentences).
+    statusStory: 'src/mcp/status-story.ts',
+    toolFamilies: 'src/mcp/tool-families.ts',
   };
   for (const [lockName, relativePath] of Object.entries(lockedSources)) {
     const committedBytes = gitOutput(backendRoot, ['show', `${mergeCommit}:${relativePath}`], null);
@@ -7715,6 +7655,8 @@ function verifyCheckedInHostedContractFixture(
     authRateLimit: lock.publicExecutableContract.authRateLimitSha256,
     applicationProfileService: lock.publicExecutableContract.applicationProfileServiceSha256,
     autoApply: lock.publicExecutableContract.autoApplySha256,
+    statusStory: lock.publicExecutableContract.statusStorySha256,
+    toolFamilies: lock.publicExecutableContract.toolFamiliesSha256,
   }, `${fixturePath} hosted source snapshot drifted from the packaged executable lock`);
   for (const digest of [
     lock.publicExecutableContract.pluginServerSha256,
@@ -7729,6 +7671,8 @@ function verifyCheckedInHostedContractFixture(
     lock.publicExecutableContract.authRateLimitSha256,
     lock.publicExecutableContract.applicationProfileServiceSha256,
     lock.publicExecutableContract.autoApplySha256,
+    lock.publicExecutableContract.statusStorySha256,
+    lock.publicExecutableContract.toolFamiliesSha256,
     ...Object.values(lock.publicExecutableContract.descriptorSha256),
     ...Object.values(lock.publicExecutableContract.handlerSha256),
   ]) assert.match(digest, /^[a-f0-9]{64}$/);
@@ -11101,10 +11045,20 @@ assertPluginManualSubmissionRouteSemantics(
         idempotencyKey: applyIdempotencyKey(req),
       }, applyRunCallerContext(req));
       res.json({ success: true, ...result });
+      // close-ai #3619 (recaptured at 8f7ba68e): after the response, the recorded manual
+      // submission also makes sure the job has its one Tracker entry; it never throws.
+      void ensureTrackerEntriesForSubmittedRuns(pool, userId(req)!, [positiveInteger(req.params.id, 'Apply run id')]);
     } catch (error) {
       sendError(res, error);
     }
   });`,
+);
+assertImportBinding(
+  hostedTracklyApplySource,
+  'ensureTrackerEntriesForSubmittedRuns',
+  'ensureTrackerEntriesForSubmittedRuns',
+  '../services/waypoint/ensure-applied.js',
+  hostedTracklyApplyPath,
 );
 
 const stopRegistration = pluginToolRegistration('trackly_stop_apply');
@@ -11131,6 +11085,24 @@ assertWrappedHandlerAst(
   )`,
   hostedPluginSourcePath,
 );
+
+// close-ai #3619 (KTD11): mcp/tool-families.js must equal close-ai's family
+// registry for every shared tool name, so npm titles and tags cannot drift.
+assert.deepEqual(
+  require('./verify-tool-families').verifyBackendDir(backendRoot),
+  [],
+  'mcp/tool-families.js drifted from close-ai src/mcp/tool-families.ts',
+);
+// The registry comparison covers data only. How close-ai joins the tag, the family sentence
+// and the description, and how it sets title and annotations.title, is locked here, so a change
+// to that composition (which npm mirrors in descriptionPrefix/labelRegisteredTool) fails the gate.
+{
+  const toolFamiliesPath = path.join(backendRoot, 'src', 'mcp', 'tool-families.ts');
+  const toolFamiliesSource = fs.readFileSync(toolFamiliesPath, 'utf8');
+  for (const [name, digest] of Object.entries(HOSTED_TOOL_FAMILY_COMPOSITION_AST_SHA256)) {
+    assertActiveFunctionAstSha256(toolFamiliesSource, name, digest, toolFamiliesPath);
+  }
+}
 
 console.log(
   `Trackly Apply local contract ${local.contractVersion} matches shared hosted contract ${sharedLocal.contractVersion}; the ${hostedPluginTools.length}-tool public plugin facade matches at ${hostedPluginContract.contractVersion}.`,

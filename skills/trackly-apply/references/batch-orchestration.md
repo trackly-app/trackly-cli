@@ -514,7 +514,7 @@ request, success page or `user_confirmation`, and any provider receipt with
 `trackly_record_apply_submission_evidence`; store only the redacted fingerprint
 and typed source. Then use the separate literal `outcome: submitted`. The
 outcome call is not complete until a fresh batch read shows member lifecycle
-`submitted` and tracker state `applied_confirmed`.
+`submitted` and tracker state `applied_confirmed`. A submitted receipt also records the job on the user's Trackly Tracker board, so never create a Tracker entry for it separately.
 Preserve the success tab during one documented idempotent conflict recovery;
 if reconciliation remains unsuccessful, report the control-plane defect and
 do not claim completion. Only then reconcile tab closure separately using the

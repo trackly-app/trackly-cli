@@ -1,6 +1,6 @@
 # ChatGPT listing kit: trackly-openai 1.0.9
 
-This kit is the portal companion for the ChatGPT app package `trackly-openai` 1.0.9. The package itself lives in close-ai at `docs/openai/trackly-openai-1.0.9/` (18 files, hashes in `docs/openai/trackly-openai-1.0.9.sha256`) and was first deployed with close-ai #3604 (merge `6a5b05f5`, 2026-11-10 00:46 PST). [`metadata.json`](metadata.json) and [`tools.json`](tools.json) are pinned to the current production deploy `96781f59` (deployed 2026-11-10 10:18 PM PST, after close-ai #3536 added Trackly Apply (cloud)): the 40-tool catalog is captured from its `openai-tools-list.json` golden and directory registry, and the package checksum manifest is unchanged.
+This kit is the portal companion for the ChatGPT app package `trackly-openai` 1.0.9. The package itself lives in close-ai at `docs/openai/trackly-openai-1.0.9/` (18 files, hashes in `docs/openai/trackly-openai-1.0.9.sha256`) and was first deployed with close-ai #3604 (merge `6a5b05f5`, 2026-11-10 00:46 PST). [`metadata.json`](metadata.json) and [`tools.json`](tools.json) are pinned to the current production deploy `8f7ba68e` (deployed 2026-11-11 3:03 AM PST, after close-ai #3635 (#3619) family titles and tags, #3631 one status story and #3536 Trackly Apply (cloud)): the 40-tool catalog is captured from its `openai-tools-list.json` golden and directory registry. The package checksum manifest moved with #3635, which relabeled the 1.0.9 skills and release notes.
 
 This is not the classic Codex plugin in `plugins/trackly/` (23 tools on `/api/plugin/trackly/mcp`). The ChatGPT app uses its own endpoint:
 
@@ -13,27 +13,27 @@ This is not the classic Codex plugin in `plugins/trackly/` (23 tools on `/api/pl
 3. Wait until every new tool below is approved. Paste the justification column when the portal asks.
 4. Upload the 1.0.9 package ZIP as an update to the same record and submit it for review. Submission and publication each need Kevin's separate approval, as `RELEASE-GATES.md` requires.
 
-The 27 existing tool schemas and annotations are unchanged from 1.0.8, so 1.0.8 skills keep working until 1.0.9 is approved. Two existing descriptions changed after PR1: close-ai #3544 added match-score status and lower-bound count wording to `trackly_search_jobs` and `trackly_get_job`. close-ai #3536 then appended the Trackly Apply (cloud) `autoApplySupported` sentence to the `trackly_search_jobs` description and added the two Trackly Apply (cloud) tools. The Rescan will show those description edits next to the thirteen new tools.
+The 27 existing tool schemas and annotations are unchanged from 1.0.8, so 1.0.8 skills keep working until 1.0.9 is approved. Two existing descriptions changed after PR1: close-ai #3544 added match-score status and lower-bound count wording to `trackly_search_jobs` and `trackly_get_job`. close-ai #3536 then appended the Trackly Apply (cloud) `autoApplySupported` sentence to the `trackly_search_jobs` description and added the two Trackly Apply (cloud) tools. The Rescan will show those description edits next to the thirteen new tools. Close-ai #3619 then gave every tool a family title (`<Family> · <Action>`, for example "Tracker · Move stage") and a description that starts with the family tag (for example `[Tracker]`; Apply protocol steps use "Apply step · <Action>" and `[Trackly Apply · protocol step]`), and rewrote the `trackly_update_status` and Tracker descriptions so recording applied also records the job on the Tracker. The Rescan shows those title and description edits on every tool; no tool name, schema, annotation hint or scope changed.
 
 ## New tools
 
 `openWorldHint` is false for every tool: each calls only Trackly's own API for the signed-in account.
 
-| Tool | Read only | Destructive | Scopes | Justification |
-| --- | --- | --- | --- | --- |
-| `trackly_get_application_profile` | true | false | `profile:read` (`sensitive:read` with `includeSensitive`) | Reads the user's saved application answers. Equal-opportunity and identity-document answers report only answered, declined or blank. |
-| `trackly_get_profile_onboarding` | true | false | `profile:read` | Reads which profile requirements are still missing and the profile revision. |
-| `trackly_list_companies` | true | false | `jobs:read` | Lists the companies Trackly monitors, one page at a time. |
-| `trackly_request_company` | false | false | `jobs:read`, `tracking:write` | Records a request for Trackly to review a company for monitoring. Deletes nothing. |
-| `trackly_update_experience_limits` | false | true | `tracking:write` | Replaces the user's saved years-of-experience limits at an expected revision. |
-| `trackly_get_apply_queue` | true | false | `apply:read` | Lists the jobs the user saved to check later. |
-| `trackly_list_tracker_applications` | true | false | `tracking:read` | Lists the user's Tracker board entries. Contact names and emails are never returned. |
-| `trackly_create_tracker_application` | false | true | `tracking:write`, `apply:write` | Adds a job the user confirms applying to as a Tracker entry; requires `explicitUserConfirmed: true`. |
-| `trackly_update_tracker_stage` | false | true | `tracking:write` | Moves one Tracker entry to a new stage, with history and undo. |
-| `trackly_add_tracker_note` | false | false | `tracking:write` | Adds a dated note to one Tracker entry without changing its stage. |
-| `trackly_retract_tracker_event` | false | true | `tracking:write` | Undoes one Tracker event; it stays in history marked as retracted. |
-| `trackly_auto_apply` | false | true | `apply:write` | Trackly Apply (cloud): queues a request for Trackly to apply to one job the user explicitly asked Trackly to apply to. Destructive because it leads to a real application. Nothing runs on the user's computer. |
-| `trackly_auto_apply_status` | true | false | `apply:read` | Lists the user's Trackly Apply (cloud) requests and their status. |
+| Tool | Title | Read only | Destructive | Scopes | Justification |
+| --- | --- | --- | --- | --- | --- |
+| `trackly_get_application_profile` | Profile · Get | true | false | `profile:read` (`sensitive:read` with `includeSensitive`) | Reads the user's saved application answers. Equal-opportunity and identity-document answers report only answered, declined or blank. |
+| `trackly_get_profile_onboarding` | Profile · Get setup status | true | false | `profile:read` | Reads which profile requirements are still missing and the profile revision. |
+| `trackly_list_companies` | Companies · List tracked | true | false | `jobs:read` | Lists the companies Trackly monitors, one page at a time. |
+| `trackly_request_company` | Companies · Request monitoring | false | false | `jobs:read`, `tracking:write` | Records a request for Trackly to review a company for monitoring. Deletes nothing. |
+| `trackly_update_experience_limits` | Preferences · Set experience limits | false | true | `tracking:write` | Replaces the user's saved years-of-experience limits at an expected revision. |
+| `trackly_get_apply_queue` | Trackly Apply (local) · Get queue | true | false | `apply:read` | Lists the jobs the user saved to check later. |
+| `trackly_list_tracker_applications` | Tracker · List entries | true | false | `tracking:read` | Lists the user's Tracker board entries. Contact names and emails are never returned. |
+| `trackly_create_tracker_application` | Tracker · Add a job | false | true | `tracking:write`, `apply:write` | Adds a job the user confirms applying to as a Tracker entry; requires `explicitUserConfirmed: true`. |
+| `trackly_update_tracker_stage` | Tracker · Move stage | false | true | `tracking:write` | Moves one Tracker entry to a new stage, with history and undo. |
+| `trackly_add_tracker_note` | Tracker · Add note | false | false | `tracking:write` | Adds a dated note to one Tracker entry without changing its stage. |
+| `trackly_retract_tracker_event` | Tracker · Undo an event | false | true | `tracking:write` | Undoes one Tracker event; it stays in history marked as retracted. |
+| `trackly_auto_apply` | Trackly Apply (cloud) · Request | false | true | `apply:write` | Trackly Apply (cloud): queues a request for Trackly to apply to one job the user explicitly asked Trackly to apply to. Destructive because it leads to a real application. Nothing runs on the user's computer. |
+| `trackly_auto_apply_status` | Trackly Apply (cloud) · Check requests | true | false | `apply:read` | Lists the user's Trackly Apply (cloud) requests and their status. |
 
 ## New review cases
 

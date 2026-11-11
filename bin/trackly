@@ -883,6 +883,41 @@ const ACTION_TO_COMMAND = { applied: 'mark-applied', saved: 'save', dismissed: '
 // endpoint is what production actually serves (and what hosted MCP uses).
 const ACTION_TO_STAGE = { applied: 'applied', saved: 'backlog', dismissed: 'discarded' };
 
+/**
+ * What recording applied did to the Tracker board (close-ai #3619). The backend returns a typed
+ * trackerEntry outcome; older backends omit it. Only fixed text is printed, never server strings.
+ * The status is saved either way, so a failed Tracker step is a warning, not a failed command.
+ */
+// A lookup table, not a switch: the docs-drift check reads every `case` label in this file as a command.
+const TRACKER_ENTRY_LINES = Object.freeze({
+  created: { text: 'Added to your Tracker board.' },
+  linked: { text: 'Linked to the matching card on your Tracker board.' },
+  moved: { text: 'Moved its Tracker card to applied.' },
+  failed: { warn: true, text: 'The Tracker board was not updated. Run the same command again; it is safe to repeat.' },
+});
+const TRACKER_ENTRY_SWITCHED_OFF = Object.freeze({ warn: true, text: 'The Tracker board was not updated (it is switched off).' });
+const TRACKER_ENTRY_NOT_UPDATED = Object.freeze({ warn: true, text: 'The Tracker board was not updated.' });
+const TRACKER_ENTRY_AMBIGUOUS = Object.freeze({
+  warn: true, text: 'More than one Tracker card matches this job, so the board was not changed.',
+});
+const TRACKER_ENTRY_LATER_EVENT = Object.freeze({
+  warn: true, text: 'A later event on its Tracker card still decides the card\'s stage, so the card does not show applied.',
+});
+
+/** Keyed on close-ai's typed trackerEntry state and reason codes (#3619 R9); unknown values print nothing. */
+function trackerEntryLine(entry) {
+  const state = entry?.state;
+  const reason = entry?.reason;
+  if (state === 'skipped') {
+    return reason === 'tracker_unavailable' || reason === 'surface_disabled' ? TRACKER_ENTRY_SWITCHED_OFF : TRACKER_ENTRY_NOT_UPDATED;
+  }
+  if (state === 'failed') return TRACKER_ENTRY_LINES.failed;
+  // close-ai ensure-applied.ts sets stage_not_current on created, linked, moved or existing alike.
+  if (reason === 'stage_not_current') return TRACKER_ENTRY_LATER_EVENT;
+  if (state === 'existing') return reason === 'ambiguous' ? TRACKER_ENTRY_AMBIGUOUS : null;
+  return typeof state === 'string' && Object.hasOwn(TRACKER_ENTRY_LINES, state) ? TRACKER_ENTRY_LINES[state] : null;
+}
+
 async function cmdUpdateStatus(id, action, command = ACTION_TO_COMMAND[action] || action, hint = null) {
   const jobId = parseJobId(id);
   if (jobId === null) failNow(`Job ID must be a positive integer. Usage: trackly ${command} <id>`);
@@ -901,6 +936,8 @@ async function cmdUpdateStatus(id, action, command = ACTION_TO_COMMAND[action] |
     const result = await apiRequest('POST', `/api/jobscout/tracker/jobs/${jobId}/stage`, { stage });
     if (isJSON()) return printJson(result);
     console.log(color('green', `Job ${jobId} marked as ${STATUS_LABELS[action]}.`));
+    const trackerLine = trackerEntryLine(result?.trackerEntry);
+    if (trackerLine) (trackerLine.warn ? console.error : console.log)(color(trackerLine.warn ? 'yellow' : 'dim', trackerLine.text));
     if (hint) console.error(color('dim', hint));
   } catch (e) {
     setApiErrorExit(e, `Failed to ${action} job`);
@@ -914,7 +951,7 @@ async function cmdUpdateStatus(id, action, command = ACTION_TO_COMMAND[action] |
 const APPLY_GUIDE = Object.freeze({
   tracklyApply: 'Trackly Apply (local): your own AI agent (Claude in Chrome, Codex or computer use) fills the application in your browser on your computer and stops before Submit; you submit. Set it up with `trackly agent setup`.',
   cloudAutoApply: 'Trackly Apply (cloud): you only request it with `trackly auto-apply <jobId>`; Trackly applies for you and nothing runs on your computer.',
-  markApplied: 'Mark applied: you applied on your own; record it with `trackly mark-applied <jobId>` (`trackly apply <jobId>` does the same).',
+  markApplied: 'Mark applied: you applied on your own; record it with `trackly mark-applied <jobId>` (`trackly apply <jobId>` does the same). It also puts the job on your Tracker board.',
 });
 
 const AUTO_APPLY_HELP = `${color('bold', 'trackly auto-apply')}: Trackly Apply (cloud)
@@ -1473,7 +1510,7 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'config')}               Show or update CLI config (--api-key, --base-url)
   ${color('cyan', 'version')}              Show CLI version
   ${color('cyan', 'mcp')}                  Start MCP server
-  ${color('cyan', 'agent setup')}          Install Trackly Apply (--client codex|claude|both; --skills-only preserves MCP)
+  ${color('cyan', 'agent setup')}          Install Trackly Apply (local) (--client codex|claude|both; --skills-only preserves MCP)
   ${color('cyan', 'agent doctor')}         Verify auth, MCP, skill, profile, resume, and compatibility
   ${color('cyan', 'agent evidence')}       Show value-free beta evidence (--window-days, --target-reviewed-runs)
   ${color('cyan', 'agent diagnose-path')}  Diagnose one exact local filesystem path (--errno optional)

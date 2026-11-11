@@ -5,9 +5,9 @@ description: Help users finish Trackly Apply (local) setup, resolve missing prof
 
 # Trackly Apply (local) for Claude
 
-Claude skill 1.0.1, adapted from the ChatGPT Trackly Apply (local) skill 4.9.4 for the Claude directory connector (`https://mcp.usetrackly.app/api/plugin/trackly/claude/mcp`). It requires Apply contract 3.9.3 or newer.
+Claude skill 1.0.2, adapted from the ChatGPT Trackly Apply (local) skill 4.9.5 for the Claude directory connector (`https://mcp.usetrackly.app/api/plugin/trackly/claude/mcp`). It requires Apply contract 3.9.3 or newer.
 
-This skill is Trackly Apply (local): Claude fills the application in the user's own browser and stops before Submit, and the user submits. Trackly Apply (cloud), where Trackly applies for the user, is not offered through the Claude connector. If the user asks Trackly to apply for them, say so and offer Trackly Apply (local) here, or recording an application they made themselves on the Tracker.
+This skill is Trackly Apply (local): Claude fills the application in the user's own browser and stops before Submit, and the user submits. Trackly Apply (cloud), where Trackly applies for the user, is not offered through the Claude connector. If the user asks Trackly to apply for them, say so and offer Trackly Apply (local) here, or recording an application they made themselves on the Tracker. Tools titled "Apply step · ..." are the steps of a run this skill calls with IDs from earlier steps.
 
 Use Trackly as the source of truth for approved work, saved application answers and durable application progress. Before selecting, probing or changing an employer form, read [operational checkpoints](references/operational-checkpoints.md), [access probe](references/access-probe.md), [lifecycle contract](references/lifecycle-contract.md), [browser safety](references/browser-safety.md), [Claude in Chrome](references/claude-in-chrome.md) and [review handoff](references/review-handoff.md). Read and run [answer resolution](references/answer-resolution.md) before building an employer-form question packet or filling controls. Read [application writing](references/application-writing.md) before drafting free text.
 
@@ -94,7 +94,7 @@ Follow [review handoff](references/review-handoff.md).
 5. After every certification or reconciliation, call `trackly_get_apply_progress` and obey the returned state.
 6. When the user asks to stop, call `trackly_stop_apply` with the current `executionId` and `revision`, verify the stopped state and stop filling.
 
-After a reconciled submission, the job is recorded as applied. To add the application to the user's Tracker board, ask first, then use `trackly_create_tracker_application` with `explicitUserConfirmed: true`; it returns the existing entry with `created: false` when one exists.
+After a reconciled submission, the job is recorded as applied, and Trackly also records it on the user's Tracker board: it creates the job's one entry or moves a saved or contacted entry to applied. Never create a Tracker entry for it with `trackly_create_tracker_application`. Later outcomes, such as an interview or a rejection, go to `trackly_update_tracker_stage`, and a pause to `trackly_add_tracker_note`.
 
 ## Failure behavior
 

@@ -7,9 +7,10 @@ const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
 const { createServer } = require('../mcp/server');
 const { AUTO_APPLY_DESCRIPTION, AUTO_APPLY_SEARCH_FIELD_DESCRIPTION } = require('../lib/auto-apply');
+const { plainDescription } = require('../mcp/tool-families');
 const { createTempConfigDir, startMockServer, withEnv } = require('./helpers');
 
-test('the published MCP catalog lists both Trackly Apply (cloud) tools and keeps the hosted update_status text', async () => {
+test('the published MCP catalog lists both Trackly Apply (cloud) tools and the one status story for update_status', async () => {
   const server = createServer();
   const client = new Client({ name: 'held-auto-apply-test', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -18,23 +19,25 @@ test('the published MCP catalog lists both Trackly Apply (cloud) tools and keeps
   try {
     const { tools } = await client.listTools();
     const byName = Object.fromEntries(tools.map(tool => [tool.name, tool]));
-    assert.equal(byName.trackly_update_status.description,
-      'Update a job application status (apply, save, or dismiss).');
+    const updateStatus = byName.trackly_update_status;
+    assert.equal(updateStatus.title, 'Job status · Mark applied, saved or dismissed');
+    assert.match(updateStatus.description, /^\[Job status\] Record a job's status on the user's job list: applied, saved or dismissed\. Applied is for an application the user submitted themselves\. It also records the job on the Tracker/);
     // The description names Trackly Apply (local) and Trackly Apply (cloud) side by side.
-    const description = byName.trackly_auto_apply.description;
+    const description = plainDescription('trackly_auto_apply', byName.trackly_auto_apply.description);
+    assert.match(byName.trackly_auto_apply.description, /^\[Trackly Apply \(cloud\)\] Trackly applies for you; nothing runs on your computer\. /);
     assert.equal(description, AUTO_APPLY_DESCRIPTION);
     assert.match(description, /^Requests Trackly Apply \(cloud\) for one Trackly job: Trackly applies to the employer for the user/);
     assert.match(description, /every saved application profile answer, sensitive ones included/);
     assert.match(description, /Nothing runs on the user's computer/);
     assert.match(description, /Trackly Apply \(local\), where the user's own AI agent fills the application in the user's browser and stops before Submit/);
-    assert.match(description, /trackly_update_status with action=applied, which only records an application the user made themselves/);
     assert.match(description, /trackly_auto_apply_status reports progress later/);
     assert.doesNotMatch(description, /upgrade|\$|price|subscribe|purchase/i);
-    assert.match(byName.trackly_auto_apply_status.description, /^Lists the user's Trackly Apply \(cloud\) requests/);
+    assert.match(plainDescription('trackly_auto_apply_status', byName.trackly_auto_apply_status.description), /^Lists the user's Trackly Apply \(cloud\) requests/);
     assert.ok(byName.trackly_search_jobs.description.endsWith(` ${AUTO_APPLY_SEARCH_FIELD_DESCRIPTION}`));
     assert.ok(!tools.some(tool => /cloud auto-apply/i.test(tool.description)));
     assert.deepEqual(byName.trackly_auto_apply_status.annotations,
-      { title: 'Get Trackly Apply (cloud) requests', readOnlyHint: true, openWorldHint: false });
+      { title: 'Trackly Apply (cloud) · Check requests', readOnlyHint: true, openWorldHint: false });
+    assert.equal(byName.trackly_auto_apply_status.title, 'Trackly Apply (cloud) · Check requests');
     assert.deepEqual(Object.keys(byName.trackly_auto_apply_status.inputSchema.properties), ['jobIds']);
     assert.equal(byName.trackly_auto_apply_status.inputSchema.required, undefined);
     assert.equal(byName.trackly_auto_apply_status.inputSchema.additionalProperties, false);
@@ -71,8 +74,9 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
       const { tools } = await client.listTools();
       const tool = tools.find(value => value.name === 'trackly_auto_apply');
       assert.ok(tool);
-      assert.deepEqual(tool.annotations, { title: 'Trackly Apply (cloud): apply to a job',
+      assert.deepEqual(tool.annotations, { title: 'Trackly Apply (cloud) · Request',
         readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false });
+      assert.equal(tool.title, 'Trackly Apply (cloud) · Request');
       assert.deepEqual(Object.keys(tool.inputSchema.properties), ['jobId']);
       assert.deepEqual(tool.inputSchema.required, ['jobId']);
       assert.equal(tool.inputSchema.additionalProperties, false);

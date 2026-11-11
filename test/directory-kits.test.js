@@ -113,7 +113,12 @@ test('plugin and kit checks reject a wrong connector, count drift and table drif
     [path.join(CLAUDE_PLUGIN, '.mcp.json'), (text) => text.replace('/claude/mcp', '/openai/mcp'), /exactly the Trackly Claude connector/],
     [path.join(CLAUDE_PLUGIN, '.claude-plugin', 'plugin.json'), (text) => text.replace('"./.mcp.json"', '"./other.json"'), /load \.\/\.mcp\.json/],
     [path.join(LISTING, 'claude', 'metadata.json'), (text) => text.replace('"allUsers": 21', '"allUsers": 20'), /allUsers count/],
-    [path.join(LISTING, 'claude', 'README.md'), (text) => text.replace('| `trackly_stop_apply` | Stop Trackly Apply | destructive |', '| `trackly_stop_apply` | Stop Trackly Apply | non-destructive |'), /annotation is wrong for trackly_stop_apply/],
+    [path.join(LISTING, 'claude', 'README.md'), (text) => text.replace('| `trackly_stop_apply` | Trackly Apply (local) · Stop | destructive |', '| `trackly_stop_apply` | Trackly Apply (local) · Stop | non-destructive |'), /annotation is wrong for trackly_stop_apply/],
+    // Titles come from the family registry (mcp/tool-families.js); a kit title that drifts fails.
+    [path.join(LISTING, 'claude', 'README.md'), (text) => text.replace('| `trackly_stop_apply` | Trackly Apply (local) · Stop |', '| `trackly_stop_apply` | Stop Trackly Apply |'), /Claude kit README title is wrong for trackly_stop_apply/],
+    [path.join(LISTING, 'claude', 'tools.json'), (text) => text.replace('"title": "Tracker · Move stage"', '"title": "Move a Tracker entry"'), /claude tools\.json title for trackly_update_tracker_stage must be the registry title/],
+    [path.join(LISTING, 'openai', 'tools.json'), (text) => text.replace('"title": "Jobs · Search"', '"title": "Search jobs with trackly"'), /openai tools\.json title for trackly_search_jobs must be the registry title/],
+    [path.join(LISTING, 'openai', 'README.md'), (text) => text.replace('| `trackly_add_tracker_note` | Tracker · Add note |', '| `trackly_add_tracker_note` | Add a Tracker note |'), /OpenAI kit README title is wrong for trackly_add_tracker_note/],
     [path.join(LISTING, 'openai', 'metadata.json'), (text) => text.replace('"packageVersion": "1.0.9"', '"packageVersion": "1.0.8"'), /package 1\.0\.9/],
     [path.join(LISTING, 'openai', 'README.md'), (text) => text.replace(/\| `trackly_add_tracker_note` \|.*\n/, ''), /one justification row per new tool/],
     // A hosted-contract recapture without a catalog recapture leaves the kits stale.

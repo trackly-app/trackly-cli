@@ -128,6 +128,8 @@ the private backend plugin registry. `plugin-server.test.ts` locks every row
 below, so a change to any hint fails CI. Paste these one-line justifications
 into the portal.
 
+Since plugin 1.1.6 (close-ai #3619) the classic surface carries the same family titles and description tags as every other Trackly surface: the Title column is the one title each tool name has everywhere (`mcp/tool-families.js`), and each description starts with its family tag, for example `[Job status]`, ahead of the existing `Requires trackly Apply (apply:* scopes).` sentence on Apply tools. Names, schemas, annotation hints and scopes are unchanged.
+
 `openWorldHint` is false for all 23 tools. Every tool calls only Trackly's own
 API, scoped to the signed-in account. The Apply services have no outbound
 network client and never fetch employer sites. Stored postings are served
@@ -137,39 +139,39 @@ Submit. Trackly Apply (cloud) (`trackly_auto_apply`, contract 1.1.0) only queues
 a request for one job the user explicitly asked Trackly to apply to; Trackly
 submits it later, outside the call and outside the host browser.
 
-| Tool | Read only | Destructive | Justification |
-| --- | --- | --- | --- |
-| `trackly_search_jobs` | true | false | Searches Trackly's stored job index for this account. Writes nothing. |
-| `trackly_get_job` | true | false | Reads one stored posting. No live employer-site fetch. |
-| `trackly_search_companies` | true | false | Searches Trackly's monitored-company list. |
-| `trackly_get_job_brief` | true | false | Reads a precomputed role and company summary. |
-| `trackly_get_preferences` | true | false | Reads the user's saved discovery preferences. |
-| `trackly_get_apply_readiness` | true | false | Makes five parallel GETs for profile, schema, queue, protocol and execution state. |
-| `trackly_lint_application_text` | true | false | Computes in memory only. Text is neither stored nor echoed. |
-| `trackly_list_apply_access_deferments` | true | false | Lists the account's active deferments. |
-| `trackly_prepare_resume_artifact` | true | false | Reads the original saved resume and issues a private expiring preview; never attaches or submits. |
-| `trackly_update_status` | false | false | Sets a tracker stage (saved, dismissed or applied). The same tool reverses it. |
-| `trackly_auto_apply` | false | true | Trackly Apply (cloud): queues a request for Trackly to apply to one job the user explicitly asked for. Destructive because it leads to a real application. |
-| `trackly_auto_apply_status` | true | false | Lists the user's Trackly Apply (cloud) requests and their status. |
-| `trackly_save_application_answers` | false | true | Overwrites saved profile answers. The education list is a confirmed replace-all. |
-| `trackly_grant_sensitive_storage_consent` | false | false | Records consent only. Adds no answers and can be revoked. |
-| `trackly_revoke_sensitive_storage_consent` | false | true | Revokes consent and deletes stored sensitive answers. |
-| `trackly_defer_apply_access` | false | false | Inserts an owner-scoped deferment that keeps Apply off that job, company or provider until `trackly_clear_apply_access_deferment` clears it (it has no expiry). Nothing is deleted. |
-| `trackly_clear_apply_access_deferment` | false | false | Soft-clears one deferment (`cleared_at`), which can be re-deferred. |
-| `trackly_start_or_resume_apply` | false | false | Creates or resumes a no-submit Apply execution and claims its batch lease. |
-| `trackly_get_apply_work` | false | false | Not read-only, because each call claims or renews the private batch lease. |
-| `trackly_report_apply_progress` | false | false | Records exact-document approval, value-free observations and dispositions, or advances the execution to its next wave. Advancing only queues new no-submit work and never deletes or overwrites user data. |
-| `trackly_certify_review_ready` | false | false | Records a review-ready checkpoint. Never submits. |
-| `trackly_reconcile_manual_submission` | false | false | Records a submission the user made themselves. Never submits forms. |
-| `trackly_stop_apply` | false | true | Moves the execution to a terminal stopped state. Continuing requires a new execution. |
+| Tool | Title | Read only | Destructive | Justification |
+| --- | --- | --- | --- | --- |
+| `trackly_search_jobs` | Jobs · Search | true | false | Searches Trackly's stored job index for this account. Writes nothing. |
+| `trackly_get_job` | Jobs · Get details | true | false | Reads one stored posting. No live employer-site fetch. |
+| `trackly_search_companies` | Companies · Search | true | false | Searches Trackly's monitored-company list. |
+| `trackly_get_job_brief` | Network · Get job brief | true | false | Reads a precomputed role and company summary. |
+| `trackly_get_preferences` | Preferences · Get | true | false | Reads the user's saved discovery preferences. |
+| `trackly_get_apply_readiness` | Trackly Apply (local) · Check readiness | true | false | Makes five parallel GETs for profile, schema, queue, protocol and execution state. |
+| `trackly_lint_application_text` | Profile · Check answer text | true | false | Computes in memory only. Text is neither stored nor echoed. |
+| `trackly_list_apply_access_deferments` | Trackly Apply (local) · List deferments | true | false | Lists the account's active deferments. |
+| `trackly_prepare_resume_artifact` | Trackly Apply (local) · Preview resume | true | false | Reads the original saved resume and issues a private expiring preview; never attaches or submits. |
+| `trackly_update_status` | Job status · Mark applied, saved or dismissed | false | false | Sets a job-list status (saved, dismissed or applied); applied also records the job on the user's Tracker board. The same tool reverses the job-list status. |
+| `trackly_auto_apply` | Trackly Apply (cloud) · Request | false | true | Trackly Apply (cloud): queues a request for Trackly to apply to one job the user explicitly asked for. Destructive because it leads to a real application. |
+| `trackly_auto_apply_status` | Trackly Apply (cloud) · Check requests | true | false | Lists the user's Trackly Apply (cloud) requests and their status. |
+| `trackly_save_application_answers` | Profile · Save answers | false | true | Overwrites saved profile answers. The education list is a confirmed replace-all. |
+| `trackly_grant_sensitive_storage_consent` | Profile · Allow sensitive-answer storage | false | false | Records consent only. Adds no answers and can be revoked. |
+| `trackly_revoke_sensitive_storage_consent` | Profile · Revoke sensitive-answer storage | false | true | Revokes consent and deletes stored sensitive answers. |
+| `trackly_defer_apply_access` | Trackly Apply (local) · Defer a job, company or provider | false | false | Inserts an owner-scoped deferment that keeps Apply off that job, company or provider until `trackly_clear_apply_access_deferment` clears it (it has no expiry). Nothing is deleted. |
+| `trackly_clear_apply_access_deferment` | Trackly Apply (local) · Clear a deferment | false | false | Soft-clears one deferment (`cleared_at`), which can be re-deferred. |
+| `trackly_start_or_resume_apply` | Trackly Apply (local) · Start or resume | false | false | Creates or resumes a no-submit Apply execution and claims its batch lease. |
+| `trackly_get_apply_work` | Apply step · Get current work | false | false | Not read-only, because each call claims or renews the private batch lease. |
+| `trackly_report_apply_progress` | Apply step · Report progress | false | false | Records exact-document approval, value-free observations and dispositions, or advances the execution to its next wave. Advancing only queues new no-submit work and never deletes or overwrites user data. |
+| `trackly_certify_review_ready` | Apply step · Mark ready for review | false | false | Records a review-ready checkpoint. Never submits. |
+| `trackly_reconcile_manual_submission` | Apply step · Record a manual submission | false | false | Records a submission the user made themselves. Never submits forms. |
+| `trackly_stop_apply` | Trackly Apply (local) · Stop | false | true | Moves the execution to a terminal stopped state. Continuing requires a new execution. |
 
 The fixture-pinned `mutationAnnotationContract` in
 `scripts/verify-hosted-contract.js` mirrors the runtime pinned in
 `hosted-contract-fixture.json`. The fixture is recaptured from the deployed
-close-ai merge `96781f59f208ef839334a2a71954c9ef1b3d7005` (close-ai #3625, the
-production deploy after the close-ai #3536 Trackly Apply (cloud) merge `3ea1ab6455f235a87e53cd367cb8576011da5de0`;
-its nine #3536 paths are inherited from that first parent and the reviewed #3536 head `078cf663dab5b446bf77979f800e916f28715c46`;
-it was `5d443853272518bcc0f0b673e29d03d9f45715d5` from close-ai #3544 after the #3604 directory-parity merge,
+close-ai merge `8f7ba68e73280afec40fd5d674a6f2bb774bfa06` (close-ai #3635, MCP tool families, deployed
+2026-11-11 3:03 AM PST with #3631 one status story; no inherited paths;
+it was `96781f59f208ef839334a2a71954c9ef1b3d7005` from close-ai #3625 after the #3536 Trackly Apply (cloud) merge,
+`5d443853272518bcc0f0b673e29d03d9f45715d5` from close-ai #3544 after the #3604 directory-parity merge,
 `6cd11dfb1c5b59dbb11b325c3a4f68a1a3fc8b23` from close-ai #3603,
 `7c7032c87d97b3270681281ff33fa3d8887259c9` from close-ai #3433,
 `71e7f9bfa73df85bbd483ee07712a38d386b79a1`, `6be6d4d2105f7de7f491c7b55bfdf00057d193f4`

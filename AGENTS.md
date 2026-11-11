@@ -38,6 +38,7 @@ lib/formatters.js    # Terminal output: color(), outputJobs(), outputCompanies()
 mcp/server.js        # MCP server entrypoint and search/network tools, launched via `trackly mcp`
 mcp/apply-tools.js   # Trackly Apply MCP schemas, validators, and tool registration
 mcp/cloud-auto-apply.js # Trackly Apply (cloud) MCP schemas and handlers (trackly_auto_apply, trackly_auto_apply_status), mirrored from the hosted MCP
+mcp/tool-families.js # Tool family registry (titles and description tags), mirrored from close-ai src/mcp/tool-families.ts
 mcp/tracker-tools.js # Tracker (Waypoint) MCP tool schemas and handlers, mirrored from the hosted MCP
 mcp/waypoint-reducer.js # Port of the backend Tracker reducer that decides an entry's current stage
 contracts/           # Versioned hosted/local Trackly Apply MCP schema contract
