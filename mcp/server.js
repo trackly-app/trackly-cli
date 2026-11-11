@@ -12,6 +12,15 @@ const { configureMcpAnalytics, shutdownMcpAnalytics } = require('./analytics');
 const { normalizeJobResult, unavailableJobFromError, jobFailureGuidance } = require('../lib/job-result');
 const { planRefusalMessage, planRefusalFields } = require('../lib/formatters');
 const { validateAssistResponse, autoApplyUnavailableError, autoApplyRequestError } = require('../lib/auto-apply');
+const {
+  TrackerToolError,
+  createTrackerToolHandlers,
+  trackerCreateShape,
+  trackerListShape,
+  trackerNoteShape,
+  trackerRetractShape,
+  trackerStageShape,
+} = require('./tracker-tools');
 
 const MCP_USER_AGENT = `trackly-mcp/${PACKAGE_VERSION}`;
 const MCP_SHUTDOWN_TIMEOUT_MS = 2_000;
@@ -23,6 +32,19 @@ const AUTH_HINT =
   'New members need a private invite during the limited rollout; request access at https://usetrackly.app/early-access.';
 const MCP_ANALYTICS_CONTEXT_DESCRIPTION =
   'Briefly explain why this tool helps the current job-search goal. Never include resume text, profile answers, demographic or work-authorization answers, application notes, credentials, or secrets.';
+
+// The only keys trackly_ask copies from the job page it follows. Everything else
+// in that response stays out of the payload: the ask result owns its own
+// envelope and parse fields (success, query, parsedFilters), and the handler owns
+// the guard fields (jobsUrl, jobsUrlRefused). Keep this list in sync with the
+// count metadata documented in docs/trackly-tools.md.
+const ASK_PAGE_METADATA_KEYS = [
+  'total', 'totalIsLowerBound', 'countStatus', 'countGuidance', 'hasMore', 'pagination', 'recencyStats',
+];
+// Fixed text, never derived from the page body, so an unreadable response cannot
+// put its own content into the agent's context through the error path either.
+const INVALID_JOBS_RESPONSE_ERROR =
+  'Trackly returned an unreadable job page for this search. The search did not complete; retry it, or use trackly_search_jobs with structured filters.';
 
 // Mirrors `granola-followup-app/src/services/region-classifier.ts:8` REGION_TAGS.
 // Keep in sync when the backend enum changes.
@@ -106,6 +128,13 @@ const APPLY_BATCH_CONFLICT_CODES = new Set(
 );
 
 function createErrorResult(error, fallbackMessage, extra = {}) {
+  if (error instanceof TrackerToolError) {
+    // Tracker tools build their whole error body from fixed strings and IDs.
+    return {
+      content: [{ type: 'text', text: JSON.stringify(error.payload, null, 2) }],
+      isError: true,
+    };
+  }
   const normalizedMaintenance = maintenanceOutput(error);
   const normalizedAccess = createTracklyAccessError(error, error?.status);
   const payload = normalizedMaintenance
@@ -149,6 +178,7 @@ function createErrorResult(error, fallbackMessage, extra = {}) {
     || error?.code === 'sensitive_revocation_confirmation_required'
     || error?.code === 'invalid_profile_revision'
     || error?.code === 'invalid_profile_response'
+    || error?.code === 'invalid_jobs_response'
   ) {
     payload.code = error.code;
   }
@@ -309,7 +339,7 @@ function createServer() {
 
   server.registerTool(
     'trackly_search_jobs',
-    { description: 'Search and filter job postings. Returns one matching page with title, company, location, structured fields and backend pagination. Use jobFunctions for multiple roles, region for multiple regions, and usStates/caProvinces for geographic detail. Work arrangement is independent from geography and employment type. Unknown sponsorship and non-comparable salary data stay visible with exclude_no and salaryFloorUsd. Never invent industry, specialization, exclusion or literal-search controls; ask when sponsorship intent is ambiguous. If the total is unavailable, returned matching jobs remain valid. Explain countGuidance and use hasMore/pagination; do not retry just for totals.',
+    { description: 'Search and filter job postings. Returns one matching page with title, company, location, structured fields and backend pagination. Use jobFunctions for multiple roles, region for multiple regions, and usStates/caProvinces for geographic detail. Work arrangement is independent from geography and employment type. Unknown sponsorship and non-comparable salary data stay visible with exclude_no and salaryFloorUsd. Never invent industry, specialization, exclusion or literal-search controls; ask when sponsorship intent is ambiguous. A numeric total with totalIsLowerBound=true (also in pagination) is only a lower bound. If the total is unavailable, returned matching jobs remain valid. Explain countGuidance and use hasMore/pagination; do not retry just for totals. matchScoreStatus=pending identifies owned waiting work for the current parsed resume and selected description: retryable description parsing or a live job-specific score item. Otherwise a missing score remains not_scored. Explain matchScoreReason: parse_required and score_required describe prerequisites, outside_scoring_window means outside the automatic 30-day window, and not_scored means unknown. Never estimate a missing numeric score.',
     inputSchema: z.object({
       function: z.enum(JOB_FUNCTIONS).optional().describe('Job function filter. One of: ' + JOB_FUNCTIONS.join(', ')),
       jobFunctions: z.array(z.enum(JOB_FUNCTIONS)).min(1).max(14).optional().describe('Multiple job functions, combined with OR. Use instead of function. Omit both to request all 14 functions.'),
@@ -442,7 +472,7 @@ function createServer() {
 
   server.tool(
     'trackly_get_job',
-    'Get full details for a Trackly job ID returned by search or your saved queue. Missing or closed postings return availability=unavailable with retryable=false and a next step; do not retry that ID. Failures include a category and retry guidance.',
+    'Get full details for a Trackly job ID returned by search or your saved queue. Match scores are saved results only. For a missing score, explain matchScoreReason; parse_required/score_required are prerequisites; only matchScoreStatus=pending confirms owned waiting parse or score work, outside_scoring_window is outside the automatic 30-day window, and not_scored is unknown. Missing or closed postings return availability=unavailable with retryable=false and a next step; do not retry that ID. Failures include a category and retry guidance.',
     {
       id: z.number().int().positive().safe().describe('Positive numeric Trackly job ID from trackly_search_jobs or your saved queue, not an employer requisition ID or URL. Correct invalid arguments before retrying.'),
     },
@@ -566,9 +596,64 @@ function createServer() {
     }, 'Failed to update job status')
   );
 
+  // Tracker (Waypoint) tools, mirrored from the hosted MCP (close-ai #3600).
+  const tracker = createTrackerToolHandlers(
+    (method, path, body) => apiRequest(method, path, body ?? null, false, false, MCP_USER_AGENT),
+  );
+
+  server.registerTool(
+    'trackly_list_tracker_applications',
+    {
+      description: 'List your Tracker entries (the /tracker board: saved, contacted, applied, screen, assessment, interview, final, offer, accepted, declined, rejected, withdrawn). Filter by stage, company or role text, or a Trackly job ID. Returns each entry\'s id, jobPostingId, company, role, currentStage, stageEnteredAt, version and link. Pass applicationId alone to get that entry with its events. Use it to find the applicationId for trackly_update_tracker_stage, trackly_add_tracker_note or trackly_retract_tracker_event. Contact email addresses are never returned.',
+      inputSchema: z.object(trackerListShape()).strict(),
+      annotations: { title: 'List Tracker entries', readOnlyHint: true, openWorldHint: false },
+    },
+    wrapTool((params) => tracker.list(params), 'Failed to list Tracker entries'),
+  );
+
+  server.registerTool(
+    'trackly_create_tracker_application',
+    {
+      description: 'Add a job to the Tracker board (Quick Add) when it has no Tracker entry yet. Creating an entry records the job as applied: the new entry starts in the applied stage, dated appliedOn when given. Only call it after the user explicitly confirms they applied, and pass explicitUserConfirmed=true. Pass jobId, or companyName and roleTitle. Move the entry afterwards with trackly_update_tracker_stage, for example to interview. If the job, or the same company and role, is already on the board, nothing is written and the existing entry is returned with created=false. A repeated call never adds a second entry. Separate from trackly_update_status, which only sets the job list status.',
+      inputSchema: z.object(trackerCreateShape()).strict(),
+      annotations: { title: 'Add a job to the Tracker', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    wrapTool((params) => tracker.create(params), 'Failed to create the Tracker entry'),
+  );
+
+  server.registerTool(
+    'trackly_update_tracker_stage',
+    {
+      description: 'Move one Tracker entry to a new stage (for example rejected or interview), as if the user dragged the card on the /tracker board, with the same history, undo and conflict checks. Pass exactly one of applicationId or jobId. This is separate from trackly_update_status, which only sets the job list status: marking an entry rejected here keeps its Applied record and does not discard the job. There is no "paused" stage: record a pause with trackly_add_tracker_note and leave the stage unchanged. If the entry is already in that stage nothing is written. Returns not_found when the job has no Tracker entry yet (this tool never creates one; use trackly_create_tracker_application first), tracker_unavailable when the Tracker is switched off, and version_conflict with the entry\'s current version and stage if it kept changing; nothing is written on any error.',
+      inputSchema: z.object(trackerStageShape()).strict(),
+      annotations: { title: 'Move a Tracker entry to a stage', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    wrapTool((params) => tracker.updateStage(params), 'Failed to update the Tracker stage'),
+  );
+
+  server.registerTool(
+    'trackly_add_tracker_note',
+    {
+      description: 'Add a dated note to one Tracker entry without changing its stage. Pass exactly one of applicationId or jobId. Use it to record a pause ("employer paused hiring Nov 9"), since there is no paused stage, or any outcome evidence; say where the evidence came from. A repeated call with the same text and date does not add a second note. Returns not_found, tracker_unavailable or version_conflict without writing anything.',
+      inputSchema: z.object(trackerNoteShape()).strict(),
+      annotations: { title: 'Add a Tracker note', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    wrapTool((params) => tracker.addNote(params), 'Failed to add the Tracker note'),
+  );
+
+  server.registerTool(
+    'trackly_retract_tracker_event',
+    {
+      description: 'Undo one Tracker event that the user names: retract a single stage change, note or other event by its eventId, as the undo on the /tracker board does. Only call it when the user asked to undo that specific event; never to clean up or to retry. The event stays in history marked as retracted and the entry\'s stage is recomputed. Retracting an already retracted event changes nothing. The only stage event of an entry, and a retraction itself, cannot be retracted. Returns not_found, tracker_unavailable or version_conflict without writing anything.',
+      inputSchema: z.object(trackerRetractShape()).strict(),
+      annotations: { title: 'Retract a Tracker event', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    },
+    wrapTool((params) => tracker.retract(params), 'Failed to retract the Tracker event'),
+  );
+
   server.tool(
     'trackly_ask',
-    'Natural language job search. Describe what you are looking for and the AI parses it into structured filters.',
+    'Natural language job search. Describe what you are looking for and the AI parses it into structured filters. Returns one page and has no pagination input. Results preserve matchScoreReason and count metadata: totalIsLowerBound=true means the total is a lower bound; total=null means unknown. Explain countGuidance, then continue with trackly_search_jobs using supported structured filters and offset. Never repeat this natural-language query to paginate: it returns the same first page.',
     {
       query: z.string().max(500).describe('Natural language search query, e.g. "PM jobs at fintech companies in SF"'),
     },
@@ -582,9 +667,35 @@ function createServer() {
         const JOBS_URL_ALLOWLIST = /^\/api\/(v1|jobscout)\/jobs(\?|$)/;
         if (JOBS_URL_ALLOWLIST.test(askResult.jobsUrl)) {
           const jobsResult = await apiRequest('GET', askResult.jobsUrl, null, false, false, MCP_USER_AGENT);
+          // The followed page is backend-controlled data, not an envelope to trust.
+          // Require a real page first: lib/client.js resolves every 2xx verbatim,
+          // so an empty body, a proxy's HTML interstitial (surfaced as `raw`) or a
+          // body reporting its own failure would otherwise be answered as a
+          // successful search with zero jobs. An unreadable page is a failed
+          // search, not an empty one.
+          const jobs = jobsResult?.jobs ?? jobsResult?.data;
+          if (!Array.isArray(jobs) || jobsResult.success === false) {
+            throw {
+              status: 502,
+              code: 'invalid_jobs_response',
+              error: INVALID_JOBS_RESPONSE_ERROR,
+            };
+          }
+          // Copy only the documented count metadata. A blanket spread of the page
+          // let it overwrite the ask-owned parse fields the agent needs
+          // (parsedFilters, query, success), set the guard fields this handler
+          // owns (jobsUrl, which had to be re-pinned, and jobsUrlRefused, which
+          // did not), and reflect arbitrary page keys into the agent's context.
+          const pageMetadata = {};
+          for (const key of ASK_PAGE_METADATA_KEYS) {
+            if (Object.prototype.hasOwnProperty.call(jobsResult, key)) pageMetadata[key] = jobsResult[key];
+          }
           return {
             ...askResult,
-            jobs: jobsResult.jobs || jobsResult.data || [],
+            ...pageMetadata,
+            jobs,
+            jobsUrl: askResult.jobsUrl,
+            jobsUrlRefused: false,
           };
         }
         // Untrusted jobsUrl. Strip it from the returned payload so the MCP client

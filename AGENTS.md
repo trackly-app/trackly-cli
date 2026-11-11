@@ -37,6 +37,8 @@ lib/client.js        # HTTP client: config loading, token refresh, apiRequest()
 lib/formatters.js    # Terminal output: color(), outputJobs(), outputCompanies(), outputStats(), outputContacts(), outputReferralCampaign(), outputNetworkBrief()
 mcp/server.js        # MCP server entrypoint and search/network tools, launched via `trackly mcp`
 mcp/apply-tools.js   # Trackly Apply MCP schemas, validators, and tool registration
+mcp/tracker-tools.js # Tracker (Waypoint) MCP tool schemas and handlers, mirrored from the hosted MCP
+mcp/waypoint-reducer.js # Port of the backend Tracker reducer that decides an entry's current stage
 contracts/           # Versioned hosted/local Trackly Apply MCP schema contract
 skills/trackly-apply/  # Sanitized public browser-mechanics skill bundled with the CLI
 scripts/             # Maintainer checks; the packaged audit verifier is the named exception
@@ -60,11 +62,11 @@ There is a small Node test suite (`npm test`), no linter, and no build step. The
 
 1. User runs `trackly mcp` (or AI agent spawns it via stdio)
 2. `bin/trackly` delegates to `mcp/server.js`
-3. `mcp/server.js` creates an `McpServer` with 59 tools, connects via `StdioServerTransport`
+3. `mcp/server.js` creates an `McpServer` with 64 tools, connects via `StdioServerTransport`
 4. Each tool calls `apiRequest()` from `lib/client.js` with a `trackly-mcp/<version>` User-Agent derived from `package.json`
 5. CLI commands use `trackly-cli/<version>` User-Agent derived from `package.json` (separate channel attribution)
 
-The 59 MCP tools include the complete search, network, profile, and Trackly
+The 64 MCP tools include the complete search, network, profile, Tracker, and Trackly
 Apply set documented in `docs/trackly-tools.md` plus the analytics-owned
 `get_more_tools` missing-capability tool. Keep this count synchronized with
 `mcp/server.js`, `README.md`, and the docs-drift tests.
@@ -161,6 +163,12 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `GET /api/jobscout/ask` -- Natural language search
 - `POST /api/jobscout/companies/request` -- Request a company be added (rate-limited, 5 pending max)
 - `POST /api/jobscout/tracker/jobs/:id/stage` -- Update job tracker stage (`applied`/`backlog`/`discarded`; CLI maps mark-applied/save/dismiss)
+- `GET /api/jobscout/waypoint/applications` -- List Tracker board entries, filtered by `stage`, `q` or `jobPostingId` (`trackly_list_tracker_applications`)
+- `GET /api/jobscout/waypoint/applications/:id` -- Read one Tracker entry with its events
+- `POST /api/jobscout/waypoint/applications` -- Quick Add a Tracker entry (`trackly_create_tracker_application`)
+- `POST /api/jobscout/waypoint/applications/:id/events` -- Record a stage change or note (`trackly_update_tracker_stage`, `trackly_add_tracker_note`)
+- `POST /api/jobscout/waypoint/applications/:id/events/:eventId/retract` -- Retract one event (`trackly_retract_tracker_event`)
+- `GET /api/jobscout/waypoint/sources` -- Probe that tells a switched-off Tracker (`tracker_unavailable`) from a missing entry (`not_found`)
 - `POST /api/jobscout/apply/assist-requests` -- Request cloud auto-apply (jobId, optional resumeId; the CLI never sends `acknowledged`, which grants staff access to sensitive answers)
 - `GET /api/jobscout/apply/assist-requests` -- List the user's auto-apply requests
 - `GET /api/jobscout/apply/queue` -- Get the user's approved application queue (`trackly_get_apply_queue`)
@@ -204,9 +212,9 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `GET /api/network/companies/:id/workspace` -- Get company workspace (jobs, contacts, campaigns)
 - `GET /auth/google/cli` -- OAuth login redirect
 
-The complete 59-tool inventory is in `docs/trackly-tools.md`. Helpers such as `trackly_verify_prepared_resume` and `trackly_validate_apply_resume_upload` intentionally have no CLI HTTP endpoint and therefore do not appear in the endpoint list above.
+The complete 64-tool inventory is in `docs/trackly-tools.md`. Helpers such as `trackly_verify_prepared_resume` and `trackly_validate_apply_resume_upload` intentionally have no CLI HTTP endpoint and therefore do not appear in the endpoint list above.
 
-Hosted `/api/mcp` tool count: the backend owns the hosted registry. It omits exactly four local-only tools (`trackly_diagnose_local_path`, `trackly_lint_application_text`, `trackly_validate_apply_resume_upload`, `trackly_validate_apply_tab_keep_set`) and adds `trackly_chat`. The deployed catalog remains 55 hosted tools; `trackly_auto_apply` is a source-only addition pending a coordinated backend release and catalog recapture. `trackly_prepare_resume` and `trackly_verify_prepared_resume` are registered on both servers. When a tool is added to or removed from either server, recount the hosted names and update every "N hosted tools" claim in `README.md`; the docs-coverage test only checks that those README claims agree.
+Hosted `/api/mcp` tool count: the backend owns the hosted registry. It omits exactly four local-only tools (`trackly_diagnose_local_path`, `trackly_lint_application_text`, `trackly_validate_apply_resume_upload`, `trackly_validate_apply_tab_keep_set`) and adds `trackly_chat`. The deployed catalog is 60 hosted tools (close-ai 6cd11dfb added the five Tracker tools, which both servers register); `trackly_auto_apply` is a source-only addition pending a coordinated backend release and catalog recapture. `trackly_prepare_resume` and `trackly_verify_prepared_resume` are registered on both servers. When a tool is added to or removed from either server, recount the hosted names and update every "N hosted tools" claim in `README.md`; the docs-coverage test only checks that those README claims agree.
 
 ## Common Pitfalls
 
