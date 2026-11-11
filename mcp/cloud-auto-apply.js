@@ -15,7 +15,7 @@ function registerCloudAutoApplyTool(server, { wrapTool, mcpUserAgent }) {
   server.registerTool(
     'trackly_auto_apply',
     {
-      description: 'Request cloud auto-apply for one Trackly job at a US Greenhouse, Lever, or Ashby posting using the account default resume. Trackly submits the application asynchronously and notifies the user. Call only when the user asks Trackly to apply to this job. Check the server autoApplySupported field when present. Returns the request and its current status; check progress with trackly apply --status in the CLI.',
+      description: 'Request cloud auto-apply for one Trackly job at a US Greenhouse, Lever, or Ashby posting using the account default resume: Trackly takes care of the application and notifies the user; nothing runs on the user\'s computer. This is not Trackly Apply, where the user\'s own agent fills the form in their browser and the user submits (use the trackly_*_apply_* tools and the Trackly Apply skill for that), and not trackly_update_status, which records an application the user made themselves. Call only when the user asks Trackly to apply to this job for them. Check the server autoApplySupported field when present. Returns the request and its current status; check progress with trackly auto-apply --status in the CLI.',
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
       inputSchema: z.object({
         jobId: z.number().int().positive().max(2147483647).describe('Trackly job ID to apply to'),
