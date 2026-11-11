@@ -883,6 +883,26 @@ const ACTION_TO_COMMAND = { applied: 'mark-applied', saved: 'save', dismissed: '
 // endpoint is what production actually serves (and what hosted MCP uses).
 const ACTION_TO_STAGE = { applied: 'applied', saved: 'backlog', dismissed: 'discarded' };
 
+/**
+ * What recording applied did to the Tracker board (close-ai #3619). The backend returns a typed
+ * trackerEntry outcome; older backends omit it. Only fixed text is printed, never server strings.
+ * The status is saved either way, so a failed Tracker step is a warning, not a failed command.
+ */
+function trackerEntryLine(entry) {
+  switch (entry?.state) {
+    case 'created': return { text: 'Added to your Tracker board.' };
+    case 'linked': return { text: 'Linked to the matching card on your Tracker board.' };
+    case 'moved': return { text: 'Moved its Tracker card to applied.' };
+    case 'existing':
+      return entry.reason === 'ambiguous'
+        ? { warn: true, text: 'More than one Tracker card matches this job, so the board was not changed.' }
+        : null;
+    case 'skipped': return { warn: true, text: 'The Tracker board was not updated (it is switched off).' };
+    case 'failed': return { warn: true, text: 'The Tracker board was not updated. Run the same command again; it is safe to repeat.' };
+    default: return null;
+  }
+}
+
 async function cmdUpdateStatus(id, action, command = ACTION_TO_COMMAND[action] || action, hint = null) {
   const jobId = parseJobId(id);
   if (jobId === null) failNow(`Job ID must be a positive integer. Usage: trackly ${command} <id>`);
@@ -901,6 +921,8 @@ async function cmdUpdateStatus(id, action, command = ACTION_TO_COMMAND[action] |
     const result = await apiRequest('POST', `/api/jobscout/tracker/jobs/${jobId}/stage`, { stage });
     if (isJSON()) return printJson(result);
     console.log(color('green', `Job ${jobId} marked as ${STATUS_LABELS[action]}.`));
+    const trackerLine = trackerEntryLine(result?.trackerEntry);
+    if (trackerLine) (trackerLine.warn ? console.error : console.log)(color(trackerLine.warn ? 'yellow' : 'dim', trackerLine.text));
     if (hint) console.error(color('dim', hint));
   } catch (e) {
     setApiErrorExit(e, `Failed to ${action} job`);

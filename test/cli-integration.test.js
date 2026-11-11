@@ -132,6 +132,33 @@ test('malformed auto-apply responses never report success or retry the mutation'
   }
 });
 
+test('mark-applied reports what happened on the Tracker board with fixed text only', async (t) => {
+  const cases = [
+    [{ state: 'created' }, 'stdout', /Added to your Tracker board\./],
+    [{ state: 'linked' }, 'stdout', /Linked to the matching card on your Tracker board\./],
+    [{ state: 'moved' }, 'stdout', /Moved its Tracker card to applied\./],
+    [{ state: 'existing', reason: 'ambiguous' }, 'stderr', /More than one Tracker card matches this job/],
+    [{ state: 'skipped', reason: 'tracker_unavailable' }, 'stderr', /The Tracker board was not updated \(it is switched off\)\./],
+    [{ state: 'failed', reason: 'lock_timeout', retryable: true }, 'stderr', /Run the same command again; it is safe to repeat\./],
+  ];
+  for (const [trackerEntry, stream, expected] of cases) {
+    const body = { success: true, status: 'applied_confirmed', trackerEntry };
+    const { result } = await runAgainstMock(t, ['mark-applied', '42'], () => ({ json: body }), HUMAN_ENV);
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /Job 42 marked as/);
+    assert.match(result[stream], expected, trackerEntry.state);
+    // JSON callers get the backend object unchanged.
+    const json = await runAgainstMock(t, ['mark-applied', '42'], () => ({ json: body }));
+    assert.deepEqual(JSON.parse(json.result.stdout), body);
+  }
+  // An existing card at applied or later, or an older backend without trackerEntry, adds no line.
+  for (const body of [{ success: true, trackerEntry: { state: 'existing' } }, { success: true }]) {
+    const { result } = await runAgainstMock(t, ['mark-applied', '42'], () => ({ json: body }), HUMAN_ENV);
+    assert.equal(result.stdout.trim(), 'Job 42 marked as applied.');
+    assert.equal(result.stderr, '');
+  }
+});
+
 test('apply <id> still marks a job applied exactly as in 0.25.0, with a mark-applied hint', async (t) => {
   for (const env of [HUMAN_ENV, {}]) {
     const { result, requests } = await runAgainstMock(t, ['apply', '42'], () => ({ json: { success: true } }), env);

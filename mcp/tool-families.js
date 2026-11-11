@@ -231,15 +231,6 @@ class McpServer extends SdkMcpServer {
   }
 }
 
-/** Tool names grouped by family, in catalog order. */
-function toolNamesByFamily(names = Object.keys(TOOL_ACTIONS)) {
-  const wanted = new Set(names);
-  return TOOL_FAMILIES.map((family) => ({
-    family,
-    names: Object.keys(TOOL_ACTIONS).filter((name) => wanted.has(name) && TOOL_ACTIONS[name][0] === family.id),
-  }));
-}
-
 module.exports = {
   LOCAL_ONLY_TOOL_NAMES,
   McpServer,
@@ -251,6 +242,5 @@ module.exports = {
   labelDescription,
   plainDescription,
   toolFamily,
-  toolNamesByFamily,
   toolTitle,
 };

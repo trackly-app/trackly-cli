@@ -72,6 +72,41 @@ test('every npm tool lists its family title and exactly one description tag', ()
   assert.match(local, /^\[Trackly Apply \(local\)\] Your own AI agent fills the application in your browser and stops before Submit; you submit\. /);
 });
 
+test('an MCP client sees the labels through tools/list, with analytics instrumentation on', async () => {
+  // What clients actually receive, not the SDK's private registry (docs/solutions/
+  // integration-issues/analytics-must-preserve-strict-mcp-schemas.md).
+  const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+  const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+  const { configureMcpAnalytics, shutdownMcpAnalytics } = require('../mcp/analytics');
+  const server = createServer();
+  configureMcpAnalytics(server, {
+    env: {},
+    loadSdk: () => require('@posthog/mcp'),
+    createRelay: () => ({ capture() {}, flush: async () => {}, _shutdown: async () => {} }),
+  });
+  const client = new Client({ name: 'tool-families-test', version: '1.0.0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  try {
+    const { tools } = await client.listTools();
+    assert.equal(tools.length, 63);
+    for (const tool of tools) {
+      const title = toolTitle(tool.name);
+      assert.equal(tool.title, title, tool.name);
+      assert.equal(tool.annotations?.title, title, tool.name);
+      assert.ok(tool.description.startsWith(descriptionPrefix(tool.name)), tool.name);
+    }
+    const bind = tools.find(({ name }) => name === 'trackly_bind_apply_surface');
+    assert.equal(bind.title, 'Apply step · Bind browser tab');
+    assert.ok(bind.description.startsWith(`${PROTOCOL_TAG}${PROTOCOL_SENTENCE} `));
+  } finally {
+    await client.close().catch(() => {});
+    await server.close().catch(() => {});
+    await shutdownMcpAnalytics(server).catch(() => {});
+  }
+});
+
 test('labels keep existing annotation hints', () => {
   const tools = registeredTools();
   assert.deepEqual(tools.trackly_retract_tracker_event.annotations, {
