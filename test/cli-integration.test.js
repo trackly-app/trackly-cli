@@ -786,6 +786,11 @@ test('--json emits structured rollout denials on stdout', async (t) => {
 });
 
 test('Apply maintenance emits resume guidance and never retries the mutation', async (t) => {
+  // Runs for the shipped (held) mark-applied path and for the held cloud auto-apply path.
+  for (const [options, url] of [
+    [{ heldCloudAutoApply: true }, '/api/jobscout/tracker/jobs/1234/stage'],
+    [{}, '/api/jobscout/apply/assist-requests'],
+  ]) {
   let responseCount = 0;
   const { requests, result } = await runAgainstMock(t, ['apply', '1234', '--json'], () => {
     responseCount++;
@@ -799,16 +804,18 @@ test('Apply maintenance emits resume guidance and never retries the mutation', a
         retryAfterSeconds: 120,
       }),
     };
-  });
+  }, options);
 
   assert.notEqual(result.code, 0);
   assert.equal(requests.length, 1, 'maintenance must not repeat the Apply mutation');
   assert.equal(responseCount, 1);
   assert.equal(requests[0].method, 'POST');
+  assert.equal(requests[0].url, url);
   const parsed = JSON.parse(result.stdout);
   assert.equal(parsed.code, 'maintenance_mode');
   assert.equal(parsed.retryable, false);
   assert.match(parsed.guidance, /Never create a duplicate run or click Submit/);
+  }
 });
 
 test('unknown flag is rejected with a did-you-mean suggestion', async (t) => {
