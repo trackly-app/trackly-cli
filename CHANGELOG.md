@@ -9,14 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - MCP search distinguishes pending prerequisites from jobs outside the scoring window and preserves explicit lower-bound counts. `trackly_ask` forwards documented count/recency metadata, preserves its interpretation and validated URL, omits unrelated page fields, and returns the `invalid_jobs_response` tool error for unreadable follow-on pages.
-- **Breaking:** `trackly apply <jobId>` requests cloud auto-apply. Use `trackly mark-applied <jobId>` to record an application you already submitted.
+- `trackly mark-applied <jobId>` is a new name for `trackly apply <jobId>`, which still marks a job applied. Prefer it in scripts: cloud auto-apply is planned for `trackly apply` once the hosted service supports it.
 - `trackly whoami` reads the account identity and optional plan from `/api/jobscout/me`.
 - Limit messages display server-provided plan details; other 429 responses use temporary rate-limit guidance. JSON refusals include structured status, message and retry guidance on stdout with a nonzero exit code.
 
 ### Added
-- Five Tracker MCP tools, mirrored from the hosted MCP (close-ai #3603): `trackly_list_tracker_applications`, `trackly_create_tracker_application`, `trackly_update_tracker_stage`, `trackly_add_tracker_note` and `trackly_retract_tracker_event`. Agents can list `/tracker` board entries, add a job the user confirms applying to, move an entry to any of the 12 stages (for example rejected or interview) with a dated note, add notes, and undo one named event. They call the board's own routes with the user's credentials, read before every write, retry once on a version conflict, use deterministic idempotency keys, and never return contact email addresses. The local MCP now registers 64 tools; the hosted MCP has 60.
-- `trackly apply --status` lists auto-apply requests; `--resume-id` selects a resume when requesting auto-apply.
-- Local MCP `trackly_auto_apply({jobId})` requests asynchronous cloud auto-apply using the default resume. Publication and hosted availability await the coordinated release.
+- Five Tracker MCP tools, mirrored from the hosted MCP (close-ai #3603): `trackly_list_tracker_applications`, `trackly_create_tracker_application`, `trackly_update_tracker_stage`, `trackly_add_tracker_note` and `trackly_retract_tracker_event`. Agents can list `/tracker` board entries, add a job the user confirms applying to, move an entry to any of the 12 stages (for example rejected or interview) with a dated note, add notes, and undo one named event. They call the board's own routes with the user's credentials, read before every write, retry once on a version conflict, use deterministic idempotency keys, and never return contact email addresses. The local MCP now registers 63 tools; the hosted MCP has 60.
+- Cloud auto-apply (`trackly apply` requests, `--status`, `--resume-id`, and the local MCP `trackly_auto_apply`) is implemented but held out of this release until the hosted MCP ships the same tool. When released, a request sends `acknowledged: true`: asking Trackly to auto-apply is consent for staff to use every profile answer, sensitive ones included, to complete the application.
 - Search output shows `autoApplySupported` when returned by the server.
 
 ## [0.25.0] - 2026-11-04

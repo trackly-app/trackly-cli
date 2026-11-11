@@ -5,8 +5,28 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
-const { createServer } = require('../mcp/server');
+const { createServer, wrapTool, MCP_USER_AGENT } = require('../mcp/server');
+const { registerCloudAutoApplyTool } = require('../mcp/cloud-auto-apply');
 const { createTempConfigDir, startMockServer, withEnv } = require('./helpers');
+
+test('held release: the published MCP catalog omits trackly_auto_apply and keeps the hosted update_status text', async () => {
+  const server = createServer();
+  const client = new Client({ name: 'held-auto-apply-test', version: '1.0.0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  try {
+    const { tools } = await client.listTools();
+    assert.ok(!tools.some(tool => tool.name === 'trackly_auto_apply'));
+    assert.equal(tools.find(tool => tool.name === 'trackly_update_status').description,
+      'Update a job application status (apply, save, or dismiss).');
+    assert.ok(!tools.some(tool => /trackly_auto_apply|cloud auto-apply/i.test(tool.description)));
+    assert.equal(require('../lib/auto-apply').cloudAutoApply.released, false);
+  } finally {
+    await client.close().catch(() => {});
+    await server.close().catch(() => {});
+  }
+});
 
 test('auto-apply uses the strict public MCP shape and server-owned results', async (t) => {
   const configDir = createTempConfigDir();
@@ -26,7 +46,9 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
   t.after(() => new Promise(resolve => httpServer.close(resolve)));
   await withEnv({ TRACKLY_API_KEY: 'trk_test_fixture', TRACKLY_CONFIG_DIR: configDir,
     TRACKLY_BASE_URL: `http://127.0.0.1:${port}` }, async () => {
+    // The tool is held out of releases (lib/auto-apply.js); register it explicitly to test it.
     const server = createServer();
+    registerCloudAutoApplyTool(server, { wrapTool, mcpUserAgent: MCP_USER_AGENT });
     const client = new Client({ name: 'paid-plans-test', version: '1.0.0' });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await server.connect(serverTransport);
@@ -36,7 +58,6 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
       const tool = tools.find(value => value.name === 'trackly_auto_apply');
       assert.ok(tool);
       assert.deepEqual(tool.annotations, { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true });
-      assert.match(tools.find(value => value.name === 'trackly_update_status').description, /already submitted/);
       assert.deepEqual(Object.keys(tool.inputSchema.properties), ['jobId']);
       assert.deepEqual(tool.inputSchema.required, ['jobId']);
       assert.equal(tool.inputSchema.additionalProperties, false);

@@ -22,7 +22,7 @@ const { spawnSync } = require('child_process');
 const { version: VERSION } = require('../package.json');
 const { doctorAgent, resumeValidationStatus, setupAgent } = require('../lib/agent');
 const { diagnoseLocalPath } = require('../lib/path-diagnostics');
-const { validateAssistResponse, autoApplyUnavailableError, autoApplyRequestError } = require('../lib/auto-apply');
+const { validateAssistResponse, autoApplyUnavailableError, autoApplyRequestError, cloudAutoApply } = require('../lib/auto-apply');
 
 const BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'version', 'v', 'clear-api-key', 'clear-base-url', 'refresh', 'remote', 'skills-only']);
 const VALUE_FLAGS = new Set([
@@ -73,7 +73,8 @@ const COMMAND_FLAGS = {
   stats: [],
   status: [],
   preferences: [],
-  apply: ['status', 'resume-id'],
+  // While cloud auto-apply is held (lib/auto-apply.js), `apply` marks a job applied and takes no flags.
+  apply: cloudAutoApply.released ? ['status', 'resume-id'] : [],
   'mark-applied': [],
   save: [],
   dismiss: [],
@@ -159,7 +160,7 @@ function parseArgs(args) {
 
       const key = arg.slice(2);
       const nextArg = args[i + 1];
-      if (key === 'status' && result.command === 'apply') {
+      if (key === 'status' && result.command === 'apply' && cloudAutoApply.released) {
         result.status = true;
         continue;
       }
@@ -880,9 +881,9 @@ const ACTION_TO_COMMAND = { applied: 'mark-applied', saved: 'save', dismissed: '
 // endpoint is what production actually serves (and what hosted MCP uses).
 const ACTION_TO_STAGE = { applied: 'applied', saved: 'backlog', dismissed: 'discarded' };
 
-async function cmdUpdateStatus(id, action) {
+async function cmdUpdateStatus(id, action, command = ACTION_TO_COMMAND[action] || action) {
   const jobId = parseJobId(id);
-  if (jobId === null) failNow(`Job ID must be a positive integer. Usage: trackly ${ACTION_TO_COMMAND[action] || action} <id>`);
+  if (jobId === null) failNow(`Job ID must be a positive integer. Usage: trackly ${command} <id>`);
   if (!hasAuth()) failNow(AUTH_HELP_TEXT);
 
   // action is already validated by the command dispatcher (apply/save/dismiss subcommands
@@ -1397,9 +1398,10 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'status')}               Alias for stats
   ${color('cyan', 'preferences')}          Show discovery preferences
   ${color('cyan', 'preferences experience')} Replace role limits (role=years; clear turns off)
-  ${color('cyan', 'apply <id>')}           Request cloud auto-apply (US Greenhouse, Lever, Ashby; optional --resume-id)
+${cloudAutoApply.released ? `  ${color('cyan', 'apply <id>')}           Request cloud auto-apply (US Greenhouse, Lever, Ashby; optional --resume-id)
   ${color('cyan', 'apply --status')}       List auto-apply requests
-  ${color('cyan', 'mark-applied <id>')}    Mark a job you applied to as applied
+` : `  ${color('cyan', 'apply <id>')}           Mark job as applied
+`}  ${color('cyan', 'mark-applied <id>')}    Mark a job you applied to as applied
   ${color('cyan', 'save <id>')}            Save a job
   ${color('cyan', 'dismiss <id>')}         Dismiss a job
   ${color('cyan', 'ask "query"')}          Natural language job search
@@ -1561,7 +1563,9 @@ async function main() {
       await cmdPreferences(args);
       break;
     case 'apply':
-      await cmdApply(args);
+      // Held cloud auto-apply keeps the earlier `apply` meaning: mark a job applied.
+      if (cloudAutoApply.released) await cmdApply(args);
+      else await cmdUpdateStatus(args._[0], 'applied', 'apply');
       break;
     case 'mark-applied':
       await cmdUpdateStatus(args._[0], 'applied');

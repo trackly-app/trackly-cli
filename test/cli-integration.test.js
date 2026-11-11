@@ -27,7 +27,16 @@ test('published package version has a dated changelog section', () => {
 
 // Spin up a temp config (seeded API key) + mock server, run the CLI, return the
 // captured requests and the child result. `respond(req)` may return {status, json}.
-async function runAgainstMock(t, args, respond, childEnv = {}) {
+// Cloud auto-apply is held in releases (lib/auto-apply.js), so `trackly apply` marks a job applied.
+// These tests still exercise the held cloud path by preloading the release switch for `apply`
+// commands; pass { heldCloudAutoApply: true } to run the released (held) behavior instead.
+const RELEASE_CLOUD_AUTO_APPLY = `--require=${path.join(__dirname, 'release-cloud-auto-apply.js')}`;
+
+async function runAgainstMock(t, args, respond, options = {}) {
+  const { heldCloudAutoApply, ...childEnv } = options;
+  if (args[0] === 'apply' && !heldCloudAutoApply) {
+    childEnv.NODE_OPTIONS = [childEnv.NODE_OPTIONS, RELEASE_CLOUD_AUTO_APPLY].filter(Boolean).join(' ');
+  }
   const dir = createTempConfigDir();
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   seedApiKey(dir);
@@ -121,6 +130,28 @@ test('malformed auto-apply responses never report success or retry the mutation'
       assert.equal(requests.length, 1);
     }
   }
+});
+
+test('held release: apply <id> marks a job applied exactly as before and never requests cloud auto-apply', async (t) => {
+  for (const env of [HUMAN_ENV, {}]) {
+    const { result, requests } = await runAgainstMock(t, ['apply', '42'], () => ({ json: { success: true } }),
+      { ...env, heldCloudAutoApply: true });
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].method, 'POST');
+    assert.equal(requests[0].url, '/api/jobscout/tracker/jobs/42/stage');
+    assert.deepEqual(JSON.parse(requests[0].body), { stage: 'applied' });
+    if (env === HUMAN_ENV) assert.match(result.stdout, /Job 42 marked as/);
+  }
+  for (const args of [['apply', '42', '--status'], ['apply', '--status'], ['apply', '42', '--resume-id', '7'], ['apply', 'abc'], ['apply']]) {
+    const { result, requests } = await runAgainstMock(t, args, undefined, { heldCloudAutoApply: true });
+    assert.notEqual(result.code, 0, args.join(' '));
+    assert.equal(requests.length, 0, `${args.join(' ')} must not reach the API`);
+    assert.match(result.stderr, /Unknown option --(status|resume-id) for 'trackly apply'|Usage: trackly apply <id>/);
+  }
+  const help = await runCli(['--help']);
+  assert.match(help.stdout, /apply <id>\s+Mark job as applied/);
+  assert.doesNotMatch(help.stdout, /cloud auto-apply|apply --status/i);
 });
 
 test('invalid manual tracking commands recommend mark-applied without submitting', async (t) => {
