@@ -25,6 +25,9 @@ Never call a snapshot with empty `memberIds`. Act on `nextAction`:
 - `manual_review`: preserve the current review state and hand it off without inventing work.
 - `complete`: stop browser work and report completion.
 - `work_ready` or `continue_current_wave` with nonempty `memberIds`: continue below.
+- `advance`: every member of the current wave has a result and more approved candidates remain, but the target is not reached. Call `trackly_advance_apply_execution` with the current `executionId` and `revision`, `browserSurface: claude_in_chrome` and a fresh key, without `accessReviewApproval`. Its returned `batchId`, `memberIds` and `nextAction` are the next wave; when that `nextAction` is `access_review`, follow the access-review branch above before any browser work.
+- `answer_required`: members of the current wave are waiting on facts only the user can give. Ask once, in one grouped packet for the whole wave, save only confirmed reusable answers, then read progress again. Never guess an answer to move on.
+- `none`: there is nothing to do right now. Report the current progress and stop.
 - Any other value: stop rather than inventing work.
 
 Deferments are listed and changed only through `trackly_list_apply_access_deferments`, `trackly_defer_apply_access` and `trackly_clear_apply_access_deferment`, using a stable `jobId` and scope `job`, `company` or `provider` (or the listed `defermentId` to clear one the user selects). Clearing a deferment is not wave approval. An active deferment means no browser work on that job.

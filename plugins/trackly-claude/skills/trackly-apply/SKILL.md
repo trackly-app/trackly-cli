@@ -64,7 +64,7 @@ Setup complete does not prove Apply is enabled on Claude. The start call below i
 4. `nextAction: capability_disabled` means Trackly Apply is not available for this account yet; stop and point the user to https://usetrackly.app/support. `limit_reached` means the account reached its Apply limit; stop and report it.
 5. If `targetMismatch` is true and the request named exact `jobIds`, stop, report the active-selection mismatch and change nothing. Only a count-only request may follow `use_active_target`: call start again with the returned `activeTarget`, the same browser surface and a fresh idempotency key.
 6. `nextAction: restart_after_reauthorization` means the active execution was started on another connection (for example ChatGPT, Codex or an earlier Claude connection). Do not read or change its work. Explain that, and only after the user explicitly confirms a restart, call `trackly_stop_apply` with the returned `executionId`, `revision`, `reasonCode: execution_restarted` and a fresh idempotency key, verify the stopped state, then start again with a fresh idempotency key. Never adopt work across connections.
-7. Never send a snapshot with empty `memberIds`. Follow [lifecycle contract](references/lifecycle-contract.md) for `advance_or_refresh`, `access_review`, `manual_review` and `complete`.
+7. Never send a snapshot with empty `memberIds`. Follow [lifecycle contract](references/lifecycle-contract.md) for `advance_or_refresh`, `access_review`, `advance`, `answer_required`, `manual_review`, `complete` and `none`.
 8. For nonempty `memberIds`, call `trackly_get_apply_snapshot` with flat `executionId`, `memberIds` and `browserSurface: claude_in_chrome`, omitting `profileKeys`, to learn each job and the canonical facts its form needs. Call `trackly_get_job` for every distinct `jobId`. Request the snapshot again with only the minimal `profileKeys` the visible form needs and that the profile reports as saved; never request every field. Office-only facts go only through `officeProjections` for the exact member and office.
 
 ## Fill the approved form
@@ -77,7 +77,7 @@ Setup complete does not prove Apply is enabled on Claude. The start call below i
 6. For free text, draft locally from supported facts only. Remote lint with `trackly_lint_application_text` is optional, one non-sensitive field at a time, and only after the user approves that exact field text.
 7. Record redacted mechanics with `trackly_record_apply_observations` only when they happen. There is no heartbeat; never call a tool on a timer or send fields outside its schema.
 8. Recheck every visible field and error, confirm the form is complete and that the final Submit control is present and untouched.
-9. Complete the first pass for every mutable member in the current wave before handing off, then request the authoritative refresh or advance and obey the returned wave, blocker or terminal state.
+9. Complete the first pass for every mutable member in the current wave before handing off, then call `trackly_get_apply_progress`. When it returns `nextAction: advance`, call `trackly_advance_apply_execution` as the lifecycle contract says; otherwise obey the returned wave, blocker or terminal state. Keep going until the user's target is reached or Trackly reports a stop.
 
 Resume a parked member only after the user asks to continue that exact member: call `trackly_resume_parked_apply_member` with `explicitUserResume: true`, the current revision, `browserSurface: claude_in_chrome` and a fresh idempotency key, then perform the fresh access probe it requires.
 
