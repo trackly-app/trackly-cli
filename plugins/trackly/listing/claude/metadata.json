@@ -1,0 +1,30 @@
+{
+  "formatVersion": 1,
+  "surface": "claude",
+  "listingVersion": "2",
+  "listingChange": "edit_of_existing_listing",
+  "displayName": "Trackly",
+  "tagline": "Find jobs, keep your Tracker current and prepare applications you submit yourself.",
+  "productionMcpURL": "https://mcp.usetrackly.app/api/plugin/trackly/claude/mcp",
+  "supportURL": "https://usetrackly.app/support",
+  "privacyPolicyURL": "https://usetrackly.app/privacy",
+  "termsOfServiceURL": "https://usetrackly.app/terms",
+  "websiteURL": "https://usetrackly.app/plugins/trackly",
+  "submissionBoundary": "The user reviews and submits every application manually.",
+  "browserSurface": "claude_in_chrome",
+  "toolCount": { "allUsers": 21, "applyAllowlisted": 37 },
+  "consentLines": [
+    "Search jobs and companies, and read your job preferences",
+    "See and update your Trackly application profile, including sensitive answers you choose to share",
+    "Move jobs on your Tracker and add notes",
+    "Prepare job applications in your browser when you ask. You always submit them yourself",
+    "Ask Trackly to monitor a company"
+  ],
+  "skill": {
+    "name": "trackly-apply",
+    "source": "plugins/trackly-claude/skills/trackly-apply",
+    "claudeAiDownload": "trackly-apply-claude-skill-<version>.zip",
+    "claudeCodeDownload": "trackly-claude-plugin-<version>.zip"
+  },
+  "sourceCommit": "5d443853272518bcc0f0b673e29d03d9f45715d5"
+}

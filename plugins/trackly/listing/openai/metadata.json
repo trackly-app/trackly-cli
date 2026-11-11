@@ -1,0 +1,39 @@
+{
+  "formatVersion": 1,
+  "surface": "openai",
+  "appRecord": "existing",
+  "packageName": "trackly-openai",
+  "packageVersion": "1.0.9",
+  "displayName": "trackly",
+  "shortDescription": "Find jobs and fill forms",
+  "productionMcpURL": "https://mcp.usetrackly.app/api/plugin/trackly/openai/mcp",
+  "supportURL": "https://usetrackly.app/support",
+  "privacyPolicyURL": "https://usetrackly.app/privacy",
+  "termsOfServiceURL": "https://usetrackly.app/terms",
+  "websiteURL": "https://usetrackly.app/plugins/trackly",
+  "submissionBoundary": "The user reviews and submits every application manually.",
+  "sourcePackage": {
+    "repository": "trackly-app/close-ai",
+    "commit": "5d443853272518bcc0f0b673e29d03d9f45715d5",
+    "path": "docs/openai/trackly-openai-1.0.9",
+    "checksumManifest": "docs/openai/trackly-openai-1.0.9.sha256",
+    "checksumManifestSha256": "819a954d2e942b8a5d8eaefdce888b358706a3e3a7ac9f9d6505b816babe0ebe",
+    "fileCount": 18
+  },
+  "toolCount": 38,
+  "unchangedToolCount": 27,
+  "newTools": [
+    "trackly_get_application_profile",
+    "trackly_get_profile_onboarding",
+    "trackly_list_companies",
+    "trackly_request_company",
+    "trackly_update_experience_limits",
+    "trackly_get_apply_queue",
+    "trackly_list_tracker_applications",
+    "trackly_create_tracker_application",
+    "trackly_update_tracker_stage",
+    "trackly_add_tracker_note",
+    "trackly_retract_tracker_event"
+  ],
+  "newReviewCaseIds": ["profile-setup-status", "request-company"]
+}

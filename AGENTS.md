@@ -42,6 +42,10 @@ mcp/tracker-tools.js # Tracker (Waypoint) MCP tool schemas and handlers, mirrore
 mcp/waypoint-reducer.js # Port of the backend Tracker reducer that decides an entry's current stage
 contracts/           # Versioned hosted/local Trackly Apply MCP schema contract
 skills/trackly-apply/  # Sanitized public browser-mechanics skill bundled with the CLI
+plugins/trackly/      # Classic Codex/ChatGPT plugin package (21-tool facade), release gates and listing kits
+plugins/trackly/listing/openai/ # ChatGPT trackly-openai 1.0.9 portal kit and captured 38-tool catalog
+plugins/trackly/listing/claude/ # Claude directory v2 listing text and captured 37-tool catalog
+plugins/trackly-claude/ # Claude Trackly Apply skill + Claude Code plugin (release downloads, not in the npm tarball)
 scripts/             # Maintainer checks; the packaged audit verifier is the named exception
 docs/trackly-tools.md  # MCP tool reference (for embedding in AI contexts)
 docs/solutions/       # documented solutions organized by category with searchable YAML frontmatter (module, tags, problem_type)

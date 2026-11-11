@@ -13,7 +13,7 @@ const { HOSTED_RESUME_SECURITY_SOURCE_SHA256, assertHostedResumeSecuritySourceSn
 const assertResumeGlobalParserCarveout = createResumeParserVerifier({ activeNamedDefinitionAst, staticMemberName, parseFullSource, canonicalSchemaAst });
 
 const sha256ExactBytes = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-const CHECKED_IN_HOSTED_FIXTURE_SHA256 = '993640a2abed713c5cf3d7969df20007b3ec15b55a44ae2ffde0980698d08e42';
+const CHECKED_IN_HOSTED_FIXTURE_SHA256 = 'e755cb0ead0432fd47c271fc0f5f6826ee9fe008126d326beb7b10bbdff520ef';
 const HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256 = Object.freeze({
   applyCheckpointActionVariant: '6d83fd691e69b578f683c5e367cc1706a8f74b336e0ff435195f580c2350587c',
   applyCheckpointActionSchema: '6f0b0698b13997eda7100ec00720fff199d936270d232c7de5f55a8fcef2c2ab',
@@ -52,6 +52,13 @@ const HOSTED_GENERAL_RATE_LIMIT_SHA256 = 'c724c5215e1014a5e4cb598cb8487a4524e51e
 // close-ai #3441 (recaptured at 6cd11dfb): plugin search forwards the hosted roleTypes
 // filter (deduplicated, comma-separated); #3462: the server reports the imported
 // published package version TRACKLY_PLUGIN_VERSION.
+// close-ai #3604 (recaptured at 6a5b05f5): the prefix adds the per-server hidden-tool set,
+// the directory profile path (includeSensitive only on request; sensitive applicability
+// only for a sensitive:read grant) and the Claude Apply allowlist decision. The helper
+// skips non-contract names on the classic surface (KTD1), records directory tools hidden
+// from tools/list, gates every directory call on the runtime flags before the handler
+// (KTD8), registers Claude's split Apply tools from the OpenAI split definitions behind
+// claudeGuarded (KTD6, KTD4), and skips switched-off OpenAI split definitions.
 const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' && options.surface !== 'openai' && options.surface !== 'muse'
     && options.surface !== 'claude') {
     throw new Error('Unknown plugin tool surface');
@@ -105,6 +112,22 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
     }
   };
 
+  const hiddenToolNames = new Set<string>();
+  /**
+   * For a hosted grant the backend resolves the encrypted employment status, which
+   * decides whether work history is required (students and unemployed users), only
+   * when asked and only for a grant with sensitive:read. Without it, those users
+   * would read as missing work history. The resolution itself is not returned.
+   */
+  const directoryProfilePath = (includeSensitive: boolean) => {
+    const query = new URLSearchParams();
+    if (includeSensitive) query.set('includeSensitive', 'true');
+    if (options.grantedScopes?.includes('sensitive:read')) query.set('resolveSensitiveApplicability', 'true');
+    const suffix = query.toString();
+    return suffix ? \`/api/jobscout/application-profile?\${suffix}\` : '/api/jobscout/application-profile';
+  };
+  // Parsed once per server; listing is per request, so a setting change still applies without a deploy.
+  const claudeApplyAllowed = options.surface === 'claude' ? claudeApplyAllowedForUser(options.userId) : false;
   const registerPluginTool = (
     name: string,
     config: Record<string, any>,
@@ -115,14 +138,30 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
         type: 'oauth2',
         scopes: requiredScopesForPluginTool(toolName, options.surface) || [],
       }];
+      const directorySurface = directorySurfaceOf(options.surface);
+      if (directorySurface
+        && isDirectoryToolHidden(toolName, directorySurface, options.userId, process.env, claudeApplyAllowed)) {
+        hiddenToolNames.add(toolName);
+      }
+      // KTD8: a switched-off group keeps the tool listed and answers with a
+      // stable unavailable result before any backend call.
+      const gatedHandler: typeof handler = directorySurface
+        ? async (params) => {
+          const reason = directoryToolUnavailableReason(toolName, directorySurface, options.userId);
+          return reason ? directoryUnavailableResult(reason) : toolHandler(params);
+        }
+        : toolHandler;
       return server.registerTool<z.ZodRawShape, z.ZodRawShape>(toolName, {
         ...toolConfig,
         _meta: { ...toolConfig._meta, securitySchemes },
       } as any, (params, extra) => captureHostedMcpTool(
-        toolName, extra.requestId, () => toolHandler(params),
+        toolName, extra.requestId, () => gatedHandler(params),
       ));
     };
     if (options.surface === 'legacy') {
+      // The classic catalog is the frozen 21-tool contract; directory-only
+      // registrations never reach it (KTD1).
+      if (!Object.hasOwn(TRACKLY_PLUGIN_TOOL_SCOPES, name)) return;
       const required = requiredScopesForPluginTool(name, 'legacy') ?? [];
       if (required.some((scope) => scope.startsWith('apply:'))) {
         config = {
@@ -136,10 +175,34 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
       return register(name, { ...config, inputSchema: discovered.inputSchema }, discovered.handler);
     }
     if (options.surface === 'claude') {
-      if (!isClaudeToolName(name)) return;
-      const entry = CLAUDE_TOOLS[name];
       const { _meta, ...rest } = config;
       const meta = museRegistrationMeta(_meta);
+      if (CLAUDE_SPLIT_SOURCES.has(name)) {
+        // KTD6: the dispatcher-shaped tools publish an empty schema on Claude,
+        // so Claude reuses the split definitions ChatGPT already passed review with.
+        for (const definition of openaiToolDefinitions(name, config.inputSchema)) {
+          if (!isClaudeToolName(definition.name)) continue;
+          const entry = CLAUDE_TOOLS[definition.name];
+          register(definition.name, {
+            ...rest,
+            title: entry.title,
+            description: entry.description,
+            inputSchema: claudeInputSchema(definition.name, definition.inputSchema),
+            ...(definition.progressOperation && config.outputSchema ? {
+              outputSchema: config.outputSchema.extend({ operation: z.literal(definition.progressOperation) }),
+            } : {}),
+            annotations: claudeToolAnnotations(definition.name),
+            ...(meta ? { _meta: meta } : {}),
+          }, claudeGuarded(async (input) => {
+            const parsed = config.inputSchema.safeParse(definition.toLegacyInput(input));
+            if (!parsed.success) return errorContent(new Error('Invalid tool input'), 'Invalid tool input');
+            return handler(parsed.data);
+          }));
+        }
+        return;
+      }
+      if (!isClaudeToolName(name)) return;
+      const entry = CLAUDE_TOOLS[name];
       const discovered = museDiscoveryRegistration(
         rest.inputSchema,
         name === 'trackly_search_jobs' ? claudeSearchJobs : handler,
@@ -151,7 +214,7 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
         inputSchema: claudeInputSchema(name, discovered.inputSchema),
         annotations: claudeToolAnnotations(name),
         ...(meta ? { _meta: meta } : {}),
-      }, discovered.handler);
+      }, claudeGuarded(discovered.handler));
     }
     if (options.surface === 'muse') {
       if (!isMuseToolName(name)) return;
@@ -166,6 +229,7 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
       }, discovered.handler);
     }
     for (const definition of openaiToolDefinitions(name, config.inputSchema)) {
+      if (!isDirectoryToolOn(definition.name, 'openai')) continue;
       register(definition.name, {
         ...config,
         inputSchema: definition.inputSchema,
@@ -184,6 +248,15 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
       });
     }
   };`;
+// close-ai #3604: the five Tracker tools share one handler set bound to this factory's
+// requestApi and authToken; directory results drop Tracker contact fields (R9).
+const HOSTED_PLUGIN_FACTORY_INTER_REGISTRATION_SOURCE = `const tracker = createTrackerToolHandlers(requestApi, authToken);
+  const trackerTool = (run: (params: any) => Promise<unknown>, fallback: string) => wrapTool(
+    async (params) => withoutTrackerContacts(await run(params)), fallback,
+  );`;
+// close-ai #3604: tools hidden for this user stay callable (stable unavailable result)
+// but leave tools/list; hideToolsFromList is locked below.
+const HOSTED_PLUGIN_FACTORY_TAIL_SUFFIX_SOURCE = `if (hiddenToolNames.size > 0) hideToolsFromList(server, hiddenToolNames);`;
 
 // Exact reviewed telemetry helpers; attribution cannot become request authority.
 const HOSTED_MCP_ANALYTICS_HELPER_AST_SHA256 = Object.freeze({
@@ -223,7 +296,9 @@ const HOSTED_JOB_RESULT_SHA256 = 'e337bad5f2ebcdb4ebfa3379498852fa6fe8f78758f9b5
 // which now also owns profileFieldReferenceSchema (same bytes, moved). Questions
 // carry only key, label, input type, sensitivity class and option labels/values;
 // guidance points at https://usetrackly.app/profile and never submits.
-const HOSTED_PLUGIN_ONBOARDING_SHA256 = '5d4c4bd48dcc81f5230eb01e1e3269fa4ce4c9a2340eb232f6cb4104befd26ae';
+// close-ai #3604 (recaptured at 6a5b05f5): the question builder is extracted unchanged into
+// the exported onboardingQuestions, which the directory setup-status read also uses.
+const HOSTED_PLUGIN_ONBOARDING_SHA256 = 'c2a4976100e800cfc68fe3785d33fc7c715ad2e1264767dbd74aa5b96c72242d';
 // close-ai #2105: rate-limit client IP resolution mounted in the global inventory.
 // close-ai #3460 (recaptured at 6cd11dfb): exports TRUST_PROXY_HOPS (still 1) and applies the
 // same hop policy to WebSocket upgrades via resolveUpgradeClientIp; Express resolution is unchanged.
@@ -830,6 +905,8 @@ const HOSTED_DEPLOYABLE_PATHS = Object.freeze([
   'src/mcp/plugin-resume-router.ts',
   'src/mcp/plugin-resume-store.ts',
   'src/mcp/plugin-scopes.ts',
+  // close-ai #3604: the ChatGPT and Claude scope rows and runtime flags now live here.
+  'src/mcp/directory-surface-registry.ts',
   'src/mcp/mcp-scopes.ts',
   'src/mcp/oauth-provider.ts',
   'src/mcp/mcp-tokens.ts',
@@ -863,9 +940,10 @@ const HOSTED_DEPLOYABLE_PATHS = Object.freeze([
   'src/routes/admin-read-query.ts',
 ]);
 
-// Recaptured from reviewed source afa31b7f (close-ai #3603 head) and deployed merge
-// 6cd11dfb. The head already contains its first parent 662cf203 (main), so all 49
-// deployable paths preserve the reviewed bytes; no inherited exception applies.
+// Recaptured from reviewed source 3cb96b71 (close-ai #3544 head, match-score backlog) and
+// deployed merge 5d443853, the production deploy after #3604 (directory parity, 6a5b05f5).
+// The head already contains its first parent 6a5b05f5, so all 50 deployable paths preserve
+// the reviewed bytes; no inherited exception applies.
 const REVIEWED_INHERITED_BASELINE = Object.freeze([]);
 
 function assertMergeCommitPreservesPaths(repository, sourceCommit, mergeCommit, relativePaths, inheritedBaseline = []) {
@@ -1309,6 +1387,11 @@ function directToolRegistrationsInExportedFunction(
     expectedPrefixDeclarators = null,
     serverVersionIdentifier = 'PLUGIN_VERSION',
     uiResourceLoopSource = null,
+    // close-ai #3604: exact statements that may sit between registrations (in
+    // order), and exact statements between the UI resource loop and the return.
+    // Both are compared as canonical AST, so nothing else can slip in.
+    lockedInterRegistrationSource = null,
+    lockedTailSuffixSource = null,
   } = {},
 ) {
   assertImportBinding(
@@ -1354,9 +1437,15 @@ function directToolRegistrationsInExportedFunction(
   }
   assert.ok(registrations.length > 0, `${expectedFunction} in ${sourcePath} must directly register tools`);
   const firstRegistrationIndex = registrationStatementIndexes[0];
+  const interRegistrationStatements = factory.body.body
+    .slice(firstRegistrationIndex, registrationStatementIndexes.at(-1) + 1)
+    .filter((_, offset) => !registrationStatementIndexes.includes(firstRegistrationIndex + offset));
   assert.deepEqual(
-    registrationStatementIndexes,
-    Array.from({ length: registrations.length }, (_, index) => firstRegistrationIndex + index),
+    interRegistrationStatements.map((statement) => canonicalSchemaAst(statement)),
+    lockedInterRegistrationSource === null
+      ? []
+      : parseFullSource(lockedInterRegistrationSource, `${expectedFunction} locked inter-registration statements`)
+        .program.body.map((statement) => canonicalSchemaAst(statement)),
     `${expectedFunction} in ${sourcePath} must register tools in one unconditional contiguous block`,
   );
 
@@ -1624,8 +1713,22 @@ function directToolRegistrationsInExportedFunction(
       `${expectedFunction} in ${sourcePath} may contain at most one exact locked plugin UI resource loop`,
     );
   }
+  const expectedTailSuffixStatements = lockedTailSuffixSource === null
+    ? []
+    : parseFullSource(lockedTailSuffixSource, `${expectedFunction} locked tail suffix`).program.body;
+  const actualTailSuffixStatements = expectedTailSuffixStatements.length === 0
+    ? []
+    : factory.body.body.slice(-1 - expectedTailSuffixStatements.length, -1);
+  assert.deepEqual(
+    actualTailSuffixStatements.map((statement) => canonicalSchemaAst(statement)),
+    expectedTailSuffixStatements.map((statement) => canonicalSchemaAst(statement)),
+    `${expectedFunction} in ${sourcePath} must end with its exact reviewed tail before the return`,
+  );
   if (uiResourceLoops.length === 1) {
-    const actualUiResourceStatements = factory.body.body.slice(registrationStatementIndexes.at(-1) + 1, -1);
+    const actualUiResourceStatements = factory.body.body.slice(
+      registrationStatementIndexes.at(-1) + 1,
+      -1 - expectedTailSuffixStatements.length,
+    );
     assert.deepEqual(
       actualUiResourceStatements.map((statement) => canonicalSchemaAst(statement)),
       expectedUiResourceStatements.map((statement) => canonicalSchemaAst(statement)),
@@ -1644,6 +1747,12 @@ function directToolRegistrationsInExportedFunction(
       .map((statement) => statement.expression.callee.object.object),
     helperRegisterToolCallee.object,
     ...(uiResourceReceiver ? [uiResourceReceiver] : []),
+    // A locked tail may pass the server to one reviewed module-level helper
+    // (close-ai #3604: hideToolsFromList); the helper itself is locked by AST.
+    ...actualTailSuffixStatements.flatMap((statement) => {
+      const call = statement.type === 'IfStatement' ? statement.consequent?.expression : statement.expression;
+      return (call?.arguments ?? []).filter((argument) => argument.type === 'Identifier' && argument.name === 'server');
+    }),
     factoryReturns[0].argument,
   ];
   assert.deepEqual(
@@ -1855,6 +1964,9 @@ function assertMachineAccessSemantics(accessSource, accessPath, oauthSource, oau
   assertActiveFunctionDefinitionAst(oauthSource, 'requireMcpEntitlement', HOSTED_REQUIRE_MCP_ENTITLEMENT_SOURCE, oauthPath);
 }
 
+// close-ai #3604 (recaptured at 6a5b05f5): the directory servers (and the classic one,
+// which ignores them) also receive the verified token's own userId and granted scopes, for
+// the per-surface runtime flags, the Claude Apply allowlist and sensitive-applicability reads.
 const HOSTED_PLUGIN_ROUTER_FACTORY_SOURCE = `function createTracklyPluginRouter(surface: CuratedMcpSurface = MCP_PLUGIN_SURFACE) {
   if (surface !== MCP_PLUGIN_SURFACE && surface !== MCP_OPENAI_SURFACE && surface !== MCP_MUSE_SURFACE
     && surface !== MCP_CLAUDE_SURFACE) {
@@ -1886,7 +1998,9 @@ const HOSTED_PLUGIN_ROUTER_FACTORY_SOURCE = `function createTracklyPluginRouter(
       const server = surface === MCP_MUSE_SURFACE
         ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'muse' })
         : claude
-        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'claude' })
+        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, {
+          surface: 'claude', userId: authInfo.extra.userId, grantedScopes: authInfo.scopes,
+        })
         : createTracklyPluginMcpServer(authToken, apiRequest, async () => {
           const { capability, filenameSha256: _filenameHash, ...document } = await pluginResumeDocuments(surface.resource).prepare({
             userId: authInfo.extra.userId, authEpoch: authInfo.extra.authEpoch,
@@ -1895,6 +2009,8 @@ const HOSTED_PLUGIN_ROUTER_FACTORY_SOURCE = `function createTracklyPluginRouter(
           return { ...document, openUrl: \`\${surface.resource}/resume#\${capability}\` };
         }, surface === MCP_OPENAI_SURFACE ? MCP_OPENAI_SURFACE.resumePath : MCP_PLUGIN_SURFACE.resumePath, {
           surface: surface === MCP_OPENAI_SURFACE ? 'openai' : 'legacy',
+          userId: authInfo.extra.userId,
+          grantedScopes: authInfo.scopes,
         });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       const analyticsContext = buildHostedMcpAnalyticsContext({
@@ -3309,58 +3425,46 @@ function assertImmutablePluginToolScopesSemantics(source, sourcePath) {
     lockedFunctionReferences.length > 0,
     `requiredScopesForPluginTool in ${sourcePath} must read ${name}`,
   );
-  // close-ai #2711: diagnostics name a tool only when the legacy or OpenAI
-  // catalog knows it (both via the locked requiredScopesForPluginTool).
+  // close-ai #3604 (recaptured at 6a5b05f5): diagnostics name a tool only when the
+  // legacy catalog (locked requiredScopesForPluginTool) or the byte-locked directory
+  // surface registry knows it.
   assertActiveFunctionDefinitionAst(
     source,
     'diagnosticToolName',
     `function diagnosticToolName(value: unknown): string {
-      return typeof value === 'string' && (requiredScopesForPluginTool(value) !== null || requiredScopesForPluginTool(value, 'openai') !== null)
+      return typeof value === 'string' && (requiredScopesForPluginTool(value) !== null || directoryToolEntry(value) !== null)
         ? value
         : '[redacted]';
     }`,
     sourcePath,
   );
-  // close-ai #2711: the OpenAI catalog is the legacy map minus the two apply
-  // work tools, plus apply:write progress actions and two read tools that
-  // reuse trackly_get_apply_work's scopes. Both readers of the legacy map are
-  // locked exactly here.
+  // close-ai #3604 (KTD1): the OpenAI scope rows are the directory registry rows published
+  // on 'openai'; the legacy map is no longer read to derive them. The registry module is
+  // whole-byte locked, and the legacy map stays referenced only by its names catalog and
+  // requiredScopesForPluginTool.
+  assertImportBinding(source, 'DIRECTORY_TOOLS', 'DIRECTORY_TOOLS', './directory-surface-registry.js', sourcePath);
+  assertImportBinding(source, 'directoryToolEntry', 'directoryToolEntry', './directory-surface-registry.js', sourcePath);
   const sharedScopesStatements = ast.program.body.filter((statement) => (
     statement.type === 'VariableDeclaration'
     && statement.declarations.some((declarator) => (
-      declarator.id?.type === 'ObjectPattern'
-      && declarator.init?.type === 'Identifier' && declarator.init.name === name
+      declarator.init?.type === 'Identifier' && declarator.init.name === name
     ))
   ));
   assert.equal(
     sharedScopesStatements.length,
-    1,
-    `${sourcePath} must derive the shared OpenAI scope rows from ${name} exactly once`,
-  );
-  assert.deepEqual(
-    canonicalSchemaAst(sharedScopesStatements[0]),
-    canonicalSchemaAst(parseFullSource(
-      `const { trackly_report_apply_progress: _progress, trackly_get_apply_work: _work, ...sharedToolScopes } = ${name};`,
-      'locked shared OpenAI scope rows',
-    ).program.body[0]),
-    `${sourcePath} must remove exactly the two legacy apply work tools from the shared OpenAI scope rows`,
+    0,
+    `${sourcePath} must not alias or destructure ${name}`,
   );
   const openaiScopesBinding = 'TRACKLY_OPENAI_TOOL_SCOPES';
   assertActiveVariableInitializerAst(
     source,
     openaiScopesBinding,
-    `Object.freeze({
-      ...sharedToolScopes,
-      ...Object.fromEntries(Object.values(OPENAI_PROGRESS_ACTIONS).map(({ name }) => [name, ['apply:write'] as const])),
-      trackly_get_apply_progress: TRACKLY_PLUGIN_TOOL_SCOPES.trackly_get_apply_work,
-      trackly_get_apply_snapshot: TRACKLY_PLUGIN_TOOL_SCOPES.trackly_get_apply_work,
-    })`,
+    `Object.freeze(
+      Object.fromEntries(Object.entries(DIRECTORY_TOOLS as Record<string, DirectoryToolEntry>)
+        .filter(([, entry]) => entry.surfaces.includes('openai'))
+        .map(([name, entry]) => [name, entry.scopes])),
+    )`,
     sourcePath,
-  );
-  const openaiScopesReferences = collectBindingReferences(
-    activeVariableDeclarator(source, openaiScopesBinding, sourcePath).declarator.init,
-    name,
-    () => false,
   );
   const references = collectBindingReferences(ast, name, () => false);
   assert.deepEqual(
@@ -3368,11 +3472,9 @@ function assertImmutablePluginToolScopesSemantics(source, sourcePath) {
     [
       declaration.id,
       ...namesReferences,
-      sharedScopesStatements[0].declarations[0].init,
-      ...openaiScopesReferences,
       ...lockedFunctionReferences,
     ],
-    `${name} in ${sourcePath} must not be reassigned, mutated, aliased, escaped, or referenced outside its locked names catalog, OpenAI catalog derivation, and requiredScopesForPluginTool`,
+    `${name} in ${sourcePath} must not be reassigned, mutated, aliased, escaped, or referenced outside its locked names catalog and requiredScopesForPluginTool`,
   );
 }
 
@@ -8365,7 +8467,7 @@ assertExactHostedSourceSha256(
 );
 const hostedPluginOnboardingPath = path.join(backendRoot, 'src', 'mcp', 'plugin-onboarding.ts');
 const hostedPluginOnboardingSource = fs.readFileSync(hostedPluginOnboardingPath, 'utf8');
-for (const importedName of ['applyOnboardingSchema', 'buildApplyOnboarding', 'profileFieldReferenceSchema']) {
+for (const importedName of ['applyOnboardingSchema', 'buildApplyOnboarding', 'onboardingQuestions', 'profileFieldReferenceSchema']) {
   assertImportBinding(hostedPluginSource, importedName, importedName, './plugin-onboarding.js', hostedPluginSourcePath);
 }
 assertExactHostedSourceSha256(
@@ -8502,10 +8604,66 @@ assertActiveFunctionDefinitionAst(
   }`,
   hostedPluginSourcePath,
 );
+// close-ai #3604 (recaptured at 6a5b05f5): errorContent keeps the reviewed backend payload,
+// now built by backendErrorPayload, and adds one branch: a TrackerToolError (imported from the
+// Tracker handlers the hosted MCP already uses) carries its fixed-string payload, with Tracker
+// contact names and emails removed at any depth (R9), plus its HTTP status.
+assertImportBinding(hostedPluginSource, 'TrackerToolError', 'TrackerToolError', './tracker-tools.js', hostedPluginSourcePath);
+// close-ai #3544 (recaptured at 5d443853): trackly_search_jobs and trackly_get_job append the
+// shared match-score status sentence imported from claude-tools.ts. Its exact text is part of
+// the classic descriptors, so the constant is locked here as well as its import.
+assertImportBinding(
+  hostedPluginSource, 'MATCH_SCORE_STATUS_DESCRIPTION', 'MATCH_SCORE_STATUS_DESCRIPTION', './claude-tools.js', hostedPluginSourcePath,
+);
+{
+  const claudeToolsPath = path.join(backendRoot, 'src', 'mcp', 'claude-tools.ts');
+  assertActiveVariableInitializerAst(
+    fs.readFileSync(claudeToolsPath, 'utf8'),
+    'MATCH_SCORE_STATUS_DESCRIPTION',
+    `'matchScoreStatus=pending means owned waiting parse or score work; '
+      + 'matchScoreReason=parse_required or score_required names a missing prerequisite without promising completion. '
+      + 'outside_scoring_window means outside the automatic 30-day window, description_unavailable means no usable '
+      + 'description, inactive means a closed posting, and not_scored means unknown. Saved scores take precedence; '
+      + 'a missing numeric score is unavailable.'`,
+    claudeToolsPath,
+  );
+}
 assertActiveFunctionDefinitionAst(
   hostedPluginSource,
   'errorContent',
   `function errorContent(error: any, fallback: string) {
+    const payload = error instanceof TrackerToolError
+      ? { ...withoutTrackerContacts(error.payload), status: error.status }
+      : backendErrorPayload(error, fallback);
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+      isError: true,
+    };
+  }`,
+  hostedPluginSourcePath,
+);
+assertActiveVariableInitializerAst(
+  hostedPluginSource,
+  'TRACKER_CONTACT_KEYS',
+  "new Set(['contactName', 'contactEmail'])",
+  hostedPluginSourcePath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedPluginSource,
+  'withoutTrackerContacts',
+  `function withoutTrackerContacts<T>(value: T): T {
+    if (Array.isArray(value)) return value.map(withoutTrackerContacts) as T;
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !TRACKER_CONTACT_KEYS.has(key))
+      .map(([key, child]) => [key, withoutTrackerContacts(child)])) as T;
+  }`,
+  hostedPluginSourcePath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedPluginSource,
+  'backendErrorPayload',
+  `function backendErrorPayload(error: any, fallback: string): Record<string, unknown> {
     const body = error?.responseBody;
     const payload: Record<string, unknown> = {
       error: typeof error?.message === 'string' ? error.message : fallback,
@@ -8527,10 +8685,7 @@ assertActiveFunctionDefinitionAst(
         .slice(0, 100);
     }
     if (typeof body?.retryable === 'boolean') payload.retryable = body.retryable;
-    return {
-      content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
-      isError: true,
-    };
+    return payload;
   }`,
   hostedPluginSourcePath,
 );
@@ -8591,7 +8746,9 @@ for (const [name, expectedDigest] of Object.entries(HOSTED_MCP_ANALYTICS_HELPER_
 assertImportedBindingNeverRedeclared(
   hostedPluginSource, 'captureHostedMcpTool', 'captureHostedMcpTool', './server.js', hostedPluginSourcePath,
 );
-const executablePluginRegistrations = directToolRegistrationsInExportedFunction(
+// close-ai #3604 (recaptured at 6a5b05f5): the factory options also carry the verified
+// token's userId and granted scopes (directory flags, Claude Apply allowlist, sensitive applicability).
+const allExecutablePluginRegistrations = directToolRegistrationsInExportedFunction(
   hostedPluginSource,
   'createTracklyPluginMcpServer',
   'registerPluginTool',
@@ -8600,9 +8757,18 @@ const executablePluginRegistrations = directToolRegistrationsInExportedFunction(
     requireUiResourceLoop: true,
     expectedParameters: `authToken: string, requestApi: PluginApiRequest = apiRequest, prepareResume?: () => Promise<PluginResumePreview>,
       resumePath = '/api/plugin/trackly/mcp/resume',
-      options: { surface: 'legacy' | 'openai' | 'muse' | 'claude' } = { surface: 'legacy' }`,
+      options: {
+        surface: 'legacy' | 'openai' | 'muse' | 'claude';
+        userId?: number;
+        grantedScopes?: readonly string[];
+      } = { surface: 'legacy' }`,
     lockedPrefixSource: HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE,
-    expectedPrefixDeclarators: ['server', 'searchJobsRequest', 'claudeSearchJobs', 'registerPluginTool'],
+    expectedPrefixDeclarators: [
+      'server', 'searchJobsRequest', 'claudeSearchJobs', 'hiddenToolNames', 'directoryProfilePath',
+      'claudeApplyAllowed', 'registerPluginTool',
+    ],
+    lockedInterRegistrationSource: HOSTED_PLUGIN_FACTORY_INTER_REGISTRATION_SOURCE,
+    lockedTailSuffixSource: HOSTED_PLUGIN_FACTORY_TAIL_SUFFIX_SOURCE,
     // close-ai #3462: the server reports the imported published package version.
     serverVersionIdentifier: 'TRACKLY_PLUGIN_VERSION',
     // close-ai #2777/#3180: Muse and Claude publish no Apply UI cards; #2705
@@ -8629,6 +8795,56 @@ const executablePluginRegistrations = directToolRegistrationsInExportedFunction(
   }`,
   },
 );
+// close-ai #3604 (recaptured at 6a5b05f5): the factory also registers eleven
+// directory-only tools for ChatGPT and Claude. The locked prefix returns before
+// registering any name outside contracts/trackly-plugin-tools.json on the classic
+// surface (KTD1), so the 21-tool public facade below is unchanged. Each directory-only
+// registration is pinned here by exact name, annotations, descriptor bytes and handler
+// bytes; its scopes come from the byte-locked directory surface registry.
+const HOSTED_DIRECTORY_ONLY_PLUGIN_TOOLS = Object.freeze({
+  trackly_get_application_profile: Object.freeze({ annotations: 'readOnlyAnnotations', descriptorSha256:
+    'f9aadd63b5ba6f08e950515437ac4fc024adc3914edf148f9109de228b5ed66e',
+    handlerSha256: '9f7ca65c791b618107537ce5e2c4781210caea96bab8c71984ecbec3802707a5' }),
+  trackly_get_profile_onboarding: Object.freeze({ annotations: 'readOnlyAnnotations', descriptorSha256:
+    'd1d3e1c430b8a16732470b72d956c230defaa33ac70c885261b0fd70a16d3de0',
+    handlerSha256: '7da022b5e08e2447a8dbfd1fe83e011bd6d6a0dc7412a887befb0630d79c9288' }),
+  trackly_list_companies: Object.freeze({ annotations: 'readOnlyAnnotations', descriptorSha256:
+    'ccc31b4b80914d0266c5a1a6536b6dfaa51bce10f1bbc52d3fbf42c889d2f7fa',
+    handlerSha256: 'db691a80b5c2692898a5649eed8dfc692a7ab5383f867da657fd86f7f90f873f' }),
+  trackly_request_company: Object.freeze({ annotations: 'mutationAnnotations(false, false)', descriptorSha256:
+    '19db72560ee2fec16424d7447dd5e41c7924008a6624b920cefb448109bcd612',
+    handlerSha256: '828927ac81b6abecac2d72ad4ef758e778dd11b60a4f8d700941f8be1e8f1ba9' }),
+  trackly_update_experience_limits: Object.freeze({ annotations: 'mutationAnnotations(true, false)', descriptorSha256:
+    'dcbb3e59b0b196002548e8db52f17b1669fdc878426e7e84aa2875e1cc340438',
+    handlerSha256: '52a844e89f5afb55d2aa720a217760cb3e55083d38f55168dd739ca17dcfd15c' }),
+  trackly_list_tracker_applications: Object.freeze({ annotations: 'readOnlyAnnotations', descriptorSha256:
+    'fe9335c93ef054c00db13fbe3ff7aa270facc694d012d141a95f611fabeeb985',
+    handlerSha256: 'b79f39148a04762e2d1bea7454c5ff27ef1beb4518243fc4b01b8772b913bdd1' }),
+  trackly_create_tracker_application: Object.freeze({ annotations: 'mutationAnnotations(true, true)', descriptorSha256:
+    'c06a00f7d2cacab54a82ca5c3db0d7e5765ea1e0d7b6a9fcf1f8c2596208e7d4',
+    handlerSha256: 'ce17b9049b513c0ac5d71c6bccf1d0bcb405bc32d8aeceb5d88c10c5840e6e00' }),
+  trackly_update_tracker_stage: Object.freeze({ annotations: 'mutationAnnotations(true, true)', descriptorSha256:
+    '63b7bb71391178d1c632922b8ed439f4733182dc3649cd270e0583d8a4d4b68b',
+    handlerSha256: '7a51cd6cb4390e91d554842877003a08a40275fd761f31fb11d75c2d9b141472' }),
+  trackly_add_tracker_note: Object.freeze({ annotations: 'mutationAnnotations(false, true)', descriptorSha256:
+    '36d99505238ac95e3d46390ec1e66f84d0938105e1c949e50ce4dc5f935e6e97',
+    handlerSha256: 'fb642951a7c2e6486aff236088f607e92f1ced139521b430f099e92f0c757f59' }),
+  trackly_retract_tracker_event: Object.freeze({ annotations: 'mutationAnnotations(true, true)', descriptorSha256:
+    '239873b93635709bdc30ba0c18dca33525a94e8f163895f5cf830c0a310c0eea',
+    handlerSha256: 'bb324147e7664f3e083fedeca33afe26822c7eb83c04e4b98a4c67114ec3f505' }),
+  trackly_get_apply_queue: Object.freeze({ annotations: 'readOnlyAnnotations', descriptorSha256:
+    '1c05ef26663fa169d8540b1aa908e56dd22e6155e3200a9afa62e2ce28d8baa7',
+    handlerSha256: '067787364228376d289733e6ee07525f3eb04490a307ec82fbea37c033016ad2' }),
+});
+const directoryOnlyPluginRegistrations = allExecutablePluginRegistrations
+  .filter(({ name }) => Object.hasOwn(HOSTED_DIRECTORY_ONLY_PLUGIN_TOOLS, name));
+assert.deepEqual(
+  directoryOnlyPluginRegistrations.map(({ name }) => name).sort(),
+  Object.keys(HOSTED_DIRECTORY_ONLY_PLUGIN_TOOLS).sort(),
+  'Executable hosted plugin source must register each reviewed directory-only tool exactly once',
+);
+const executablePluginRegistrations = allExecutablePluginRegistrations
+  .filter(({ name }) => !Object.hasOwn(HOSTED_DIRECTORY_ONLY_PLUGIN_TOOLS, name));
 const executablePluginTools = executablePluginRegistrations.map((registration) => registration.name);
 const sortedExecutablePluginTools = [...executablePluginTools].sort();
 assert.equal(hostedPluginContract.contractVersion, '1.0.0');
@@ -8650,6 +8866,24 @@ const executableScopeContract = staticStringArrayMap(
   hostedPluginScopesPath,
 );
 assertMcpScopeHelperSemantics(hostedMcpScopesSource, hostedMcpScopesPath);
+// close-ai #3604 (recaptured at 6a5b05f5): the directory surface registry is the only
+// source of the ChatGPT and Claude scope rows (directory-native, KTD3), the runtime
+// surface:group flags and the Claude Apply allowlist, all failing closed (KTD8). It is
+// whole-byte locked, as plugin-scopes.ts is, so any scope, flag or allowlist change
+// needs a reviewed recapture.
+const HOSTED_DIRECTORY_SURFACE_REGISTRY_SHA256 = '9be714555bcc7410fdda47c5a02488efad4949339dfa25d505030ef5045b4f38';
+const hostedDirectoryRegistryPath = path.join(backendRoot, 'src', 'mcp', 'directory-surface-registry.ts');
+assertExactHostedSourceSha256(
+  fs.readFileSync(hostedDirectoryRegistryPath, 'utf8'),
+  HOSTED_DIRECTORY_SURFACE_REGISTRY_SHA256,
+  hostedDirectoryRegistryPath,
+);
+for (const importedName of [
+  'directoryToolUnavailableReason', 'directoryUnavailableResult', 'claudeApplyAllowedForUser',
+  'isDirectoryToolHidden', 'isDirectoryToolOn',
+]) {
+  assertImportBinding(hostedPluginSource, importedName, importedName, './directory-surface-registry.js', hostedPluginSourcePath);
+}
 assertImmutablePluginScopeFreeMethods(hostedPluginScopesSource, hostedPluginScopesPath);
 assertImmutablePluginToolScopesSemantics(hostedPluginScopesSource, hostedPluginScopesPath);
 assertJsonRpcResponseClassifierSemantics(hostedPluginScopesSource, hostedPluginScopesPath);
@@ -8703,23 +8937,26 @@ assert.equal(
 assertActiveFunctionDefinitionAst(
   hostedPluginScopesSource,
   'requiredScopesForPluginTool',
+  // close-ai #3604 (recaptured at 6a5b05f5): Muse keeps the legacy rows; ChatGPT and
+  // Claude read only their own published rows from the byte-locked directory registry
+  // (directory-native scopes, KTD3); the classic surface reads only the legacy map.
   `function requiredScopesForPluginTool(toolName: string, surface: PluginToolSurface = 'legacy'): McpScope[] | null {
-  // Muse and Claude serve their own catalogs on the legacy scope rows; neither
-  // may fall through to the OpenAI map.
+  // Muse serves its own catalog on the legacy scope rows; it never falls
+  // through to the directory registry.
   if (surface === 'muse') {
     if (!isMuseToolName(toolName)) return null;
     return requiredScopesForPluginTool(toolName, 'legacy');
   }
-  if (surface === 'claude') {
-    if (!isClaudeToolName(toolName)) return null;
-    return requiredScopesForPluginTool(toolName, 'legacy');
+  if (surface === 'openai' || surface === 'claude') {
+    const entry = directoryToolEntry(toolName);
+    return entry?.surfaces.includes(surface) ? [...entry.scopes] : null;
   }
-  const catalog = surface === 'legacy' ? TRACKLY_PLUGIN_TOOL_SCOPES : TRACKLY_OPENAI_TOOL_SCOPES;
-  if (!Object.hasOwn(catalog, toolName)) return null;
-  return [...(catalog as Record<string, readonly McpScope[]>)[toolName]];
+  if (!Object.hasOwn(TRACKLY_PLUGIN_TOOL_SCOPES, toolName)) return null;
+  return [...(TRACKLY_PLUGIN_TOOL_SCOPES as Record<string, readonly McpScope[]>)[toolName]];
 }`,
   hostedPluginScopesPath,
 );
+// close-ai #3604: a directory profile read that asks for sensitive values also needs sensitive:read.
 assertActiveFunctionDefinitionAst(
   hostedPluginScopesSource,
   'requiredScopesForPluginToolCall',
@@ -8734,6 +8971,9 @@ assertActiveFunctionDefinitionAst(
   const input = args as Record<string, unknown>;
   if (toolName === 'trackly_prepare_resume_artifact' && input.operation === 'preview') {
     required.push('profile:read', 'sensitive:read');
+  }
+  if (toolName === 'trackly_get_application_profile' && input.includeSensitive === true) {
+    required.push('sensitive:read');
   }
   if (toolName === 'trackly_update_status' && input.action === 'applied' && surface !== 'muse') {
     required.push('apply:write');
@@ -9005,7 +9245,7 @@ assert.deepEqual(
   'Packaged public scope lock must cover every hosted plugin tool',
 );
 assert.ok(
-  executablePluginTools.every((name) => !/referral|contact|outreach|trackly_chat|(?:^|_)submit(?:_|$)/.test(name)),
+  allExecutablePluginRegistrations.every(({ name }) => !/referral|contact|outreach|trackly_chat|(?:^|_)submit(?:_|$)/.test(name)),
   'Hosted plugin must not expose referral, contact, outreach, or agent-in-agent tools',
 );
 assert.ok(
@@ -9119,6 +9359,23 @@ assert.deepEqual(
   executableHandlerDigests,
   pluginLock.publicExecutableContract.handlerSha256,
   'Executable hosted plugin handler implementations drifted from the packaged exact-byte behavior digest lock',
+);
+for (const registration of directoryOnlyPluginRegistrations) {
+  const expected = HOSTED_DIRECTORY_ONLY_PLUGIN_TOOLS[registration.name];
+  assert.deepEqual(
+    canonicalSchemaAst(registrationDescriptorPropertyAst(hostedPluginSource, registration, 'annotations', hostedPluginSourcePath)),
+    canonicalSchemaAst(parseExpectedExpression(expected.annotations, `${registration.name}.annotations contract`)),
+    `${registration.name} must publish its locked annotations ${expected.annotations}`,
+  );
+}
+assert.deepEqual(
+  Object.fromEntries(directoryOnlyPluginRegistrations.map((registration) => {
+    const [, descriptor, handler] = registrationArgumentSources(hostedPluginSource, registration, hostedPluginSourcePath);
+    return [registration.name, { descriptorSha256: sha256ExactBytes(descriptor), handlerSha256: sha256ExactBytes(handler) }];
+  })),
+  Object.fromEntries(Object.entries(HOSTED_DIRECTORY_ONLY_PLUGIN_TOOLS)
+    .map(([name, { descriptorSha256, handlerSha256 }]) => [name, { descriptorSha256, handlerSha256 }])),
+  'Executable directory-only plugin descriptors or handlers drifted from their reviewed exact-byte digests',
 );
 assert.equal(
   sha256ExactBytes(hostedPluginSource),
@@ -9800,37 +10057,11 @@ for (const statement of [
   `const rawProfile = profileResponse?.profile;`,
   `const profileBodyAvailable = availability.profile && readinessProfileAvailable(rawProfile);`,
   `const profile: any = profileBodyAvailable ? rawProfile : undefined;`,
-  `const fieldLabels = new Map<string, string>(
-    (Array.isArray(safeSchema?.fields) ? safeSchema.fields : []).flatMap((field: unknown) => {
-      if (!field || typeof field !== 'object' || Array.isArray(field)) return [];
-      const value = field as Record<string, unknown>;
-      return typeof value.key === 'string' && typeof value.label === 'string'
-        ? [[value.key, value.label] as const]
-        : [];
-    }),
-  );`,
-  // close-ai #3158: the two whole-collection requirements get fixed labels from
-  // the locked PROFILE_COLLECTION_LABELS constant.
-  `for (const [key, label] of PROFILE_COLLECTION_LABELS) fieldLabels.set(key, label);`,
-  `for (const field of Array.isArray(safeSchema?.educationFields) ? safeSchema.educationFields : []) {
-    if (!field || typeof field !== 'object' || Array.isArray(field)) continue;
-    const value = field as Record<string, unknown>;
-    if (typeof value.key === 'string' && typeof value.label === 'string') {
-      fieldLabels.set(\`education.\${value.key}\`, value.label);
-    }
-  }`,
-  `const missingRequiredKeys = Array.isArray(profile?.completeness?.missingKeys)
-    ? (profile.completeness.missingKeys as unknown[]).flatMap((key): string[] => (
-      readinessMissingProfileKey(key)
-        ? [key]
-        : []
-    )).slice(0, 100)
-    : [];`,
-  `const missingRequired = missingRequiredKeys.flatMap((key) => (
-    key === 'documents.default_resume' && schemaProjectionAvailable
-      ? [{ key, label: 'Default resume' }]
-      : fieldLabels.has(key) ? [{ key, label: fieldLabels.get(key)! }] : []
-  ));`,
+  // close-ai #3604 (recaptured at 6a5b05f5): the schema label map and the missing-required
+  // projection are extracted unchanged into schemaFieldLabels and missingRequiredFields
+  // (both locked exactly below), which the directory setup-status read also uses.
+  `const fieldLabels = schemaFieldLabels(safeSchema);`,
+  `const { missingRequiredKeys, missingRequired } = missingRequiredFields(profile, fieldLabels, schemaProjectionAvailable);`,
   `const profileProjectionAvailable = schemaProjectionAvailable
     && profileBodyAvailable
     && missingRequired.length === missingRequiredKeys.length;`,
@@ -9863,6 +10094,54 @@ for (const statement of [
   );
 }
 
+// close-ai #3604: the readiness helpers extracted from projectApplyReadiness. The
+// label map still takes only static key/label pairs, the two locked collection labels
+// and education labels; missing keys still pass readinessMissingProfileKey and cap at 100.
+assertActiveFunctionDefinitionAst(
+  hostedPluginSource,
+  'schemaFieldLabels',
+  `function schemaFieldLabels(safeSchema: any): Map<string, string> {
+    const fieldLabels = new Map<string, string>(
+      (Array.isArray(safeSchema?.fields) ? safeSchema.fields : []).flatMap((field: unknown) => {
+        if (!field || typeof field !== 'object' || Array.isArray(field)) return [];
+        const value = field as Record<string, unknown>;
+        return typeof value.key === 'string' && typeof value.label === 'string'
+          ? [[value.key, value.label] as const]
+          : [];
+      }),
+    );
+    for (const [key, label] of PROFILE_COLLECTION_LABELS) fieldLabels.set(key, label);
+    for (const field of Array.isArray(safeSchema?.educationFields) ? safeSchema.educationFields : []) {
+      if (!field || typeof field !== 'object' || Array.isArray(field)) continue;
+      const value = field as Record<string, unknown>;
+      if (typeof value.key === 'string' && typeof value.label === 'string') {
+        fieldLabels.set(\`education.\${value.key}\`, value.label);
+      }
+    }
+    return fieldLabels;
+  }`,
+  hostedPluginSourcePath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedPluginSource,
+  'missingRequiredFields',
+  `function missingRequiredFields(profile: any, fieldLabels: Map<string, string>, schemaAvailable: boolean) {
+    const missingRequiredKeys = Array.isArray(profile?.completeness?.missingKeys)
+      ? (profile.completeness.missingKeys as unknown[]).flatMap((key): string[] => (
+        readinessMissingProfileKey(key)
+          ? [key]
+          : []
+      )).slice(0, 100)
+      : [];
+    const missingRequired = missingRequiredKeys.flatMap((key) => (
+      key === 'documents.default_resume' && schemaAvailable
+        ? [{ key, label: 'Default resume' }]
+        : fieldLabels.has(key) ? [{ key, label: fieldLabels.get(key)! }] : []
+    ));
+    return { missingRequiredKeys, missingRequired };
+  }`,
+  hostedPluginSourcePath,
+);
 assertImportBinding(
   hostedPluginSource,
   'CATALOG_DEFAULT_SOURCE',

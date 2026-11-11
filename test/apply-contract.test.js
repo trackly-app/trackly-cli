@@ -3813,7 +3813,9 @@ const CURRENT_ANALYTICS_ROUTER_FIXTURE = [
   "      const server = surface === MCP_MUSE_SURFACE",
   "        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'muse' })",
   "        : claude",
-  "        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'claude' })",
+  "        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, {",
+  "          surface: 'claude', userId: authInfo.extra.userId, grantedScopes: authInfo.scopes,",
+  "        })",
   "        : createTracklyPluginMcpServer(authToken, apiRequest, async () => {",
   "          const { capability, filenameSha256: _filenameHash, ...document } = await pluginResumeDocuments(surface.resource).prepare({",
   "            userId: authInfo.extra.userId, authEpoch: authInfo.extra.authEpoch,",
@@ -3822,6 +3824,8 @@ const CURRENT_ANALYTICS_ROUTER_FIXTURE = [
   "          return { ...document, openUrl: `${surface.resource}/resume#${capability}` };",
   "        }, surface === MCP_OPENAI_SURFACE ? MCP_OPENAI_SURFACE.resumePath : MCP_PLUGIN_SURFACE.resumePath, {",
   "          surface: surface === MCP_OPENAI_SURFACE ? 'openai' : 'legacy',",
+  "          userId: authInfo.extra.userId,",
+  "          grantedScopes: authInfo.scopes,",
   "        });",
   "      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });",
   "      const analyticsContext = buildHostedMcpAnalyticsContext({",
@@ -4201,6 +4205,53 @@ function checkCurrentAnalyticsFactory(source, tail = CURRENT_PLUGIN_RESOURCE_TAI
 }
 test('current hosted analytics factory accepts the reviewed wrapper and exact readiness alias tail', () => {
   assert.deepEqual(checkCurrentAnalyticsFactory(currentAnalyticsFactory()).map(item => item.name), ['trackly_one']);
+});
+// close-ai #3604: the factory may hold exact reviewed statements between registrations
+// (the Tracker handler binding) and one exact statement after the UI loop (hideToolsFromList).
+const REVIEWED_INTER_REGISTRATION = 'const tracker = createTrackerToolHandlers(requestApi, authToken);';
+const REVIEWED_TAIL_SUFFIX = 'if (hiddenToolNames.size > 0) hideToolsFromList(server, hiddenToolNames);';
+function interleavedAnalyticsFactory(inter = REVIEWED_INTER_REGISTRATION, suffix = REVIEWED_TAIL_SUFFIX) {
+  return currentAnalyticsFactory().replace(
+    "registerPluginTool('trackly_one', { inputSchema: z.object({}) }, async params => params);",
+    `registerPluginTool('trackly_one', { inputSchema: z.object({}) }, async params => params);
+      ${inter}
+      registerPluginTool('trackly_two', { inputSchema: z.object({}) }, async params => tracker.list(params));`,
+  ).replace('      return server;', `      ${suffix}\n      return server;`);
+}
+function checkInterleavedAnalyticsFactory(source, options = {}) {
+  return directToolRegistrationsInExportedFunction(source, 'createTracklyPluginMcpServer', 'registerPluginTool', 'interleaved factory fixture', {
+    requireUiResourceLoop: true,
+    lockedPrefixSource: CURRENT_PLUGIN_PREFIX_FIXTURE,
+    expectedPrefixDeclarators: ['server', 'searchJobsRequest', 'claudeSearchJobs', 'registerPluginTool'],
+    uiResourceLoopSource: CURRENT_PLUGIN_RESOURCE_TAIL_FIXTURE,
+    lockedInterRegistrationSource: REVIEWED_INTER_REGISTRATION,
+    lockedTailSuffixSource: REVIEWED_TAIL_SUFFIX,
+    ...options,
+  });
+}
+test('hosted factory proof accepts only the exact reviewed inter-registration and tail statements', () => {
+  assert.deepEqual(
+    checkInterleavedAnalyticsFactory(interleavedAnalyticsFactory()).map(({ name }) => name),
+    ['trackly_one', 'trackly_two'],
+  );
+  for (const changed of [
+    interleavedAnalyticsFactory('const tracker = createTrackerToolHandlers(requestApi, otherToken);'),
+    interleavedAnalyticsFactory(`${REVIEWED_INTER_REGISTRATION} unreviewedOperation();`),
+    interleavedAnalyticsFactory('if (flag) { const tracker = createTrackerToolHandlers(requestApi, authToken); }'),
+  ]) {
+    assert.throws(() => checkInterleavedAnalyticsFactory(changed), /one unconditional contiguous block/);
+  }
+  assert.throws(
+    () => checkInterleavedAnalyticsFactory(interleavedAnalyticsFactory(), { lockedInterRegistrationSource: null }),
+    /one unconditional contiguous block/,
+  );
+  for (const changed of [
+    interleavedAnalyticsFactory(REVIEWED_INTER_REGISTRATION, 'hideToolsFromList(server, hiddenToolNames);'),
+    interleavedAnalyticsFactory(REVIEWED_INTER_REGISTRATION, 'if (hiddenToolNames.size > 0) exposeServer(server);'),
+    interleavedAnalyticsFactory(REVIEWED_INTER_REGISTRATION, `${REVIEWED_TAIL_SUFFIX} const escaped = server;`),
+  ]) {
+    assert.throws(() => checkInterleavedAnalyticsFactory(changed), /exact reviewed tail|resource registration tail|outside the verified registration helper/);
+  }
 });
 test('current hosted analytics factory rejects name params invocation result and error drift', () => {
   const source = currentAnalyticsFactory();

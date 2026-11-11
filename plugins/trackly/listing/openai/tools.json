@@ -1,0 +1,446 @@
+{
+  "formatVersion": 1,
+  "surface": "openai",
+  "endpoint": "https://mcp.usetrackly.app/api/plugin/trackly/openai/mcp",
+  "source": {
+    "repository": "trackly-app/close-ai",
+    "commit": "5d443853272518bcc0f0b673e29d03d9f45715d5",
+    "goldens": [
+      "src/mcp/__tests__/fixtures/surface-golden/openai-tools-list.json"
+    ],
+    "registry": "src/mcp/directory-surface-registry.ts"
+  },
+  "tools": [
+    {
+      "name": "trackly_search_jobs",
+      "title": "Search jobs with trackly",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "jobs:read",
+        "tracking:read"
+      ],
+      "toolClass": "read",
+      "group": null
+    },
+    {
+      "name": "trackly_get_job",
+      "title": "Get job details",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "jobs:read",
+        "tracking:read"
+      ],
+      "toolClass": "read",
+      "group": null
+    },
+    {
+      "name": "trackly_search_companies",
+      "title": "Search tracked companies",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "jobs:read"
+      ],
+      "toolClass": "read",
+      "group": null
+    },
+    {
+      "name": "trackly_get_job_brief",
+      "title": "Get a job brief",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "jobs:read"
+      ],
+      "toolClass": "read",
+      "group": null
+    },
+    {
+      "name": "trackly_get_preferences",
+      "title": "Get job preferences",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "jobs:read"
+      ],
+      "toolClass": "read",
+      "group": null
+    },
+    {
+      "name": "trackly_get_apply_readiness",
+      "title": "Check trackly Apply readiness",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "profile:read",
+        "apply:read",
+        "sensitive:read"
+      ],
+      "toolClass": "read",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_lint_application_text",
+      "title": "Lint application text",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "profile:read"
+      ],
+      "toolClass": "read",
+      "group": null
+    },
+    {
+      "name": "trackly_update_status",
+      "title": "Update job status",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "tracking:write"
+      ],
+      "toolClass": "write",
+      "group": null
+    },
+    {
+      "name": "trackly_save_application_answers",
+      "title": "Save approved application answers",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "scopes": [
+        "profile:write"
+      ],
+      "toolClass": "sensitive-write",
+      "group": null
+    },
+    {
+      "name": "trackly_grant_sensitive_storage_consent",
+      "title": "Allow encrypted sensitive-answer storage",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "profile:write",
+        "sensitive:write"
+      ],
+      "toolClass": "sensitive-write",
+      "group": null
+    },
+    {
+      "name": "trackly_revoke_sensitive_storage_consent",
+      "title": "Revoke sensitive-answer storage",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "scopes": [
+        "profile:write",
+        "sensitive:write"
+      ],
+      "toolClass": "sensitive-write",
+      "group": null
+    },
+    {
+      "name": "trackly_get_application_profile",
+      "title": "Get your application profile",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "profile:read"
+      ],
+      "toolClass": "read",
+      "group": "profile_read"
+    },
+    {
+      "name": "trackly_get_profile_onboarding",
+      "title": "Get profile setup status",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "profile:read"
+      ],
+      "toolClass": "read",
+      "group": "profile_read"
+    },
+    {
+      "name": "trackly_list_companies",
+      "title": "List tracked companies",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "jobs:read"
+      ],
+      "toolClass": "read",
+      "group": "companies"
+    },
+    {
+      "name": "trackly_request_company",
+      "title": "Ask Trackly to monitor a company",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "jobs:read",
+        "tracking:write"
+      ],
+      "toolClass": "progress-write",
+      "group": "request_company"
+    },
+    {
+      "name": "trackly_update_experience_limits",
+      "title": "Set years-of-experience limits",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "scopes": [
+        "tracking:write"
+      ],
+      "toolClass": "write",
+      "group": "preferences"
+    },
+    {
+      "name": "trackly_list_tracker_applications",
+      "title": "List Tracker entries",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "tracking:read"
+      ],
+      "toolClass": "read",
+      "group": "tracker"
+    },
+    {
+      "name": "trackly_create_tracker_application",
+      "title": "Add a job to the Tracker",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "scopes": [
+        "tracking:write",
+        "apply:write"
+      ],
+      "toolClass": "write",
+      "group": "tracker"
+    },
+    {
+      "name": "trackly_update_tracker_stage",
+      "title": "Move a Tracker entry",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "scopes": [
+        "tracking:write"
+      ],
+      "toolClass": "write",
+      "group": "tracker"
+    },
+    {
+      "name": "trackly_add_tracker_note",
+      "title": "Add a Tracker note",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "tracking:write"
+      ],
+      "toolClass": "progress-write",
+      "group": "tracker"
+    },
+    {
+      "name": "trackly_retract_tracker_event",
+      "title": "Retract a Tracker event",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "scopes": [
+        "tracking:write"
+      ],
+      "toolClass": "write",
+      "group": "tracker"
+    },
+    {
+      "name": "trackly_get_apply_queue",
+      "title": "Get your Apply queue",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:read"
+      ],
+      "toolClass": "read",
+      "group": "apply_queue"
+    },
+    {
+      "name": "trackly_list_apply_access_deferments",
+      "title": "List Apply access deferments",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:read"
+      ],
+      "toolClass": "read",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_defer_apply_access",
+      "title": "Defer Apply access for a job, company, or provider",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:write"
+      ],
+      "toolClass": "progress-write",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_clear_apply_access_deferment",
+      "title": "Clear an Apply access deferment",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:write"
+      ],
+      "toolClass": "progress-write",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_start_or_resume_apply",
+      "title": "Start or resume trackly Apply",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:read",
+        "apply:write"
+      ],
+      "toolClass": "write",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_get_apply_progress",
+      "title": "Get authoritative Apply progress",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "profile:read",
+        "apply:read",
+        "apply:write"
+      ],
+      "toolClass": "progress-write",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_get_apply_snapshot",
+      "title": "Get an Apply member snapshot",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "profile:read",
+        "apply:read",
+        "apply:write"
+      ],
+      "toolClass": "progress-write",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_approve_apply_resume",
+      "title": "Approve an exact resume for Apply",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:write"
+      ],
+      "toolClass": "write",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_bind_apply_surface",
+      "title": "Bind an Apply browser surface",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:write"
+      ],
+      "toolClass": "progress-write",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_record_apply_dispositions",
+      "title": "Record Apply access dispositions",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:write"
+      ],
+      "toolClass": "progress-write",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_resume_parked_apply_member",
+      "title": "Resume a parked Apply member",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:write"
+      ],
+      "toolClass": "write",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_record_apply_observations",
+      "title": "Record Apply browser observations",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:write"
+      ],
+      "toolClass": "progress-write",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_advance_apply_execution",
+      "title": "Advance an Apply execution",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:write"
+      ],
+      "toolClass": "progress-write",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_prepare_resume_artifact",
+      "title": "Preview your saved resume",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:read"
+      ],
+      "toolClass": "read",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_certify_review_ready",
+      "title": "Mark an application ready for review",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:write"
+      ],
+      "toolClass": "progress-write",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_reconcile_manual_submission",
+      "title": "Reconcile a manual submission",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "scopes": [
+        "apply:write"
+      ],
+      "toolClass": "write",
+      "group": "apply"
+    },
+    {
+      "name": "trackly_stop_apply",
+      "title": "Stop trackly Apply",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "scopes": [
+        "apply:write"
+      ],
+      "toolClass": "write",
+      "group": "apply"
+    }
+  ]
+}

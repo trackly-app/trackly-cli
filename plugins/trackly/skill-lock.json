@@ -127,8 +127,8 @@
   },
   "publicExecutableContract": {
     "descriptorSha256": {
-      "trackly_search_jobs": "b44502ce9769040a8a0c167529d6c91ffe7ef5a76d8953faafbf1e8e130a0935",
-      "trackly_get_job": "df2fc206605d659acf306a4afb3fa60626b0424b4862b2c8003ee2b62438414d",
+      "trackly_search_jobs": "020c525f1ba7506c50b9848ebaeee8f00e71df6f8e49ce7cbabd8179297a2bb0",
+      "trackly_get_job": "7c43dd671da80356388eefbea5e4f5521312f630547236899c6703ee0db04247",
       "trackly_search_companies": "fb72369ef77512c279a4544c0978fe10a592fbcf7032be872e10a9364a02a8de",
       "trackly_get_job_brief": "21ca99a8797faaab41d052ac18c55c530c2897450ab9fa47c45f06903c2b99b8",
       "trackly_get_preferences": "3a848d9864eaa749a6964ae05a3520ccfb755d93cad85540ec16c7f3761935b4",
@@ -167,13 +167,13 @@
       "trackly_start_or_resume_apply": "615bbfbf641e33dcdd0fe166c583da4d9ebcdb4447ed8b134909686857d47e24",
       "trackly_get_apply_work": "f04236fa329f2a3acb2fd71486dc26fe2d8d762f90be17d903c0539aecf6535d",
       "trackly_report_apply_progress": "355d99fe607c0588ed3abc9214af9c566a5dd741cf2d0705fe4058db86bdf648",
-      "trackly_prepare_resume_artifact": "a83b1f55b59755d302c82d26dc0e3883b4aa6728463fb18a9609e4fdb333101b",
+      "trackly_prepare_resume_artifact": "698f5eb8a52436b7afe0d258d844a28b447c65115c54c118b01b8db95ed7ac88",
       "trackly_certify_review_ready": "1d2aad91eccd40d9f8cb9ead56275ba61d2981bc928d342171ac63adf5c911bb",
       "trackly_reconcile_manual_submission": "32be19dadef3c8e3a1d9f320d3c1a9a0cde3845f930dac85641409f25a722b0a",
       "trackly_stop_apply": "8363bfe5eb7fb8ed4093b1f01bdaa9ebcb599ac35004fd13bab0ae6a2ab4f1ce"
     },
-    "pluginServerSha256": "0a9c61e29adb36504197bd2c4a1b2374facc09a944e40a48cea10ac1e1b5319e",
-    "pluginScopesSha256": "7af7450c08a4b1944fb4f5dd0cf97a2f1247693326ba1af4e866b5fe4fa5d040",
+    "pluginServerSha256": "02d771fc45a5b247bd32dbd065770d16a0b08404129d498951fadce50dcb2378",
+    "pluginScopesSha256": "c8a7557be3bc1706dd0565baf2513b1ac191090b385926b5adc5c43e89721d55",
     "jobBriefServiceSha256": "fee263be5b7b05da8db6b9b9e2cb7559a50abeeeab447166f5fe7a889892bc7b",
     "backendUiRedirectSha256": "3d1018e472992626d39299be89ee8e996930fb76ce0f69155f2f63bb6f34d55e",
     "maintenanceModeSha256": "0409b32355a014ecc4d64056bf251fcde5f377400fe4f7485e70795420b25afe",

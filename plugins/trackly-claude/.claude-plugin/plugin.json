@@ -1,0 +1,24 @@
+{
+  "name": "trackly",
+  "version": "1.0.0",
+  "description": "Trackly Apply for Claude: finish Trackly Apply setup and fill approved job applications in your browser with Claude in Chrome. You always submit them yourself.",
+  "author": {
+    "name": "trackly",
+    "email": "hello@usetrackly.app",
+    "url": "https://usetrackly.app"
+  },
+  "homepage": "https://usetrackly.app/plugins/trackly",
+  "privacyPolicyUrl": "https://usetrackly.app/privacy",
+  "repository": "https://github.com/trackly-app/trackly-cli",
+  "license": "MIT",
+  "keywords": [
+    "jobs",
+    "job-search",
+    "applications",
+    "career",
+    "mcp",
+    "claude-in-chrome"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}
