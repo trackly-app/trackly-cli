@@ -70,6 +70,14 @@ are invite-only during the limited rollout; access errors link to
 https://usetrackly.app/early-access instead of recommending repeated OAuth or
 API-key creation attempts.
 
+### Applying: three different things
+
+- **Trackly Apply** (local): the user's own agent fills the application in the user's browser on their machine and stops before Submit; the user submits. It runs through the Trackly Apply skill and the `trackly_*_apply_*` tools below, set up with `trackly agent setup`.
+- **Cloud auto-apply**: the user only requests it and Trackly takes care of the application; nothing runs on the user's machine. The local `trackly_auto_apply` tool and the `trackly auto-apply` command are held until the hosted service ships them.
+- **Mark applied**: the user applied on their own. Record it with `trackly_update_status` (`action: "applied"`), or `trackly mark-applied <id>` in the CLI. `trackly_create_tracker_application` and `trackly_update_tracker_stage` track the application on the `/tracker` board.
+
+Pick the one the user asked for; never submit on the user's behalf through Trackly Apply.
+
 ### Available Tools
 
 - **get_more_tools** — Report what the agent wanted to do when no Trackly tool fit, so Trackly can improve its MCP surface. The tool is always available; report delivery is best-effort.

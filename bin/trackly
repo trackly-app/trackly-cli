@@ -73,9 +73,11 @@ const COMMAND_FLAGS = {
   stats: [],
   status: [],
   preferences: [],
-  // While cloud auto-apply is held (lib/auto-apply.js), `apply` marks a job applied and takes no flags.
-  apply: cloudAutoApply.released ? ['status', 'resume-id'] : [],
+  // `apply <id>` marks a job applied (as in 0.25.0) and takes no flags. Cloud auto-apply is its own
+  // command, `auto-apply`, held until the hosted tool ships (lib/auto-apply.js).
+  apply: [],
   'mark-applied': [],
+  ...(cloudAutoApply.released ? { 'auto-apply': ['status', 'resume-id'] } : {}),
   save: [],
   dismiss: [],
   ask: [],
@@ -160,7 +162,7 @@ function parseArgs(args) {
 
       const key = arg.slice(2);
       const nextArg = args[i + 1];
-      if (key === 'status' && result.command === 'apply' && cloudAutoApply.released) {
+      if (key === 'status' && result.command === 'auto-apply' && cloudAutoApply.released) {
         result.status = true;
         continue;
       }
@@ -881,7 +883,7 @@ const ACTION_TO_COMMAND = { applied: 'mark-applied', saved: 'save', dismissed: '
 // endpoint is what production actually serves (and what hosted MCP uses).
 const ACTION_TO_STAGE = { applied: 'applied', saved: 'backlog', dismissed: 'discarded' };
 
-async function cmdUpdateStatus(id, action, command = ACTION_TO_COMMAND[action] || action) {
+async function cmdUpdateStatus(id, action, command = ACTION_TO_COMMAND[action] || action, hint = null) {
   const jobId = parseJobId(id);
   if (jobId === null) failNow(`Job ID must be a positive integer. Usage: trackly ${command} <id>`);
   if (!hasAuth()) failNow(AUTH_HELP_TEXT);
@@ -899,14 +901,35 @@ async function cmdUpdateStatus(id, action, command = ACTION_TO_COMMAND[action] |
     const result = await apiRequest('POST', `/api/jobscout/tracker/jobs/${jobId}/stage`, { stage });
     if (isJSON()) return printJson(result);
     console.log(color('green', `Job ${jobId} marked as ${STATUS_LABELS[action]}.`));
+    if (hint) console.error(color('dim', hint));
   } catch (e) {
     setApiErrorExit(e, `Failed to ${action} job`);
   }
 }
 
-/** Request auto-apply or list requests, leaving access and limits to the server. */
+/**
+ * The three ways to apply, side by side (Kevin, 2026-11-10). `trackly apply` with no job ID
+ * prints this; it sends nothing.
+ */
+const APPLY_GUIDE = Object.freeze({
+  tracklyApply: 'Trackly Apply (local): your own AI agent (Claude in Chrome, Codex or computer use) fills the application in your browser on your computer and stops before Submit; you submit. Set it up with `trackly agent setup`.',
+  cloudAutoApply: cloudAutoApply.released
+    ? 'Cloud auto-apply: you only request it with `trackly auto-apply <id>`; Trackly takes care of the application and nothing runs on your computer.'
+    : 'Cloud auto-apply: you only request it and Trackly takes care of the application, with nothing running on your computer. It is coming to the CLI in a later release.',
+  markApplied: 'Mark applied: you applied on your own; record it with `trackly mark-applied <id>` (`trackly apply <id>` does the same).',
+});
+
+function cmdApplyGuide() {
+  if (isJSON()) return printJson({ success: true, ways: APPLY_GUIDE });
+  console.log(color('bold', 'Applying with Trackly'));
+  console.log(`  ${APPLY_GUIDE.tracklyApply}`);
+  console.log(`  ${APPLY_GUIDE.cloudAutoApply}`);
+  console.log(`  ${APPLY_GUIDE.markApplied}`);
+}
+
+/** Request cloud auto-apply or list requests, leaving access and limits to the server. */
 async function cmdApply(args) {
-  const usage = 'Usage: trackly apply <jobId> [--resume-id <id>] | trackly apply --status';
+  const usage = 'Usage: trackly auto-apply <jobId> [--resume-id <id>] | trackly auto-apply --status';
   if (args.status !== undefined && (args.status !== true || args._.length || args['resume-id'] !== undefined)) {
     failNow(usage);
   }
@@ -932,7 +955,7 @@ async function cmdApply(args) {
       }
     } else {
       console.log(`Auto-apply request ${result.request.id}: ${result.request.status}.`);
-      console.log('Trackly will apply and notify you. Check progress with trackly apply --status.');
+      console.log('Trackly will apply and notify you. Check progress with trackly auto-apply --status.');
     }
   } catch (error) {
     if (error?.status === 404) {
@@ -1398,11 +1421,12 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'status')}               Alias for stats
   ${color('cyan', 'preferences')}          Show discovery preferences
   ${color('cyan', 'preferences experience')} Replace role limits (role=years; clear turns off)
-${cloudAutoApply.released ? `  ${color('cyan', 'apply <id>')}           Request cloud auto-apply (US Greenhouse, Lever, Ashby; optional --resume-id)
-  ${color('cyan', 'apply --status')}       List auto-apply requests
-` : `  ${color('cyan', 'apply <id>')}           Mark job as applied
-`}  ${color('cyan', 'mark-applied <id>')}    Mark a job you applied to as applied
-  ${color('cyan', 'save <id>')}            Save a job
+  ${color('cyan', 'apply')}                How to apply with Trackly: Trackly Apply, cloud auto-apply, mark applied
+  ${color('cyan', 'mark-applied <id>')}    Record a job you applied to yourself
+  ${color('cyan', 'apply <id>')}           Same as mark-applied (kept for existing scripts)
+${cloudAutoApply.released ? `  ${color('cyan', 'auto-apply <id>')}      Request cloud auto-apply: Trackly applies for you (optional --resume-id)
+  ${color('cyan', 'auto-apply --status')}  List cloud auto-apply requests
+` : ''}  ${color('cyan', 'save <id>')}            Save a job
   ${color('cyan', 'dismiss <id>')}         Dismiss a job
   ${color('cyan', 'ask "query"')}          Natural language job search
   ${color('cyan', 'contacts')}             List your contacts (--search, --limit, --offset)
@@ -1563,9 +1587,9 @@ async function main() {
       await cmdPreferences(args);
       break;
     case 'apply':
-      // Held cloud auto-apply keeps the earlier `apply` meaning: mark a job applied.
-      if (cloudAutoApply.released) await cmdApply(args);
-      else await cmdUpdateStatus(args._[0], 'applied', 'apply');
+      // With no job ID, explain the three ways to apply. With an ID, keep the 0.25.0 meaning.
+      if (args._.length === 0) cmdApplyGuide();
+      else await cmdUpdateStatus(args._[0], 'applied', 'apply', 'Tip: `trackly mark-applied <id>` is the explicit name for this.');
       break;
     case 'mark-applied':
       await cmdUpdateStatus(args._[0], 'applied');
@@ -1619,6 +1643,13 @@ async function main() {
     case 'agent':
       await cmdAgent(args);
       break;
+    case 'auto-apply':
+      if (cloudAutoApply.released) {
+        await cmdApply(args);
+        break;
+      }
+      // Held until the hosted tool ships (lib/auto-apply.js): an unknown command until then.
+      // falls through
     default:
       setErrorExit(`Unknown command: ${args.command}`);
       showHelp();

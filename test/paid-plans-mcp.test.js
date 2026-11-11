@@ -107,7 +107,7 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
         assert.equal(requests.length, before + 1, 'mutation refusal must not retry');
         assert.doesNotMatch(JSON.stringify(payload), /20 natural|daily limit/i);
         if (status === 404 || status >= 500 || body.error.endsWith('limit_reached')) assert.equal(payload.retryable, false);
-        if (status >= 500) assert.match(payload.error, /Check your request status with trackly apply --status/);
+        if (status >= 500) assert.match(payload.error, /Check your request status with trackly auto-apply --status/);
         if (body.error.endsWith('limit_reached')) {
           for (const key of ['feature', 'used', 'limit', 'resetsAt', 'upgradeUrl']) assert.deepEqual(payload[key], body[key]);
         }
@@ -136,7 +136,7 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
       assert.equal(result.isError, true);
       assert.equal(payload.retryable, false);
       assert.equal(payload.code, 'auto_apply_status_unknown');
-      assert.match(payload.error, /Check your request status with trackly apply --status/);
+      assert.match(payload.error, /Check your request status with trackly auto-apply --status/);
       assert.equal(requests.length, beforeDisconnect + 1);
 
       fixture = { status: 404, raw: '<html>private-proxy-body</html>' };
@@ -162,7 +162,7 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
       assert.equal(payload.retryable, false);
       assert.equal(requests.length, beforeUncertain + 1);
       assert.doesNotMatch(payload.message, /[\u0000-\u001f\u007f-\u009f]|x{501}/);
-      assert.match(payload.message, /x{500}\. Check your request status with trackly apply --status/);
+      assert.match(payload.message, /x{500}\. Check your request status with trackly auto-apply --status/);
 
       for (const flag of [true, false, undefined]) {
         const job = { id: 42, title: 'PM', ...(flag === undefined ? {} : { autoApplySupported: flag }) };

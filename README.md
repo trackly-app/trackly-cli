@@ -39,10 +39,15 @@ trackly jobs --function product
 
 ## CLI Commands
 
-`trackly apply <id>` marks a job applied, as before. `trackly mark-applied <id>`
-does the same and is the name to use in new scripts: cloud auto-apply is planned
-for `trackly apply` once the hosted service supports it, and that change will be
-announced in the changelog.
+Trackly offers three different ways to handle an application. They are never mixed up:
+
+| | What happens | How |
+|---|---|---|
+| **Trackly Apply** (local) | Your own AI agent (Claude in Chrome, Codex or computer use) fills the application in your browser on your computer and stops before Submit. You submit. | `trackly agent setup` installs the Trackly Apply skill and MCP; then ask your agent to use Trackly Apply. |
+| **Cloud auto-apply** | You only request it. Trackly takes care of the application; nothing runs on your computer. | Coming to the CLI and local MCP in a later release, once the hosted service supports it. |
+| **Mark applied** | You applied on your own and record it. | `trackly mark-applied <id>` (`trackly apply <id>` does the same, for existing scripts). |
+
+`trackly apply` with no job ID prints this summary.
 
 Plan response errors in `--json` mode emit a structured object
 on stdout and exit nonzero; check the exit code before treating output as a
@@ -67,8 +72,9 @@ trackly status                        # Alias for stats
 trackly preferences                   # Show discovery preferences and experience limits
 trackly preferences experience product=2 strategy=5  # Replace role-specific limits
 trackly preferences experience clear # Turn role-specific experience filtering off
-trackly apply 1234                    # Mark a job you applied to as applied
-trackly mark-applied 1234             # Same; preferred name in scripts
+trackly apply                         # How to apply with Trackly (Trackly Apply, cloud auto-apply, mark applied)
+trackly mark-applied 1234             # Record a job you applied to yourself
+trackly apply 1234                    # Same as mark-applied (kept for existing scripts)
 trackly save 1234                     # Save a job
 trackly dismiss 1234                  # Dismiss a job
 trackly ask "PM jobs in SF"           # Natural language search
