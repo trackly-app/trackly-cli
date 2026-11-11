@@ -53,7 +53,7 @@ test('the registry lists the approved families in catalog order', () => {
 
 test('every npm tool lists its family title and exactly one description tag', () => {
   const tools = registeredTools();
-  assert.equal(Object.keys(tools).length, 63);
+  assert.equal(Object.keys(tools).length, 65);
   for (const [name, tool] of Object.entries(tools)) {
     const { family, protocol } = toolFamily(name) || {};
     assert.ok(family, `${name} has no family`);
@@ -90,7 +90,7 @@ test('an MCP client sees the labels through tools/list, with analytics instrumen
   await client.connect(clientTransport);
   try {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 63);
+    assert.equal(tools.length, 65);
     for (const tool of tools) {
       const title = toolTitle(tool.name);
       assert.equal(tool.title, title, tool.name);

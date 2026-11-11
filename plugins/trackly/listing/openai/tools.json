@@ -4,7 +4,7 @@
   "endpoint": "https://mcp.usetrackly.app/api/plugin/trackly/openai/mcp",
   "source": {
     "repository": "trackly-app/close-ai",
-    "commit": "96781f59f208ef839334a2a71954c9ef1b3d7005",
+    "commit": "8f7ba68e73280afec40fd5d674a6f2bb774bfa06",
     "goldens": [
       "src/mcp/__tests__/fixtures/surface-golden/openai-tools-list.json"
     ],

@@ -4,7 +4,7 @@ This kit is the material for the Claude directory listing edit that announces th
 
 Connector URL: `https://mcp.usetrackly.app/api/plugin/trackly/claude/mcp`
 
-[`metadata.json`](metadata.json) holds the structured fields and the consent lines approved on 2026-11-09. [`tools.json`](tools.json) is the catalog captured from close-ai's `claude-tools-list.json` and `claude-apply-allowlisted-tools-list.json` goldens and directory registry at the current production deploy `96781f59` (deployed 2026-11-10 10:18 PM PST, after close-ai #3536). The Claude catalog is unchanged from `5d443853`: close-ai #3536 excludes both Trackly Apply (cloud) tools from Claude, because this listing's consent says the user always submits.
+[`metadata.json`](metadata.json) holds the structured fields and the consent lines approved on 2026-11-09. [`tools.json`](tools.json) is the catalog captured from close-ai's `claude-tools-list.json` and `claude-apply-allowlisted-tools-list.json` goldens and directory registry at the current production deploy `8f7ba68e` (deployed 2026-11-11 3:03 AM PST, after close-ai #3635 family titles and tags and #3631 one status story). Names, annotations and scopes are unchanged from `5d443853`; only titles and descriptions moved. close-ai #3536 excludes both Trackly Apply (cloud) tools from Claude, because this listing's consent says the user always submits.
 
 ## Listing text
 

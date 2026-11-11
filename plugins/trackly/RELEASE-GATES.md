@@ -168,10 +168,10 @@ submits it later, outside the call and outside the host browser.
 The fixture-pinned `mutationAnnotationContract` in
 `scripts/verify-hosted-contract.js` mirrors the runtime pinned in
 `hosted-contract-fixture.json`. The fixture is recaptured from the deployed
-close-ai merge `96781f59f208ef839334a2a71954c9ef1b3d7005` (close-ai #3625, the
-production deploy after the close-ai #3536 Trackly Apply (cloud) merge `3ea1ab6455f235a87e53cd367cb8576011da5de0`;
-its nine #3536 paths are inherited from that first parent and the reviewed #3536 head `078cf663dab5b446bf77979f800e916f28715c46`;
-it was `5d443853272518bcc0f0b673e29d03d9f45715d5` from close-ai #3544 after the #3604 directory-parity merge,
+close-ai merge `8f7ba68e73280afec40fd5d674a6f2bb774bfa06` (close-ai #3635, MCP tool families, deployed
+2026-11-11 3:03 AM PST with #3631 one status story; no inherited paths;
+it was `96781f59f208ef839334a2a71954c9ef1b3d7005` from close-ai #3625 after the #3536 Trackly Apply (cloud) merge,
+`5d443853272518bcc0f0b673e29d03d9f45715d5` from close-ai #3544 after the #3604 directory-parity merge,
 `6cd11dfb1c5b59dbb11b325c3a4f68a1a3fc8b23` from close-ai #3603,
 `7c7032c87d97b3270681281ff33fa3d8887259c9` from close-ai #3433,
 `71e7f9bfa73df85bbd483ee07712a38d386b79a1`, `6be6d4d2105f7de7f491c7b55bfdf00057d193f4`

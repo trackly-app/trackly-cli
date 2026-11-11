@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `test/skill-tool-references.test.js`: every `trackly_*` name in each shipped skill must exist on its surface's catalog (npm skill against the local MCP, Claude skill against the captured Claude catalog, classic skills against the captured classic catalog). `test/tool-families.test.js` checks titles, tags, the registry order and the family grouping of the README and tool docs.
 
+### Maintenance
+- Recapture the coordinated hosted-contract gate against the deployed close-ai `8f7ba68e` (deploy run 43001328904, 2026-11-11 3:03 AM PST, with #3635 tool families and #3631 one status story). All 51 deployable paths preserve the reviewed #3635 head `9d495993`, so no inherited exception applies. The classic facade keeps its 23 names, schemas, annotations and scopes; only the `trackly_update_status` descriptor and handler (status story, `trackerSync: false` where a directory's Tracker tools are off) and the plugin-server bytes move. The gate now also locks how close-ai composes family titles and description tags, and `scripts/verify-tool-families.js` compares the npm registry with close-ai's. The hosted Tracker `tools/list` fixture is recaptured at `8f7ba68e`, and the listing-kit catalogs and 1.0.9 package manifest digest point at the same commit.
+
 ## [0.27.0] - 2026-11-11
 
 Trackly Apply (cloud) is available in the CLI and the npm MCP server, now that the hosted MCP serves the same tools (close-ai #3536, in production since 2026-11-10 10:18 PM PST). Trackly offers three different ways to apply, and this release names them the same way everywhere:

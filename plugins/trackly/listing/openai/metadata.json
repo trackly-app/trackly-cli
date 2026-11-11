@@ -14,10 +14,10 @@
   "submissionBoundary": "Trackly Apply (local) stops before Submit and the user submits. Trackly submits an application only through Trackly Apply (cloud), and only for a job the user explicitly asks Trackly to apply to.",
   "sourcePackage": {
     "repository": "trackly-app/close-ai",
-    "commit": "96781f59f208ef839334a2a71954c9ef1b3d7005",
+    "commit": "8f7ba68e73280afec40fd5d674a6f2bb774bfa06",
     "path": "docs/openai/trackly-openai-1.0.9",
     "checksumManifest": "docs/openai/trackly-openai-1.0.9.sha256",
-    "checksumManifestSha256": "819a954d2e942b8a5d8eaefdce888b358706a3e3a7ac9f9d6505b816babe0ebe",
+    "checksumManifestSha256": "ba0ef176b006b0ff7adb4cc922fc1bfb17beaa377e5a3bee5ab00310e14f7d55",
     "fileCount": 18
   },
   "toolCount": 40,

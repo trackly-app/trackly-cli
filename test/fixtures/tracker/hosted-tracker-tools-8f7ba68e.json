@@ -1,13 +1,27 @@
 [
   {
     "name": "trackly_list_tracker_applications",
-    "description": "List your Tracker entries (the /tracker board: saved, contacted, applied, screen, assessment, interview, final, offer, accepted, declined, rejected, withdrawn). Filter by stage, company or role text, or a Trackly job ID. Returns each entry's id, jobPostingId, company, role, currentStage, stageEnteredAt, version and link. Pass applicationId alone to get that entry with its events. Use it to find the applicationId for trackly_update_tracker_stage, trackly_add_tracker_note or trackly_retract_tracker_event. Contact email addresses are never returned.",
+    "title": "Tracker · List entries",
+    "description": "[Tracker] List your Tracker entries (the /tracker board: saved, contacted, applied, screen, assessment, interview, final, offer, accepted, declined, rejected, withdrawn). Filter by stage, company or role text, or a Trackly job ID. Returns each entry's id, jobPostingId, company, role, currentStage, stageEnteredAt, version and link. Pass applicationId alone to get that entry with its events. Use it to find the applicationId for trackly_update_tracker_stage, trackly_add_tracker_note or trackly_retract_tracker_event. Contact email addresses are never returned.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "stage": {
           "type": "string",
-          "enum": ["contacted", "saved", "applied", "screen", "assessment", "interview", "final", "offer", "accepted", "declined", "rejected", "withdrawn"],
+          "enum": [
+            "contacted",
+            "saved",
+            "applied",
+            "screen",
+            "assessment",
+            "interview",
+            "final",
+            "offer",
+            "accepted",
+            "declined",
+            "rejected",
+            "withdrawn"
+          ],
           "description": "Only entries currently in this stage. One of: contacted, saved, applied, screen, assessment, interview, final, offer, accepted, declined, rejected, withdrawn"
         },
         "query": {
@@ -36,18 +50,21 @@
       "$schema": "http://json-schema.org/draft-07/schema#"
     },
     "annotations": {
-      "title": "List Tracker entries",
+      "title": "Tracker · List entries",
       "readOnlyHint": true,
       "openWorldHint": false
     },
     "execution": {
       "taskSupport": "forbidden"
     },
-    "scopes": ["tracking:read"]
+    "scopes": [
+      "tracking:read"
+    ]
   },
   {
     "name": "trackly_create_tracker_application",
-    "description": "Add a job to the Tracker board (Quick Add) when it has no Tracker entry yet. Creating an entry records the job as applied: the new entry starts in the applied stage, dated appliedOn when given. Only call it after the user explicitly confirms they applied, and pass explicitUserConfirmed=true. Pass jobId, or companyName and roleTitle. Move the entry afterwards with trackly_update_tracker_stage, for example to interview. If the job, or the same company and role, is already on the board, nothing is written and the existing entry is returned with created=false. A repeated call never adds a second entry. Separate from trackly_update_status, which only sets the job list status.",
+    "title": "Tracker · Add a job",
+    "description": "[Tracker] Add a job to the Tracker board (Quick Add) when it has no Tracker entry yet. Creating an entry records the job as applied: the new entry starts in the applied stage, dated appliedOn when given. Only call it after the user explicitly confirms they applied, and pass explicitUserConfirmed=true. Pass jobId, or companyName and roleTitle. Move the entry afterwards with trackly_update_tracker_stage, for example to interview. If the job, or the same company and role, is already on the board, nothing is written and the existing entry is returned with created=false. A repeated call never adds a second entry. Recording a Trackly job as applied with trackly_update_status creates this entry too, so this tool is mainly for applications that are not Trackly jobs (companyName and roleTitle).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -90,12 +107,14 @@
           "description": "Briefly explain why this tool helps the current job-search goal. Never include resume text, profile answers, demographic or work-authorization answers, application notes, credentials, or secrets."
         }
       },
-      "required": ["explicitUserConfirmed"],
+      "required": [
+        "explicitUserConfirmed"
+      ],
       "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     },
     "annotations": {
-      "title": "Add a job to the Tracker",
+      "title": "Tracker · Add a job",
       "readOnlyHint": false,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -104,11 +123,14 @@
     "execution": {
       "taskSupport": "forbidden"
     },
-    "scopes": ["tracking:write"]
+    "scopes": [
+      "tracking:write"
+    ]
   },
   {
     "name": "trackly_update_tracker_stage",
-    "description": "Move one Tracker entry to a new stage (for example rejected or interview), as if the user dragged the card on the /tracker board, with the same history, undo and conflict checks. Pass exactly one of applicationId or jobId. This is separate from trackly_update_status, which only sets the job list status: marking an entry rejected here keeps its Applied record and does not discard the job. There is no \"paused\" stage: record a pause with trackly_add_tracker_note and leave the stage unchanged. If the entry is already in that stage nothing is written. Returns not_found when the job has no Tracker entry yet (this tool never creates one; use trackly_create_tracker_application first), tracker_unavailable when the Tracker is switched off, and version_conflict with the entry's current version and stage if it kept changing; nothing is written on any error.",
+    "title": "Tracker · Move stage",
+    "description": "[Tracker] Move one Tracker entry to a new stage (for example rejected or interview), as if the user dragged the card on the /tracker board, with the same history, undo and conflict checks. Pass exactly one of applicationId or jobId. Moving an entry never changes the job list status: marking an entry rejected here keeps its Applied record and does not dismiss the job. There is no \"paused\" stage: record a pause with trackly_add_tracker_note and leave the stage unchanged. If the entry is already in that stage nothing is written. Returns not_found when the job has no Tracker entry yet (this tool never creates one; trackly_update_status with applied or trackly_create_tracker_application creates it), tracker_unavailable when the Tracker is switched off, and version_conflict with the entry's current version and stage if it kept changing; nothing is written on any error.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -126,7 +148,20 @@
         },
         "stage": {
           "type": "string",
-          "enum": ["contacted", "saved", "applied", "screen", "assessment", "interview", "final", "offer", "accepted", "declined", "rejected", "withdrawn"],
+          "enum": [
+            "contacted",
+            "saved",
+            "applied",
+            "screen",
+            "assessment",
+            "interview",
+            "final",
+            "offer",
+            "accepted",
+            "declined",
+            "rejected",
+            "withdrawn"
+          ],
           "description": "New Tracker stage. One of: contacted, saved, applied, screen, assessment, interview, final, offer, accepted, declined, rejected, withdrawn"
         },
         "occurredOn": {
@@ -145,12 +180,14 @@
           "description": "Briefly explain why this tool helps the current job-search goal. Never include resume text, profile answers, demographic or work-authorization answers, application notes, credentials, or secrets."
         }
       },
-      "required": ["stage"],
+      "required": [
+        "stage"
+      ],
       "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     },
     "annotations": {
-      "title": "Move a Tracker entry to a stage",
+      "title": "Tracker · Move stage",
       "readOnlyHint": false,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -159,11 +196,14 @@
     "execution": {
       "taskSupport": "forbidden"
     },
-    "scopes": ["tracking:write"]
+    "scopes": [
+      "tracking:write"
+    ]
   },
   {
     "name": "trackly_add_tracker_note",
-    "description": "Add a dated note to one Tracker entry without changing its stage. Pass exactly one of applicationId or jobId. Use it to record a pause (\"employer paused hiring Nov 9\"), since there is no paused stage, or any outcome evidence; say where the evidence came from. A repeated call with the same text and date does not add a second note. Returns not_found, tracker_unavailable or version_conflict without writing anything.",
+    "title": "Tracker · Add note",
+    "description": "[Tracker] Add a dated note to one Tracker entry without changing its stage. Pass exactly one of applicationId or jobId. Use it to record a pause (\"employer paused hiring Nov 9\"), since there is no paused stage, or any outcome evidence; say where the evidence came from. A repeated call with the same text and date does not add a second note. Returns not_found, tracker_unavailable or version_conflict without writing anything.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -195,12 +235,14 @@
           "description": "Briefly explain why this tool helps the current job-search goal. Never include resume text, profile answers, demographic or work-authorization answers, application notes, credentials, or secrets."
         }
       },
-      "required": ["text"],
+      "required": [
+        "text"
+      ],
       "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     },
     "annotations": {
-      "title": "Add a Tracker note",
+      "title": "Tracker · Add note",
       "readOnlyHint": false,
       "destructiveHint": false,
       "idempotentHint": true,
@@ -209,11 +251,14 @@
     "execution": {
       "taskSupport": "forbidden"
     },
-    "scopes": ["tracking:write"]
+    "scopes": [
+      "tracking:write"
+    ]
   },
   {
     "name": "trackly_retract_tracker_event",
-    "description": "Undo one Tracker event that the user names: retract a single stage change, note or other event by its eventId, as the undo on the /tracker board does. Only call it when the user asked to undo that specific event; never to clean up or to retry. The event stays in history marked as retracted and the entry's stage is recomputed. Retracting an already retracted event changes nothing. The only stage event of an entry, and a retraction itself, cannot be retracted. Returns not_found, tracker_unavailable or version_conflict without writing anything.",
+    "title": "Tracker · Undo an event",
+    "description": "[Tracker] Undo one Tracker event that the user names: retract a single stage change, note or other event by its eventId, as the undo on the /tracker board does. Only call it when the user asked to undo that specific event; never to clean up or to retry. The event stays in history marked as retracted and the entry's stage is recomputed. Retracting an already retracted event changes nothing. The only stage event of an entry, and a retraction itself, cannot be retracted. Returns not_found, tracker_unavailable or version_conflict without writing anything.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -240,12 +285,14 @@
           "description": "Briefly explain why this tool helps the current job-search goal. Never include resume text, profile answers, demographic or work-authorization answers, application notes, credentials, or secrets."
         }
       },
-      "required": ["eventId"],
+      "required": [
+        "eventId"
+      ],
       "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     },
     "annotations": {
-      "title": "Retract a Tracker event",
+      "title": "Tracker · Undo an event",
       "readOnlyHint": false,
       "destructiveHint": true,
       "idempotentHint": true,
@@ -254,6 +301,8 @@
     "execution": {
       "taskSupport": "forbidden"
     },
-    "scopes": ["tracking:write"]
+    "scopes": [
+      "tracking:write"
+    ]
   }
 ]
