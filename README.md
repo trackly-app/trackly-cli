@@ -44,7 +44,7 @@ Trackly offers three different ways to handle an application. They are never mix
 | | What happens | How |
 |---|---|---|
 | **Trackly Apply** (local) | Your own AI agent (Claude in Chrome, Codex or computer use) fills the application in your browser on your computer and stops before Submit. You submit. | `trackly agent setup` installs the Trackly Apply skill and MCP; then ask your agent to use Trackly Apply. |
-| **Cloud auto-apply** | You only request it. Trackly takes care of the application; nothing runs on your computer. | Coming to the CLI and local MCP in a later release, once the hosted service supports it. |
+| **Cloud auto-apply** | You only request it. Trackly takes care of the application; nothing runs on your computer. | Coming in a later release as `trackly auto-apply <id>` and the MCP tool `trackly_auto_apply`, once the hosted service supports it. Not available in this version. |
 | **Mark applied** | You applied on your own and record it. | `trackly mark-applied <id>` (`trackly apply <id>` does the same, for existing scripts). |
 
 `trackly apply` with no job ID prints this summary.
