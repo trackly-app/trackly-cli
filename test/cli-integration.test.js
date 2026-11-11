@@ -134,6 +134,9 @@ test('mark-applied reports what happened on the Tracker board with fixed text on
     // Other skips (for example nothing to build an entry from) never claim the Tracker is off.
     [{ state: 'skipped', reason: 'no_evidence' }, 'stderr', /^The Tracker board was not updated\.$/m],
     [{ state: 'moved', reason: 'stage_not_current' }, 'stderr', /A later event on its Tracker card still decides the card's stage/],
+    // close-ai returns stage_not_current with existing too, when a later-dated event keeps the card earlier.
+    [{ state: 'existing', reason: 'stage_not_current' }, 'stderr', /A later event on its Tracker card still decides the card's stage/],
+    [{ state: 'created', reason: 'stage_not_current' }, 'stderr', /A later event on its Tracker card still decides the card's stage/],
     [{ state: 'failed', reason: 'lock_timeout', retryable: true }, 'stderr', /Run the same command again; it is safe to repeat\./],
   ];
   for (const [trackerEntry, stream, expected] of cases) {

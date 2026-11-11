@@ -908,11 +908,13 @@ const TRACKER_ENTRY_LATER_EVENT = Object.freeze({
 function trackerEntryLine(entry) {
   const state = entry?.state;
   const reason = entry?.reason;
-  if (state === 'existing') return reason === 'ambiguous' ? TRACKER_ENTRY_AMBIGUOUS : null;
   if (state === 'skipped') {
     return reason === 'tracker_unavailable' || reason === 'surface_disabled' ? TRACKER_ENTRY_SWITCHED_OFF : TRACKER_ENTRY_NOT_UPDATED;
   }
-  if ((state === 'moved' || state === 'linked') && reason === 'stage_not_current') return TRACKER_ENTRY_LATER_EVENT;
+  if (state === 'failed') return TRACKER_ENTRY_LINES.failed;
+  // close-ai ensure-applied.ts sets stage_not_current on created, linked, moved or existing alike.
+  if (reason === 'stage_not_current') return TRACKER_ENTRY_LATER_EVENT;
+  if (state === 'existing') return reason === 'ambiguous' ? TRACKER_ENTRY_AMBIGUOUS : null;
   return typeof state === 'string' && Object.hasOwn(TRACKER_ENTRY_LINES, state) ? TRACKER_ENTRY_LINES[state] : null;
 }
 
