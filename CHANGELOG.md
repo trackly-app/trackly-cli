@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-11-10
+
 ### Changed
 - MCP search distinguishes pending prerequisites from jobs outside the scoring window and preserves explicit lower-bound counts. `trackly_ask` forwards documented count/recency metadata, preserves its interpretation and validated URL, omits unrelated page fields, and returns the `invalid_jobs_response` tool error for unreadable follow-on pages.
 - Clearer names for the three ways to apply. `trackly mark-applied <jobId>` records a job you applied to yourself. `trackly apply <jobId>` still does the same, as in 0.25.0, and suggests `mark-applied`. `trackly apply` with no job ID explains Trackly Apply (your own agent fills the form in your browser and you submit; set up with `trackly agent setup`), cloud auto-apply and mark applied.
