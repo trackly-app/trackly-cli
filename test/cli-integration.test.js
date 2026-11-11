@@ -188,6 +188,11 @@ test('held release: auto-apply is an unknown command and help does not list it',
   assert.match(help.stdout, /apply <id>\s+Same as mark-applied/);
   assert.match(help.stdout, /apply\s+How to apply with Trackly/);
   assert.doesNotMatch(help.stdout, /auto-apply <id>|auto-apply --status/);
+  // Once released (0.27.0), help lists the cloud command next to the other two.
+  const released = await runCli(['--help'], { NODE_OPTIONS: RELEASE_CLOUD_AUTO_APPLY });
+  assert.match(released.stdout, /auto-apply <id>\s+Request cloud auto-apply: Trackly applies for you/);
+  assert.match(released.stdout, /auto-apply --status\s+List cloud auto-apply requests/);
+  assert.match(released.stdout, /mark-applied <id>\s+Record a job you applied to yourself/);
 });
 
 test('invalid manual tracking commands recommend mark-applied without submitting', async (t) => {

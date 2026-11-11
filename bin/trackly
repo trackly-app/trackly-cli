@@ -938,6 +938,12 @@ function cmdApplyGuide() {
   console.log(`  ${APPLY_GUIDE.markApplied}`);
 }
 
+function unknownCommand(command) {
+  setErrorExit(`Unknown command: ${command}`);
+  showHelp();
+  process.exit(1);
+}
+
 /** Request cloud auto-apply or list requests, leaving access and limits to the server. */
 async function cmdApply(args) {
   const usage = 'Usage: trackly auto-apply <jobId> [--resume-id <id>] | trackly auto-apply --status';
@@ -1655,16 +1661,12 @@ async function main() {
       await cmdAgent(args);
       break;
     case 'auto-apply':
-      if (cloudAutoApply.released) {
-        await cmdApply(args);
-        break;
-      }
       // Held until the hosted tool ships (lib/auto-apply.js): an unknown command until then.
-      // falls through
+      if (cloudAutoApply.released) await cmdApply(args);
+      else unknownCommand(args.command);
+      break;
     default:
-      setErrorExit(`Unknown command: ${args.command}`);
-      showHelp();
-      process.exit(1);
+      unknownCommand(args.command);
   }
 }
 
