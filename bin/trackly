@@ -893,16 +893,26 @@ const TRACKER_ENTRY_LINES = Object.freeze({
   created: { text: 'Added to your Tracker board.' },
   linked: { text: 'Linked to the matching card on your Tracker board.' },
   moved: { text: 'Moved its Tracker card to applied.' },
-  skipped: { warn: true, text: 'The Tracker board was not updated (it is switched off).' },
   failed: { warn: true, text: 'The Tracker board was not updated. Run the same command again; it is safe to repeat.' },
 });
+const TRACKER_ENTRY_SWITCHED_OFF = Object.freeze({ warn: true, text: 'The Tracker board was not updated (it is switched off).' });
+const TRACKER_ENTRY_NOT_UPDATED = Object.freeze({ warn: true, text: 'The Tracker board was not updated.' });
 const TRACKER_ENTRY_AMBIGUOUS = Object.freeze({
   warn: true, text: 'More than one Tracker card matches this job, so the board was not changed.',
 });
+const TRACKER_ENTRY_LATER_EVENT = Object.freeze({
+  warn: true, text: 'A later event on its Tracker card still decides the card\'s stage, so the card does not show applied.',
+});
 
+/** Keyed on close-ai's typed trackerEntry state and reason codes (#3619 R9); unknown values print nothing. */
 function trackerEntryLine(entry) {
   const state = entry?.state;
-  if (state === 'existing') return entry.reason === 'ambiguous' ? TRACKER_ENTRY_AMBIGUOUS : null;
+  const reason = entry?.reason;
+  if (state === 'existing') return reason === 'ambiguous' ? TRACKER_ENTRY_AMBIGUOUS : null;
+  if (state === 'skipped') {
+    return reason === 'tracker_unavailable' || reason === 'surface_disabled' ? TRACKER_ENTRY_SWITCHED_OFF : TRACKER_ENTRY_NOT_UPDATED;
+  }
+  if ((state === 'moved' || state === 'linked') && reason === 'stage_not_current') return TRACKER_ENTRY_LATER_EVENT;
   return typeof state === 'string' && Object.hasOwn(TRACKER_ENTRY_LINES, state) ? TRACKER_ENTRY_LINES[state] : null;
 }
 

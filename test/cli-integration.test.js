@@ -130,6 +130,10 @@ test('mark-applied reports what happened on the Tracker board with fixed text on
     [{ state: 'moved' }, 'stdout', /Moved its Tracker card to applied\./],
     [{ state: 'existing', reason: 'ambiguous' }, 'stderr', /More than one Tracker card matches this job/],
     [{ state: 'skipped', reason: 'tracker_unavailable' }, 'stderr', /The Tracker board was not updated \(it is switched off\)\./],
+    [{ state: 'skipped', reason: 'surface_disabled' }, 'stderr', /The Tracker board was not updated \(it is switched off\)\./],
+    // Other skips (for example nothing to build an entry from) never claim the Tracker is off.
+    [{ state: 'skipped', reason: 'no_evidence' }, 'stderr', /^The Tracker board was not updated\.$/m],
+    [{ state: 'moved', reason: 'stage_not_current' }, 'stderr', /A later event on its Tracker card still decides the card's stage/],
     [{ state: 'failed', reason: 'lock_timeout', retryable: true }, 'stderr', /Run the same command again; it is safe to repeat\./],
   ];
   for (const [trackerEntry, stream, expected] of cases) {
@@ -142,8 +146,8 @@ test('mark-applied reports what happened on the Tracker board with fixed text on
     const json = await runAgainstMock(t, ['mark-applied', '42'], () => ({ json: body }));
     assert.deepEqual(JSON.parse(json.result.stdout), body);
   }
-  // An existing card at applied or later, or an older backend without trackerEntry, adds no line.
-  for (const body of [{ success: true, trackerEntry: { state: 'existing' } }, { success: true }]) {
+  // An existing card at applied or later, an unknown future state, or an older backend without trackerEntry adds no line.
+  for (const body of [{ success: true, trackerEntry: { state: 'existing' } }, { success: true, trackerEntry: { state: 'some_future_state' } }, { success: true }]) {
     const { result } = await runAgainstMock(t, ['mark-applied', '42'], () => ({ json: body }), HUMAN_ENV);
     assert.equal(result.stdout.trim(), 'Job 42 marked as applied.');
     assert.equal(result.stderr, '');

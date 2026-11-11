@@ -13,7 +13,7 @@ const { HOSTED_RESUME_SECURITY_SOURCE_SHA256, assertHostedResumeSecuritySourceSn
 const assertResumeGlobalParserCarveout = createResumeParserVerifier({ activeNamedDefinitionAst, staticMemberName, parseFullSource, canonicalSchemaAst });
 
 const sha256ExactBytes = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-const CHECKED_IN_HOSTED_FIXTURE_SHA256 = '9e28d74bb84ee9a523366af6b5a884bb0785328bae8f109c6413e8da2ebef6f8';
+const CHECKED_IN_HOSTED_FIXTURE_SHA256 = 'ad0121aed5f6e9c3cf719b22873793596d976f826a4c3db26c94bac6c64b7756';
 const HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256 = Object.freeze({
   applyCheckpointActionVariant: '6d83fd691e69b578f683c5e367cc1706a8f74b336e0ff435195f580c2350587c',
   applyCheckpointActionSchema: '6f0b0698b13997eda7100ec00720fff199d936270d232c7de5f55a8fcef2c2ab',
@@ -964,6 +964,11 @@ const HOSTED_DEPLOYABLE_PATHS = Object.freeze([
   // close-ai #3536: Trackly Apply (cloud) descriptors, request body and refusals (whole-byte
   // locked as autoApply). Absent in reviewed source b5d59e26, so it is an inherited record.
   'src/mcp/auto-apply.ts',
+  // close-ai #3619 (recaptured at 8f7ba68e): the plugin trackly_update_status text comes from
+  // status-story.ts, and every family title and description tag from tool-families.ts. Both are
+  // whole-byte locked (statusStory, toolFamilies), so a wording or separator change needs a recapture.
+  'src/mcp/status-story.ts',
+  'src/mcp/tool-families.ts',
 ]);
 
 // Recaptured from reviewed source 9d495993 (close-ai #3635 head, MCP tool families) and
@@ -1096,6 +1101,9 @@ function verifyHostedSnapshotGitProvenance(cliRoot, backendRoot) {
     // refusals and search-flag wording come from this file; the posting-host scope it applies
     // comes from assist-requests.ts and is AST-locked against lib/auto-apply.js below.
     autoApply: 'src/mcp/auto-apply.ts',
+    // close-ai #3619: the one status story and the family registry (titles, tags, sentences).
+    statusStory: 'src/mcp/status-story.ts',
+    toolFamilies: 'src/mcp/tool-families.ts',
   };
   for (const [lockName, relativePath] of Object.entries(lockedSources)) {
     const committedBytes = gitOutput(backendRoot, ['show', `${mergeCommit}:${relativePath}`], null);
@@ -7647,6 +7655,8 @@ function verifyCheckedInHostedContractFixture(
     authRateLimit: lock.publicExecutableContract.authRateLimitSha256,
     applicationProfileService: lock.publicExecutableContract.applicationProfileServiceSha256,
     autoApply: lock.publicExecutableContract.autoApplySha256,
+    statusStory: lock.publicExecutableContract.statusStorySha256,
+    toolFamilies: lock.publicExecutableContract.toolFamiliesSha256,
   }, `${fixturePath} hosted source snapshot drifted from the packaged executable lock`);
   for (const digest of [
     lock.publicExecutableContract.pluginServerSha256,
@@ -7661,6 +7671,8 @@ function verifyCheckedInHostedContractFixture(
     lock.publicExecutableContract.authRateLimitSha256,
     lock.publicExecutableContract.applicationProfileServiceSha256,
     lock.publicExecutableContract.autoApplySha256,
+    lock.publicExecutableContract.statusStorySha256,
+    lock.publicExecutableContract.toolFamiliesSha256,
     ...Object.values(lock.publicExecutableContract.descriptorSha256),
     ...Object.values(lock.publicExecutableContract.handlerSha256),
   ]) assert.match(digest, /^[a-f0-9]{64}$/);

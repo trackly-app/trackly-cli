@@ -211,7 +211,9 @@
     "azureRateLimitOptions": "f3e081d25fd066e76c5c622873622909bd6121e86845e09dd99d4cdf0b47778a",
     "authRateLimit": "ce3e53c0c7b0e9df804fb027c061e27948aff5c5b9a1d022064ed7d0a92c11a5",
     "applicationProfileService": "934ab798cf28efc63257bdd82a9f6719c83f5beb9731e8b521f072d98b751c49",
-    "autoApply": "70ddc98d755977267e9fc1c56380b0d518b5b03d77373c5f3cb55f4c2a527e03"
+    "autoApply": "70ddc98d755977267e9fc1c56380b0d518b5b03d77373c5f3cb55f4c2a527e03",
+    "statusStory": "13aff693ef1baf65b3f7d3c5b9e71daaab3609119f1e9ca14bae496fb086b898",
+    "toolFamilies": "35f0513383bbbd8f4b6ce6cb9fd6d72afba35935b2b124e2dddb2597c58f41e0"
   },
   "hostedPluginLifecycle": {
     "readinessMissingProfileFields": "canonical_key_and_public_label_only",
