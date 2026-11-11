@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.trackly-app/trackly",
   "title": "Trackly CLI",
-  "description": "Search Thousands of jobs, Thousands of companies. MCP for Claude, ChatGPT, Codex and Cursor.",
+  "description": "Search 250K+ jobs, 5,400+ companies. MCP for Claude, ChatGPT, Codex and Cursor.",
   "repository": {
     "url": "https://github.com/trackly-app/trackly-cli",
     "source": "github"

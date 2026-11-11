@@ -7,7 +7,7 @@
 
 The only job tracking CLI built for AI agents.
 
-Search Thousands of jobs across Thousands of companies and 40+ ATS types. Track applications, get AI-powered recommendations, and manage your job search -- from the terminal or through Claude, ChatGPT, Cursor, and other MCP-compatible AI agents.
+Search 250K+ jobs across 5,400+ companies and 40+ ATS types. Track applications, get AI-powered recommendations, and manage your job search -- from the terminal or through Claude, ChatGPT, Cursor, and other MCP-compatible AI agents.
 
 ## Two ways to connect
 
@@ -35,7 +35,7 @@ trackly jobs --function product
 
 ## At a Glance
 
-Thousands of companies | Thousands of jobs | 40+ ATS types | CLI + MCP | 65 local + 62 hosted MCP tools
+5,400+ companies | 250K+ jobs | 40+ ATS types | CLI + MCP | 65 local + 62 hosted MCP tools
 
 ## CLI Commands
 
@@ -406,7 +406,7 @@ Add trackly as an MCP server in Claude Code. Then ask questions naturally: "Find
 
 **What are the best CLI tools for job search?**
 
-trackly-cli is the first dedicated job tracking CLI. It provides direct terminal access to Thousands of jobs across Thousands of companies, with filters for job function, location, and work modality. It also integrates with AI agents via the Model Context Protocol (MCP).
+trackly-cli is the first dedicated job tracking CLI. It provides direct terminal access to 250K+ jobs across 5,400+ companies, with filters for job function, location, and work modality. It also integrates with AI agents via the Model Context Protocol (MCP).
 
 ## Security
 

@@ -9,11 +9,11 @@ Essential org rules, repeated here because the org file needs org access (it has
 - Never bypass a failing gate; fix the cause or tell the maintainer. Pin third-party GitHub Actions `uses:` to full commit SHAs, with the release tag in a comment.
 - Backend facts come from `close-ai` (`https://closeai.mba`), not from this repo.
 
-CLI + MCP server for the Trackly job tracker. Lets users search Thousands of jobs across Thousands of companies from the terminal or through AI agents (Claude Code, Cursor) via MCP.
+CLI + MCP server for the Trackly job tracker. Lets users search 250K+ jobs across 5,400+ companies from the terminal or through AI agents (Claude Code, Cursor) via MCP.
 
 ## Project Overview
 
-- **Product:** Trackly CLI + MCP Server — terminal access to Thousands of jobs across Thousands of companies
+- **Product:** Trackly CLI + MCP Server — terminal access to 250K+ jobs across 5,400+ companies
 - **Stack:** Node.js `^20.20.0 || >=22.22.0` / plain CommonJS JavaScript (no TypeScript, no build step)
 - **MCP SDK:** `@modelcontextprotocol/sdk` (stdio transport); **validation:** `zod` (MCP tool input schemas)
 - **Auth:** Google OAuth via local callback server, tokens stored in `~/.trackly/config.json`
