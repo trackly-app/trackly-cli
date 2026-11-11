@@ -13,7 +13,7 @@ const { HOSTED_RESUME_SECURITY_SOURCE_SHA256, assertHostedResumeSecuritySourceSn
 const assertResumeGlobalParserCarveout = createResumeParserVerifier({ activeNamedDefinitionAst, staticMemberName, parseFullSource, canonicalSchemaAst });
 
 const sha256ExactBytes = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-const CHECKED_IN_HOSTED_FIXTURE_SHA256 = 'ce447e11d244352fb09d7397b2342a30853ba3dac8802a8d39c0d981ade51dd9';
+const CHECKED_IN_HOSTED_FIXTURE_SHA256 = 'e755cb0ead0432fd47c271fc0f5f6826ee9fe008126d326beb7b10bbdff520ef';
 const HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256 = Object.freeze({
   applyCheckpointActionVariant: '6d83fd691e69b578f683c5e367cc1706a8f74b336e0ff435195f580c2350587c',
   applyCheckpointActionSchema: '6f0b0698b13997eda7100ec00720fff199d936270d232c7de5f55a8fcef2c2ab',
@@ -923,10 +923,10 @@ const HOSTED_DEPLOYABLE_PATHS = Object.freeze([
   'src/routes/admin-read-query.ts',
 ]);
 
-// Recaptured from reviewed source f9226166 (close-ai #3604 head) and deployed merge
-// 6a5b05f5. The head does not contain the first parent 83ec9730 (main, close-ai #3602),
-// but #3602 touched none of the 50 deployable paths, so every one preserves the reviewed
-// bytes; no inherited exception applies.
+// Recaptured from reviewed source 3cb96b71 (close-ai #3544 head, match-score backlog) and
+// deployed merge 5d443853, the production deploy after #3604 (directory parity, 6a5b05f5).
+// The head already contains its first parent 6a5b05f5, so all 50 deployable paths preserve
+// the reviewed bytes; no inherited exception applies.
 const REVIEWED_INHERITED_BASELINE = Object.freeze([]);
 
 function assertMergeCommitPreservesPaths(repository, sourceCommit, mergeCommit, relativePaths, inheritedBaseline = []) {
@@ -8586,6 +8586,25 @@ assertActiveFunctionDefinitionAst(
 // Tracker handlers the hosted MCP already uses) carries its fixed-string payload, with Tracker
 // contact names and emails removed at any depth (R9), plus its HTTP status.
 assertImportBinding(hostedPluginSource, 'TrackerToolError', 'TrackerToolError', './tracker-tools.js', hostedPluginSourcePath);
+// close-ai #3544 (recaptured at 5d443853): trackly_search_jobs and trackly_get_job append the
+// shared match-score status sentence imported from claude-tools.ts. Its exact text is part of
+// the classic descriptors, so the constant is locked here as well as its import.
+assertImportBinding(
+  hostedPluginSource, 'MATCH_SCORE_STATUS_DESCRIPTION', 'MATCH_SCORE_STATUS_DESCRIPTION', './claude-tools.js', hostedPluginSourcePath,
+);
+{
+  const claudeToolsPath = path.join(backendRoot, 'src', 'mcp', 'claude-tools.ts');
+  assertActiveVariableInitializerAst(
+    fs.readFileSync(claudeToolsPath, 'utf8'),
+    'MATCH_SCORE_STATUS_DESCRIPTION',
+    `'matchScoreStatus=pending means owned waiting parse or score work; '
+      + 'matchScoreReason=parse_required or score_required names a missing prerequisite without promising completion. '
+      + 'outside_scoring_window means outside the automatic 30-day window, description_unavailable means no usable '
+      + 'description, inactive means a closed posting, and not_scored means unknown. Saved scores take precedence; '
+      + 'a missing numeric score is unavailable.'`,
+    claudeToolsPath,
+  );
+}
 assertActiveFunctionDefinitionAst(
   hostedPluginSource,
   'errorContent',

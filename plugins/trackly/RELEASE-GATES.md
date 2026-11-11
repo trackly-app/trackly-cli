@@ -161,8 +161,9 @@ the host's own browser tool, and only the user clicks Submit.
 The fixture-pinned `mutationAnnotationContract` in
 `scripts/verify-hosted-contract.js` mirrors the runtime pinned in
 `hosted-contract-fixture.json`. The fixture is recaptured from the deployed
-close-ai merge `6a5b05f5d043feba651e8dc7c70f1ea29013308b` (close-ai #3604,
-directory parity; it was `6cd11dfb1c5b59dbb11b325c3a4f68a1a3fc8b23` from close-ai #3603,
+close-ai merge `5d443853272518bcc0f0b673e29d03d9f45715d5` (close-ai #3544, the
+production deploy after the close-ai #3604 directory-parity merge `6a5b05f5d043feba651e8dc7c70f1ea29013308b`;
+it was `6cd11dfb1c5b59dbb11b325c3a4f68a1a3fc8b23` from close-ai #3603,
 `7c7032c87d97b3270681281ff33fa3d8887259c9` from close-ai #3433,
 `71e7f9bfa73df85bbd483ee07712a38d386b79a1`, `6be6d4d2105f7de7f491c7b55bfdf00057d193f4`
 from trackly-app/trackly-cli#186, and `dded739620bcdee1e6863324c8f660e6b999d0cc` from trackly-app/trackly-cli#154), retaining

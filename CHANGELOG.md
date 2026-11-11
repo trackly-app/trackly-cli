@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Maintenance
 
-- Recapture the coordinated hosted-contract gate against close-ai `6a5b05f5` (close-ai #3604, directory parity). The classic 21-tool facade is byte-identical; the gate now pins the eleven directory-only registrations, the classic-surface name guard, the Claude resume-preview branch and the byte-locked directory surface registry that supplies the ChatGPT and Claude scope rows.
+- Recapture the coordinated hosted-contract gate against the deployed close-ai `5d443853` (close-ai #3544, after the #3604 directory-parity merge). The classic 21-tool facade keeps every schema and annotation, and only the `trackly_search_jobs` and `trackly_get_job` descriptions gained the match-score status sentence, now locked with its source constant; the gate now pins the eleven directory-only registrations, the classic-surface name guard, the Claude resume-preview branch and the byte-locked directory surface registry that supplies the ChatGPT and Claude scope rows.
 
 ## [0.25.0] - 2026-11-04
 

@@ -127,8 +127,8 @@
   },
   "publicExecutableContract": {
     "descriptorSha256": {
-      "trackly_search_jobs": "b44502ce9769040a8a0c167529d6c91ffe7ef5a76d8953faafbf1e8e130a0935",
-      "trackly_get_job": "df2fc206605d659acf306a4afb3fa60626b0424b4862b2c8003ee2b62438414d",
+      "trackly_search_jobs": "020c525f1ba7506c50b9848ebaeee8f00e71df6f8e49ce7cbabd8179297a2bb0",
+      "trackly_get_job": "7c43dd671da80356388eefbea5e4f5521312f630547236899c6703ee0db04247",
       "trackly_search_companies": "fb72369ef77512c279a4544c0978fe10a592fbcf7032be872e10a9364a02a8de",
       "trackly_get_job_brief": "21ca99a8797faaab41d052ac18c55c530c2897450ab9fa47c45f06903c2b99b8",
       "trackly_get_preferences": "3a848d9864eaa749a6964ae05a3520ccfb755d93cad85540ec16c7f3761935b4",
@@ -172,7 +172,7 @@
       "trackly_reconcile_manual_submission": "32be19dadef3c8e3a1d9f320d3c1a9a0cde3845f930dac85641409f25a722b0a",
       "trackly_stop_apply": "8363bfe5eb7fb8ed4093b1f01bdaa9ebcb599ac35004fd13bab0ae6a2ab4f1ce"
     },
-    "pluginServerSha256": "2a7e5b61262d3d9e9519f10c247013ce8252c578dc8e4b8f3e843ac43399237f",
+    "pluginServerSha256": "02d771fc45a5b247bd32dbd065770d16a0b08404129d498951fadce50dcb2378",
     "pluginScopesSha256": "c8a7557be3bc1706dd0565baf2513b1ac191090b385926b5adc5c43e89721d55",
     "jobBriefServiceSha256": "fee263be5b7b05da8db6b9b9e2cb7559a50abeeeab447166f5fe7a889892bc7b",
     "backendUiRedirectSha256": "3d1018e472992626d39299be89ee8e996930fb76ce0f69155f2f63bb6f34d55e",

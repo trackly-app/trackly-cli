@@ -4,7 +4,7 @@
   "endpoint": "https://mcp.usetrackly.app/api/plugin/trackly/claude/mcp",
   "source": {
     "repository": "trackly-app/close-ai",
-    "commit": "6a5b05f5d043feba651e8dc7c70f1ea29013308b",
+    "commit": "5d443853272518bcc0f0b673e29d03d9f45715d5",
     "goldens": [
       "src/mcp/__tests__/fixtures/surface-golden/claude-tools-list.json",
       "src/mcp/__tests__/fixtures/surface-golden/claude-apply-allowlisted-tools-list.json"

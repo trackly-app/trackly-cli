@@ -1,6 +1,6 @@
 # ChatGPT listing kit: trackly-openai 1.0.9
 
-This kit is the portal companion for the ChatGPT app package `trackly-openai` 1.0.9. The package itself lives in close-ai at `docs/openai/trackly-openai-1.0.9/` (18 files, hashes in `docs/openai/trackly-openai-1.0.9.sha256`) and was deployed with close-ai #3604 (merge `6a5b05f5`, 2026-11-10 00:46 PST). [`metadata.json`](metadata.json) pins that source, and [`tools.json`](tools.json) is the 38-tool catalog captured from close-ai's `openai-tools-list.json` golden and directory registry at the same commit.
+This kit is the portal companion for the ChatGPT app package `trackly-openai` 1.0.9. The package itself lives in close-ai at `docs/openai/trackly-openai-1.0.9/` (18 files, hashes in `docs/openai/trackly-openai-1.0.9.sha256`) and was first deployed with close-ai #3604 (merge `6a5b05f5`, 2026-11-10 00:46 PST). [`metadata.json`](metadata.json) and [`tools.json`](tools.json) are pinned to the current production deploy `5d443853` (close-ai #3544, deployed 2026-11-10 02:48 PST): the 38-tool catalog is captured from its `openai-tools-list.json` golden and directory registry, and the package checksum manifest is unchanged.
 
 This is not the classic Codex plugin in `plugins/trackly/` (21 tools on `/api/plugin/trackly/mcp`). The ChatGPT app uses its own endpoint:
 
@@ -13,7 +13,7 @@ This is not the classic Codex plugin in `plugins/trackly/` (21 tools on `/api/pl
 3. Wait until every new tool below is approved. Paste the justification column when the portal asks.
 4. Upload the 1.0.9 package ZIP as an update to the same record and submit it for review. Submission and publication each need Kevin's separate approval, as `RELEASE-GATES.md` requires.
 
-The 27 existing tool definitions are byte-identical to 1.0.8, so 1.0.8 skills keep working until 1.0.9 is approved.
+The 27 existing tool schemas and annotations are unchanged from 1.0.8, so 1.0.8 skills keep working until 1.0.9 is approved. Two existing descriptions changed after PR1: close-ai #3544 added match-score status and lower-bound count wording to `trackly_search_jobs` and `trackly_get_job`. The Rescan will show those two description edits next to the eleven new tools.
 
 ## New tools
 

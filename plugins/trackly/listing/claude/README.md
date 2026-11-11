@@ -4,7 +4,7 @@ This kit is the material for the Claude directory listing edit that announces th
 
 Connector URL: `https://mcp.usetrackly.app/api/plugin/trackly/claude/mcp`
 
-[`metadata.json`](metadata.json) holds the structured fields and the consent lines approved on 2026-11-09. [`tools.json`](tools.json) is the catalog captured from close-ai's `claude-tools-list.json` and `claude-apply-allowlisted-tools-list.json` goldens and directory registry at deployed commit `6a5b05f5` (close-ai #3604).
+[`metadata.json`](metadata.json) holds the structured fields and the consent lines approved on 2026-11-09. [`tools.json`](tools.json) is the catalog captured from close-ai's `claude-tools-list.json` and `claude-apply-allowlisted-tools-list.json` goldens and directory registry at the current production deploy `5d443853` (close-ai #3544, after PR1 close-ai #3604).
 
 ## Listing text
 

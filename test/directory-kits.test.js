@@ -111,7 +111,7 @@ test('plugin and kit checks reject a wrong connector, count drift and table drif
     [path.join(LISTING, 'openai', 'metadata.json'), (text) => text.replace('"packageVersion": "1.0.9"', '"packageVersion": "1.0.8"'), /package 1\.0\.9/],
     [path.join(LISTING, 'openai', 'README.md'), (text) => text.replace(/\| `trackly_add_tracker_note` \|.*\n/, ''), /one justification row per new tool/],
     // A hosted-contract recapture without a catalog recapture leaves the kits stale.
-    [path.join(REPO, 'plugins', 'trackly', 'hosted-contract-fixture.json'), (text) => text.replace(/"commit": "6a5b05f5[0-9a-f]+"/, '"commit": "0000000000000000000000000000000000000000"'), /same close-ai commit as hosted-contract-fixture\.json/],
+    [path.join(REPO, 'plugins', 'trackly', 'hosted-contract-fixture.json'), (text) => text.replace(/("mergedRuntime": \{\s*"commit": ")[0-9a-f]{40}/, (match, prefix) => prefix + '0'.repeat(40)), /same close-ai commit as hosted-contract-fixture\.json/],
   ];
   for (const [file, mutate, expected] of cases) {
     const errors = withMutatedFile(file, mutate, (root) => verifyDirectoryKits({ root }));
