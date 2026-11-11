@@ -18,8 +18,9 @@ test('held release: the published MCP catalog omits trackly_auto_apply and keeps
   try {
     const { tools } = await client.listTools();
     assert.ok(!tools.some(tool => tool.name === 'trackly_auto_apply'));
-    assert.equal(tools.find(tool => tool.name === 'trackly_update_status').description,
-      'Update a job application status (apply, save, or dismiss).');
+    const updateStatus = tools.find(tool => tool.name === 'trackly_update_status');
+    assert.equal(updateStatus.title, 'Job status · Mark applied, saved or dismissed');
+    assert.match(updateStatus.description, /^\[Job status\] Record a job's status on the user's job list: applied, saved or dismissed\. Applied is for an application the user submitted themselves\. It also records the job on the Tracker/);
     assert.ok(!tools.some(tool => /trackly_auto_apply|cloud auto-apply/i.test(tool.description)));
     assert.equal(require('../lib/auto-apply').cloudAutoApply.released, false);
   } finally {
@@ -57,7 +58,9 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
       const { tools } = await client.listTools();
       const tool = tools.find(value => value.name === 'trackly_auto_apply');
       assert.ok(tool);
-      assert.deepEqual(tool.annotations, { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true });
+      assert.deepEqual(tool.annotations, { title: 'Trackly Apply (cloud) · Request', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true });
+      assert.equal(tool.title, 'Trackly Apply (cloud) · Request');
+      assert.match(tool.description, /^\[Trackly Apply \(cloud\)\] Trackly applies for you and nothing runs on your computer\. /);
       assert.deepEqual(Object.keys(tool.inputSchema.properties), ['jobId']);
       assert.deepEqual(tool.inputSchema.required, ['jobId']);
       assert.equal(tool.inputSchema.additionalProperties, false);
@@ -87,7 +90,7 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
         [404, { error: 'job_not_found' }, /Job not found.*Check the Trackly job ID/],
         [404, { error: 'Not found' }, /Auto-apply is not available for this account yet/],
         [429, { error: 'limit_reached', feature: 'assist_request', used: 15, limit: 15,
-          resetsAt: null, upgradeUrl: null }, /cloud auto-apply.*Used 15 of 15/],
+          resetsAt: null, upgradeUrl: null }, /Trackly Apply \(cloud\).*Used 15 of 15/],
         [429, { error: 'assist_limit_reached', feature: 'assist_request', used: 100, limit: 100,
           resetsAt: '2026-12-01T00:00:00Z', upgradeUrl: 'https://example.com/from-server' }, /Used 100 of 100.*Resets on.*https:\/\/example.com\/from-server/],
         [429, { error: 'slow_down' }, /Rate limited, try again shortly/],

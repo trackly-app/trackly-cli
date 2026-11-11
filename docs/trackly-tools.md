@@ -72,15 +72,22 @@ API-key creation attempts.
 
 ### Applying: three different things
 
-- **Trackly Apply** (local): the user's own agent fills the application in the user's browser on their machine and stops before Submit; the user submits. It runs through the Trackly Apply skill and the `trackly_*_apply_*` tools below, set up with `trackly agent setup`.
-- **Cloud auto-apply**: the user only requests it and Trackly takes care of the application; nothing runs on the user's machine. The local `trackly_auto_apply` tool and the `trackly auto-apply` command are held until the hosted service ships them.
-- **Mark applied**: the user applied on their own. Record it with `trackly_update_status` (`action: "applied"`), or `trackly mark-applied <id>` in the CLI. `trackly_create_tracker_application` and `trackly_update_tracker_stage` track the application on the `/tracker` board.
+- **Trackly Apply (local)**: your own AI agent fills the form in your browser and stops before Submit; you submit. It runs through the Trackly Apply skill and the Trackly Apply (local) and Apply step tools below, set up with `trackly agent setup`.
+- **Trackly Apply (cloud)**: Trackly applies for you and nothing runs on your computer. The local `trackly_auto_apply` tool and the `trackly auto-apply` command are held until the hosted service ships them.
+- **Job status · Mark applied**: you applied on your own. Record it with `trackly_update_status` (`action: "applied"`), or `trackly mark-applied <id>` in the CLI. Recording applied also records the job on the `/tracker` board, so there is no separate Tracker step; later outcomes go to `trackly_update_tracker_stage`.
 
-Pick the one the user asked for; never submit on the user's behalf through Trackly Apply.
+Pick the one the user asked for; never submit on the user's behalf through Trackly Apply (local).
 
 ### Available Tools
 
-- **get_more_tools** — Report what the agent wanted to do when no Trackly tool fit, so Trackly can improve its MCP surface. The tool is always available; report delivery is best-effort.
+Tools are grouped by family, in the order every Trackly catalog uses. Each tool's title is `<Family> · <Action>`
+(for example "Tracker · Move stage"), and its description starts with the family tag, for example `[Tracker]`.
+Protocol steps of a Trackly Apply (local) run are titled "Apply step · <Action>" and tagged
+`[Trackly Apply · protocol step]`: the Trackly Apply skill calls them during a run, using IDs from earlier
+steps, so they are not standalone actions. Tool names never change.
+
+#### Jobs
+
 - **trackly_search_jobs** — Search/filter jobs. A successful page may have `total: null`, `pagination.total: null` and `countStatus: "unavailable"` when its total cannot be computed. The returned jobs remain valid: explain `countGuidance`, use `hasMore` and pagination to continue, and avoid retrying just to obtain a total. Zero is a known count; null is unknown. A numeric `total` with `totalIsLowerBound: true` (also in `pagination`) means at least that many matches, not an exact count. `false` marks a known exact total; `null` leaves the total unknown. Natural-language `trackly_ask` preserves these page fields: `total`, `totalIsLowerBound`, `countStatus`, `countGuidance`, `hasMore`, `pagination`, and `recencyStats`. It keeps the ask interpretation and validated continuation URL authoritative; unrelated jobs-page fields are omitted. It returns one page and takes no pagination input: continue there with `trackly_search_jobs` and `offset`. Genuine page failures remain tool errors.
   - `function` (one value) or `jobFunctions` (nonempty array, OR; use one spelling only). The 14 values are: `product`, `engineering`, `design`, `data`, `marketing`, `sales`, `partnerships`, `finance`, `strategy`, `operations`, `people`, `legal`, `support`, `other`
   - `region`: nonempty array of `us`, `europe`, `latam`, `middle_east`, `asia`, `africa`, `canada`, `oceania`, `remote`, `unknown`, combined with OR. Use instead of `locationFilter`; unlike its legacy list form, this supports US plus other regions.
@@ -127,19 +134,51 @@ Job results use `matchScoreStatus: "scored" | "pending" | "not_scored"`. A score
 
 The backend owns when a score is produced. These values are the stable part of the API; the queue, cooldown, lease and revision mechanics behind them are backend implementation, are not public API, and are deliberately not documented here. Read the fields, not the machinery.
 
+- **trackly_ask** — Natural language job search. Takes only a query and returns one page with the same count metadata as `trackly_search_jobs`, plus the parsed filters it inferred. It has no pagination input, so when `hasMore` is true continue with `trackly_search_jobs` using supported structured filters and `offset`; repeating the query returns the same first page. An unreadable follow-on job page is a tool error, not an empty result.
+
+#### Companies
+
 - **trackly_search_companies** — Semantic company search
 - **trackly_list_companies** — List all tracked companies with job counts
-- **trackly_get_stats** — Job tracker metrics dashboard
+- **trackly_request_company** — Request that a company be added to Trackly's tracked companies. Rate-limited to 5 pending requests per user. Parameters: `companyName` (required), `companyUrl` (optional), `notes` (optional).
+
+#### Network
+
+- **trackly_get_job_brief** — Get network brief for a positive numeric Trackly job ID (company signal, top contact, actions).
+
+`trackly_get_job` and `trackly_get_job_brief` return JSON text and matching `structuredContent`. A recognized missing or removed posting, or an explicitly inactive posting, returns `availability: "unavailable"`, a reason, `retryable: false`, and a `nextStep` directing the agent to search for current openings. This is a normal tool result. Closed briefs retain their allowed stored company and role context, but omit stale recommended motions and application actions. A missing availability flag means unknown, not closed; detecting closed briefs requires a backend that supplies that flag.
+
+Actual failures retain `isError: true`, HTTP status when available, a closed `category`, `retryable`, `maxRetries`, and a next step. Categories are `authentication`, `authorization`, `validation`, `not_found`, `conflict`, `rate_limit`, `timeout`, `server`, `network`, `maintenance`, `access`, or `unknown`. Transient read failures permit one retry after `retryAfterSeconds`, honoring the longer valid API body or HTTP `Retry-After` delay (seconds or HTTP date); the tools add no automatic retry loop. The `nextStep.message` always explains what to do; `nextStep.tool` is present when a corresponding MCP tool exists. Authentication and invalid-input failures require a corrected request first. A route or unrelated dependency 404 remains an error. Invalid argument shapes are rejected by MCP schema validation before any API call; correct the arguments before retrying.
+
+- **trackly_contacts_at_company** — Search contacts at a specific company
+- **trackly_get_company_workspace** — Get full company workspace (jobs, contacts, hiring managers, campaigns)
+
+#### Preferences
+
 - **trackly_get_preferences** — Read a bounded preference response containing only `success`, `experienceFilterV2Available`, and the authenticated user's discovery `preferences`, including selected roles, saved role-specific limits, and the revision required for a safe update. Availability authorizes editing; it does not report feed or alert enforcement.
 - **trackly_update_experience_limits** — Atomically replace the complete role-specific experience-limit map.
   - `experienceLimitsByJobFunction`: object whose keys are the 14 canonical job-function values and whose values are integer years from `0` through `60`. An empty object turns this filter off.
   - `expectedPreferenceRevision`: non-negative safe integer from the latest `trackly_get_preferences` result. A stale revision is rejected; refetch and reconcile with the user rather than retrying blindly.
   - The tool checks `experienceFilterV2Available` immediately before writing and refuses without a PUT unless it is exactly `true`.
   - When server-side enforcement is active, a job remains visible when its stated minimum is less than or equal to that role's limit. Jobs with no stated minimum remain visible.
-- **trackly_update_status** — Mark a job as applied, saved, or dismissed
+
+#### Profile
+
+- **trackly_get_application_profile** — Get the versioned, scoped application profile.
+- **trackly_get_profile_onboarding** — Get backend-owned questions plus only missing/unconfirmed answers.
+- **trackly_update_application_profile** — Save explicit answer states with optimistic concurrency and global/provider/company scope. Setting `sensitiveStorageConsent=false` is destructive and requires a second call echoing the `sensitiveRevocationConfirmToken` from the returned challenge.
+- **trackly_lint_application_text**: Local MCP only: require an explicitly complete claim-reference packet, then return a draft hash, length, and stable value-free writing violations without sending or echoing application text to Trackly.
+
+#### Job status
+
+- **trackly_update_status** — Record a job's status on your job list: `applied`, `saved` or `dismissed`. Applied is for an application you submitted yourself, and it also records the job on the Tracker: it creates the job's one Tracker entry, or moves its saved or contacted entry to applied, and the result carries `trackerEntry` (`created`, `linked`, `moved`, `existing`, `skipped` or `failed`, with a reason code; `failed` is safe to repeat). The status saves even when the Tracker step does not. Saved and dismissed change only the job list and never the Tracker. Later outcomes go on the Tracker: interview, offer, rejected or withdrawn with `trackly_update_tracker_stage`, and a pause with `trackly_add_tracker_note`.
+- **trackly_get_stats** — Job tracker metrics dashboard
+
+#### Tracker
+
 - **trackly_list_tracker_applications** — List your Tracker board entries (`/tracker`: `saved`, `contacted`, `applied`, `screen`, `assessment`, `interview`, `final`, `offer`, `accepted`, `declined`, `rejected`, `withdrawn`). Optional `stage`, `query` (company or role text, at most 100 characters) and `jobId` filters. Each entry returns `id`, `jobPostingId`, `company`, `role`, `currentStage`, `stageEnteredAt`, `version` and `link`. Pass `applicationId` alone to get that entry with its events (ids, kinds, stages, dates and note text), for example to name an event to undo. Contact email addresses are never returned.
-- **trackly_create_tracker_application** — Add a job to the Tracker board (Quick Add). Creating an entry records the job as applied, so call it only after the user confirms they applied and pass `explicitUserConfirmed: true`. Pass `jobId`, or `companyName` and `roleTitle` (at most 200 characters each); optional `appliedOn` (`YYYY-MM-DD`, a local date in America/Los_Angeles) and `link` (http(s)). When the job, or the same company and role, is already on the board, nothing is written and the existing entry returns with `created: false` and `reason: "already_tracked"`. A repeated call never adds a second entry.
-- **trackly_update_tracker_stage** — Move one Tracker entry (`applicationId` or `jobId`, exactly one) to a stage, as a drag on the board does, with an optional `occurredOn` date and a dated `note` of at most 1,000 characters. This is separate from `trackly_update_status`: marking an entry rejected keeps its Applied record. There is no paused stage; record a pause with `trackly_add_tracker_note`. Returns `changed`, `stageEventId`, `noteEventId` and `noteSaved`; `reason` explains a no-op (`already_in_stage`, `already_recorded`, `later_stage_event`, `replayed_retracted_event`). The tool never creates an entry: a job without one returns `not_found`.
+- **trackly_create_tracker_application** — Add a job to the Tracker board (Quick Add). Creating an entry records the job as applied, so call it only after the user confirms they applied and pass `explicitUserConfirmed: true`. Pass `jobId`, or `companyName` and `roleTitle` (at most 200 characters each); optional `appliedOn` (`YYYY-MM-DD`, a local date in America/Los_Angeles) and `link` (http(s)). When the job, or the same company and role, is already on the board, nothing is written and the existing entry returns with `created: false` and `reason: "already_tracked"`. A repeated call never adds a second entry. Recording a Trackly job as applied with `trackly_update_status` creates this entry too, so this tool is mainly for applications that are not Trackly jobs (`companyName` and `roleTitle`).
+- **trackly_update_tracker_stage** — Move one Tracker entry (`applicationId` or `jobId`, exactly one) to a stage, as a drag on the board does, with an optional `occurredOn` date and a dated `note` of at most 1,000 characters. Moving an entry never changes the job list status: marking an entry rejected keeps its Applied record and does not dismiss the job. There is no paused stage; record a pause with `trackly_add_tracker_note`. Returns `changed`, `stageEventId`, `noteEventId` and `noteSaved`; `reason` explains a no-op (`already_in_stage`, `already_recorded`, `later_stage_event`, `replayed_retracted_event`). The tool never creates an entry: a job without one returns `not_found` (`trackly_update_status` with applied, or `trackly_create_tracker_application`, creates it).
 - **trackly_add_tracker_note** — Add a dated note (`text`, at most 1,000 characters, optional `occurredOn`) to one Tracker entry without changing its stage. The same text on the same day is never added twice.
 - **trackly_retract_tracker_event** — Undo one Tracker event the user names, by `eventId`, as the board's undo does. Retracting an already retracted event changes nothing; an entry's only stage event and a retraction itself cannot be retracted.
 
@@ -151,39 +190,38 @@ The five Tracker tools call the same backend routes as the `/tracker` board with
   - `invalid_tracker_response` (local MCP only), when a 2xx response is not a readable Tracker entry or list, for example a proxy page.
 
   A stage change whose follow-up note was not saved is still a success, with `noteSaved: false` and `noteError` set to `note_edited_since`, `replayed_retracted_note`, or the backend's error code (`note_write_failed` when it has none). `trackly_add_tracker_note` returns `noteSaved: false` with `reason: "note_edited_since"` when the same note was edited on the board since; nothing is written. The hosted connector registers the same five tools. Three local-only adaptations: an unreadable 2xx list is an error rather than an empty board, so create never skips its duplicate check; a note write that meets a version conflict re-reads the entry first and reuses a same-day copy a concurrent call added; and an undated stage change is judged as observed after the latest event read, so a local clock that lags the backend does not hide a move after a recent board change. A same-stage event dated today can still outrank it when the skew spans Los Angeles midnight.
-- **trackly_ask** — Natural language job search. Takes only a query and returns one page with the same count metadata as `trackly_search_jobs`, plus the parsed filters it inferred. It has no pagination input, so when `hasMore` is true continue with `trackly_search_jobs` using supported structured filters and `offset`; repeating the query returns the same first page. An unreadable follow-on job page is a tool error, not an empty result.
-- **trackly_get_job_brief** — Get network brief for a positive numeric Trackly job ID (company signal, top contact, actions).
 
-Both job tools return JSON text and matching `structuredContent`. A recognized missing or removed posting, or an explicitly inactive posting, returns `availability: "unavailable"`, a reason, `retryable: false`, and a `nextStep` directing the agent to search for current openings. This is a normal tool result. Closed briefs retain their allowed stored company and role context, but omit stale recommended motions and application actions. A missing availability flag means unknown, not closed; detecting closed briefs requires a backend that supplies that flag.
+#### Trackly Apply (local)
 
-Actual failures retain `isError: true`, HTTP status when available, a closed `category`, `retryable`, `maxRetries`, and a next step. Categories are `authentication`, `authorization`, `validation`, `not_found`, `conflict`, `rate_limit`, `timeout`, `server`, `network`, `maintenance`, `access`, or `unknown`. Transient read failures permit one retry after `retryAfterSeconds`, honoring the longer valid API body or HTTP `Retry-After` delay (seconds or HTTP date); the tools add no automatic retry loop. The `nextStep.message` always explains what to do; `nextStep.tool` is present when a corresponding MCP tool exists. Authentication and invalid-input failures require a corrected request first. A route or unrelated dependency 404 remains an error. Invalid argument shapes are rejected by MCP schema validation before any API call; correct the arguments before retrying.
-- **trackly_contacts_at_company** — Search contacts at a specific company
-- **trackly_get_company_workspace** — Get full company workspace (jobs, contacts, hiring managers, campaigns)
-- **trackly_request_company** — Request that a company be added to Trackly's tracked companies. Rate-limited to 5 pending requests per user. Parameters: `companyName` (required), `companyUrl` (optional), `notes` (optional).
+Your own AI agent fills the form in your browser and stops before Submit; you submit.
+
 - **trackly_get_apply_queue** — Get user-approved check-later jobs in deterministic execution order.
-- **trackly_get_application_profile** — Get the versioned, scoped application profile.
-- **trackly_get_profile_onboarding** — Get backend-owned questions plus only missing/unconfirmed answers.
-- **trackly_update_application_profile** — Save explicit answer states with optimistic concurrency and global/provider/company scope. Setting `sensitiveStorageConsent=false` is destructive and requires a second call echoing the `sensitiveRevocationConfirmToken` from the returned challenge.
+- **trackly_list_apply_access_deferments** — List the current user's persistent job/company/provider access deferments. Returns only scope identities; never provider names, URLs, or raw text.
+- **trackly_defer_apply_access** — Persist an explicit user deferment for one Trackly `jobId` at `job`, `company`, or `provider` scope. The server derives company, provider, tenant, origin, and route; provider scope applies across companies until cleared; never submit a provider name, URL, or raw text.
+- **trackly_clear_apply_access_deferment** — Clear one deferment listed or created in the current MCP session. Exact same-session replay is idempotent; after restart, refresh the active list instead of replaying an undiscovered cleared ID.
+- **trackly_stop_apply_execution** — Stop an execution with optimistic revision and idempotency guards.
+
+#### Apply step
+
+Called by the Trackly Apply skill during a run, using IDs from earlier steps, not as a standalone action.
+
+- **trackly_get_apply_protocol** — Get the current ATS support, browser integrity rules, and compatible skill version.
 - **trackly_start_apply_execution** — Start a server-owned `complete_next_n_accessible` execution with a target from 1–20. For explicitly selected jobs, pass their exact ordered `jobIds` and set `target` to the list length; no unrelated replacements are allowed. Omit `jobIds` only for a requested recent-first queue target. Consume authoritative `progress` and `nextAction` before browser work; never retry a rejected exact selection as count-only.
 - **trackly_get_active_apply_execution** — Recover the active execution before legacy batch recovery.
 - **trackly_get_apply_execution** — Read an execution's latest current-wave identity and authoritative aggregate progress funnel.
+- **trackly_get_apply_execution_snapshot**: Fetch a compact bounded projection of current members, requested profile keys, mutability, allowed operations, milestones, lease timing, and the authoritative funnel.
+- **trackly_advance_apply_execution** — Transactionally select the next wave from the execution's original recent-first snapshot for the declared `browserSurface`. Returns a compact immutable `proposedWave` with each member's job ID and value-free `accessKnowledge`, plus the rich `accessProposal` receipt with member order, rationale, and approval hash. Same-key retries return identical identity, order, and rationale. Optional hash-bound `accessReviewApproval` probes exact proposed job IDs after personal deferments are cleared.
+- **trackly_record_apply_execution_dispositions** — Record typed, value-free live-probe classifications for the current wave. Every item requires `jobId`, one allowed `classification`, `source: 'live_probe'`, and the exact `batchId`, `memberId`, `runId`, `expectedMemberVersion`, `expectedInspectionEpoch`, and `browserSurface`; cache/static scheduling records are server-owned and cannot be submitted through MCP.
+- **trackly_resume_parked_apply_member**: Resume one parked member only after explicit user instruction; a fresh non-mutating access probe remains required before form mutation.
+- **trackly_approve_apply_execution_resume**: Approve one exact resume identity for an execution's unchanged original snapshot while preserving immediate per-run local verification before upload.
 - **trackly_list_recoverable_apply_executions** — List a bounded, value-free menu of exact recovery candidates after local context loss.
 - **trackly_recover_exact_apply_members** — Recover only the explicitly confirmed candidates from one retained source snapshot, with no substitutions.
 - **trackly_list_apply_review_handoffs** — Rediscover active, nonexpired review-handoff receipts for one execution without browser or profile values.
 - **trackly_claim_apply_review_handoff** — Claim one exact handoff receipt and classify every member before grouped submission reconciliation.
-- **trackly_get_apply_execution_snapshot**: Fetch a compact bounded projection of current members, requested profile keys, mutability, allowed operations, milestones, lease timing, and the authoritative funnel.
-- **trackly_resume_parked_apply_member**: Resume one parked member only after explicit user instruction; a fresh non-mutating access probe remains required before form mutation.
-- **trackly_approve_apply_execution_resume**: Approve one exact resume identity for an execution's unchanged original snapshot while preserving immediate per-run local verification before upload.
-- **trackly_advance_apply_execution** — Transactionally select the next wave from the execution's original recent-first snapshot for the declared `browserSurface`. Returns a compact immutable `proposedWave` with each member's job ID and value-free `accessKnowledge`, plus the rich `accessProposal` receipt with member order, rationale, and approval hash. Same-key retries return identical identity, order, and rationale. Optional hash-bound `accessReviewApproval` probes exact proposed job IDs after personal deferments are cleared.
-- **trackly_list_apply_access_deferments** — List the current user's persistent job/company/provider access deferments. Returns only scope identities; never provider names, URLs, or raw text.
-- **trackly_defer_apply_access** — Persist an explicit user deferment for one Trackly `jobId` at `job`, `company`, or `provider` scope. The server derives company, provider, tenant, origin, and route; provider scope applies across companies until cleared; never submit a provider name, URL, or raw text.
-- **trackly_clear_apply_access_deferment** — Clear one deferment listed or created in the current MCP session. Exact same-session replay is idempotent; after restart, refresh the active list instead of replaying an undiscovered cleared ID.
-- **trackly_record_apply_execution_dispositions** — Record typed, value-free live-probe classifications for the current wave. Every item requires `jobId`, one allowed `classification`, `source: 'live_probe'`, and the exact `batchId`, `memberId`, `runId`, `expectedMemberVersion`, `expectedInspectionEpoch`, and `browserSurface`; cache/static scheduling records are server-owned and cannot be submitted through MCP.
-- **trackly_stop_apply_execution** — Stop an execution with optimistic revision and idempotency guards.
 - **trackly_create_apply_batch** — Freeze an exact recent-first set of approved jobs with an idempotency key.
 - **trackly_cancel_apply_batch** — Retire a legacy fixed batch after explicit user confirmation while preserving job state, submitted work, and browser tabs.
-- **trackly_get_active_apply_batch** — Recover the newest unexpired active batch before creating another after chat or browser context loss.
 - **trackly_get_apply_batch** — Page a server-owned frozen batch without reordering or replacing members.
+- **trackly_get_active_apply_batch** — Recover the newest unexpired active batch before creating another after chat or browser context loss.
 - **trackly_claim_apply_batch** — Acquire or renew the optimistic browser-mutation lease.
 - **trackly_checkpoint_apply_batch** — Bulk-record up to 20 value-free inspection checkpoints, typed human actions, and per-member conflicts.
 - **trackly_bind_apply_surface** — Bind an initial or recovered browser surface to the existing frozen member/run, increment its inspection epoch, and return the exact stored requisition URL.
@@ -193,19 +231,17 @@ Actual failures retain `isError: true`, HTTP status when available, a closed `ca
 - **trackly_certify_apply_batch_truth** — Record an expiring late truthfulness certification over final answer and wording fingerprints after every other review-readiness gate has passed.
 - **trackly_start_apply_run** — Start or reuse a manual-submit browser run with the complete frozen batch/member/lease binding.
 - **trackly_get_apply_evidence** — Get the authenticated user's aggregate beta evidence and release gate without returning profile answers or contact values.
-- **trackly_get_apply_protocol** — Get the current ATS support, browser integrity rules, and compatible skill version.
 - **trackly_report_apply_observation** — Report redacted ATS mechanics and actual scenario coverage without answer values or page text.
 - **trackly_report_apply_observations** — Bulk-report up to 20 leased, current-epoch, batch-bound redacted observations in one request.
-- **trackly_record_application_outcome** — Record review readiness or a confirmed manual submission.
-- **trackly_record_application_outcomes** — Bulk-record up to 20 leased, batch-bound outcomes while returning per-member conflicts explicitly.
-- **trackly_prepare_resume** — Local MCP only: materialize the default resume in a private, expiring mode-0600 cache and return filename, size, SHA-256, exact local path, and visual-confirmation metadata. Hosted MCP returns a manual/local-agent requirement.
-- **trackly_verify_prepared_resume** — Local MCP only: immediately before attachment, recompute the user-confirmed resume hash and size, validate the exact path/run/expiration, and lock the file read-only. Any mismatch requires a fresh preview and confirmation.
-- **trackly_lint_application_text**: Local MCP only: require an explicitly complete claim-reference packet, then return a draft hash, length, and stable value-free writing violations without sending or echoing application text to Trackly.
+- **trackly_record_application_outcome** — Record a Trackly Apply run receipt (`review_ready`, `submitted`, `failed` or `blocked`): review readiness or a confirmed manual submission. A submitted receipt also records the job on the Tracker; later outcomes such as interview or offer go to `trackly_update_tracker_stage`.
+- **trackly_record_application_outcomes** — Bulk-record up to 20 leased, batch-bound Trackly Apply run receipts while returning per-member conflicts explicitly. A submitted receipt also records the job on the Tracker.
+- **trackly_prepare_resume** — On the local MCP: materialize the default resume in a private, expiring mode-0600 cache and return filename, size, SHA-256, exact local path, and visual-confirmation metadata. Hosted MCP returns a manual/local-agent requirement.
+- **trackly_verify_prepared_resume** — On the local MCP: immediately before attachment, recompute the user-confirmed resume hash and size, validate the exact path/run/expiration, and lock the file read-only. Any mismatch requires a fresh preview and confirmation. Hosted MCP lists it too and returns the manual/local-agent requirement.
 - **trackly_diagnose_local_path**: Local MCP only: measure the exact implicated path's filesystem, inode, quota observability, and write-probe result without deleting user files or claiming a global disk cause.
-- **trackly_validate_apply_tab_keep_set**: Local MCP only: fail closed unless a caller-supplied nonempty expected tab set exactly matches the keep set and is covered by complete controller and user inventories. This pure helper allows unrelated tabs, performs no browser action, and never sends tab IDs to Trackly.
 - **trackly_validate_apply_resume_upload**: Local MCP only: validate the browser adapter's capabilities and ordered, value-free attachment proof stages. The default chooser path requires all six stages. Explicit `directFileSet: true` permits exact file-input targeting with `chooserArming: false` and four stages: `semantic_control_discovered`, `set_files_succeeded`, `user_facing_filename_committed`, `parser_fields_rechecked`. All shared verification capabilities remain required; omit chooser events on this path. This validates proof without opening a chooser, reading a path, controlling a browser, or sending form data to Trackly.
+- **trackly_validate_apply_tab_keep_set**: Local MCP only: fail closed unless a caller-supplied nonempty expected tab set exactly matches the keep set and is covered by complete controller and user inventories. This pure helper allows unrelated tabs, performs no browser action, and never sends tab IDs to Trackly.
 
-Apply contract v3 intentionally gives this verifier different local and hosted schemas: local MCP receives the full proof needed to inspect the private file, while hosted MCP accepts only run and confirmation identifiers and returns the manual/local-agent requirement. Local paths are never sent remotely. Resume fingerprints are sent only to authenticated Trackly resume approval and truth-certification endpoints, never observations or employer forms. Version 3.1 also records universal value-free evidence for critical-contact integrity and the manual-submit boundary. Version 3.2 authorizes the exact stored HTTPS origin for jobs Trackly ingested from employer careers sources, without granting redirect, iframe, or hostname-suffix privileges. Version 3.3.1 adds active-batch recovery, epoch-bound observations/outcomes, and truth certification for forms with no resume control. Version 3.4 adds server-owned accessible executions above immutable child batches, typed access dispositions, and an authoritative target-completion funnel.
+Apply contract v3 intentionally gives `trackly_verify_prepared_resume` different local and hosted schemas: local MCP receives the full proof needed to inspect the private file, while hosted MCP accepts only run and confirmation identifiers and returns the manual/local-agent requirement. Local paths are never sent remotely. Resume fingerprints are sent only to authenticated Trackly resume approval and truth-certification endpoints, never observations or employer forms. Version 3.1 also records universal value-free evidence for critical-contact integrity and the manual-submit boundary. Version 3.2 authorizes the exact stored HTTPS origin for jobs Trackly ingested from employer careers sources, without granting redirect, iframe, or hostname-suffix privileges. Version 3.3.1 adds active-batch recovery, epoch-bound observations/outcomes, and truth certification for forms with no resume control. Version 3.4 adds server-owned accessible executions above immutable child batches, typed access dispositions, and an authoritative target-completion funnel.
 
 Version 3.8.1 adds access-aware scheduling receipts, `nextAction: access_review`,
 hash-bound probe approval, and job/company/provider deferment tools. Provider scope
@@ -217,6 +253,10 @@ Version 3.7 adds public exact-member recovery and scoped review-handoff claims,
 plus local tab-finalizer and resume-upload proof validators. Recovery candidates
 are bounded and value-free. The local helpers perform no browser actions and
 send no tab IDs, filenames, paths, page text, or form values to Trackly.
+
+#### Feedback
+
+- **get_more_tools** — Report what the agent wanted to do when no Trackly tool fit, so Trackly can improve its MCP surface. The tool is always available; report delivery is best-effort.
 
 ### Maintenance behavior
 

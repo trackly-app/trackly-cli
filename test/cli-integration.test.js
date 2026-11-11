@@ -156,7 +156,7 @@ test('apply <id> still marks a job applied exactly as in 0.25.0, with a mark-app
   }
 });
 
-test('apply with no job ID explains Trackly Apply, cloud auto-apply and mark applied without any request', async (t) => {
+test('apply with no job ID explains Trackly Apply (local), Trackly Apply (cloud) and mark applied without any request', async (t) => {
   for (const env of [HUMAN_ENV, {}]) {
     const { result, requests } = await runAgainstMock(t, ['apply'], undefined, env);
     assert.equal(requests.length, 0);
@@ -170,7 +170,7 @@ test('apply with no job ID explains Trackly Apply, cloud auto-apply and mark app
     }
     const text = env === HUMAN_ENV ? result.stdout : Object.values(JSON.parse(result.stdout).ways).join('\n');
     assert.match(text, /Trackly Apply \(local\).*your browser on your computer.*stops before Submit.*trackly agent setup/);
-    assert.match(text, /Cloud auto-apply: .*Trackly takes care of the application.*nothing running on your computer/);
+    assert.match(text, /Trackly Apply \(cloud\): Trackly applies for you and nothing runs on your computer/);
     assert.match(text, /Mark applied: .*trackly mark-applied <id>/);
     assert.doesNotMatch(text, /trackly auto-apply/, 'the held command is not advertised');
   }
@@ -188,10 +188,10 @@ test('held release: auto-apply is an unknown command and help does not list it',
   assert.match(help.stdout, /apply <id>\s+Same as mark-applied/);
   assert.match(help.stdout, /apply\s+How to apply with Trackly/);
   assert.doesNotMatch(help.stdout, /auto-apply <id>|auto-apply --status/);
-  // Once released (0.27.0), help lists the cloud command next to the other two.
+  // Once released, help lists the cloud command next to the other two.
   const released = await runCli(['--help'], { NODE_OPTIONS: RELEASE_CLOUD_AUTO_APPLY });
-  assert.match(released.stdout, /auto-apply <id>\s+Request cloud auto-apply: Trackly applies for you/);
-  assert.match(released.stdout, /auto-apply --status\s+List cloud auto-apply requests/);
+  assert.match(released.stdout, /auto-apply <id>\s+Trackly Apply \(cloud\): Trackly applies for you/);
+  assert.match(released.stdout, /auto-apply --status\s+List Trackly Apply \(cloud\) requests/);
   assert.match(released.stdout, /mark-applied <id>\s+Record a job you applied to yourself/);
 });
 
@@ -1030,7 +1030,7 @@ test('agent doctor explains that exact resume validation is deferred to a real A
   assert.ok(result.stdout.includes(
     `CLI: ${packageVersion}; MCP contract: 3.9.4`,
   ));
-  assert.match(result.stdout, /Skill: 4\.9\.4; digest: [a-f0-9]{64}/);
+  assert.match(result.stdout, /Skill: 4\.9\.5; digest: [a-f0-9]{64}/);
   assert.match(result.stdout, /Resume validation: available \(exact bytes are verified during an active Apply run\)/);
 });
 

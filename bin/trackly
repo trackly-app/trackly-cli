@@ -914,9 +914,9 @@ async function cmdUpdateStatus(id, action, command = ACTION_TO_COMMAND[action] |
 const APPLY_GUIDE = Object.freeze({
   tracklyApply: 'Trackly Apply (local): your own AI agent (Claude in Chrome, Codex or computer use) fills the application in your browser on your computer and stops before Submit; you submit. Set it up with `trackly agent setup`.',
   cloudAutoApply: cloudAutoApply.released
-    ? 'Cloud auto-apply: you only request it with `trackly auto-apply <id>`; Trackly takes care of the application and nothing runs on your computer.'
-    : 'Cloud auto-apply: you only request it and Trackly takes care of the application, with nothing running on your computer. It is coming to the CLI in a later release.',
-  markApplied: 'Mark applied: you applied on your own; record it with `trackly mark-applied <id>` (`trackly apply <id>` does the same).',
+    ? 'Trackly Apply (cloud): Trackly applies for you and nothing runs on your computer. Request it with `trackly auto-apply <id>`.'
+    : 'Trackly Apply (cloud): Trackly applies for you and nothing runs on your computer. It is coming to the CLI in a later release.',
+  markApplied: 'Mark applied: you applied on your own; record it with `trackly mark-applied <id>` (`trackly apply <id>` does the same). It also puts the job on your Tracker board.',
 });
 
 function cmdApplyGuide() {
@@ -1438,11 +1438,11 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'status')}               Alias for stats
   ${color('cyan', 'preferences')}          Show discovery preferences
   ${color('cyan', 'preferences experience')} Replace role limits (role=years; clear turns off)
-  ${color('cyan', 'apply')}                How to apply with Trackly: Trackly Apply, cloud auto-apply, mark applied
+  ${color('cyan', 'apply')}                How to apply with Trackly: Trackly Apply (local), Trackly Apply (cloud), mark applied
   ${color('cyan', 'mark-applied <id>')}    Record a job you applied to yourself
   ${color('cyan', 'apply <id>')}           Same as mark-applied (kept for existing scripts)
-${cloudAutoApply.released ? `  ${color('cyan', 'auto-apply <id>')}      Request cloud auto-apply: Trackly applies for you (optional --resume-id)
-  ${color('cyan', 'auto-apply --status')}  List cloud auto-apply requests
+${cloudAutoApply.released ? `  ${color('cyan', 'auto-apply <id>')}      Trackly Apply (cloud): Trackly applies for you (optional --resume-id)
+  ${color('cyan', 'auto-apply --status')}  List Trackly Apply (cloud) requests
 ` : ''}  ${color('cyan', 'save <id>')}            Save a job
   ${color('cyan', 'dismiss <id>')}         Dismiss a job
   ${color('cyan', 'ask "query"')}          Natural language job search
@@ -1459,7 +1459,7 @@ ${cloudAutoApply.released ? `  ${color('cyan', 'auto-apply <id>')}      Request 
   ${color('cyan', 'config')}               Show or update CLI config (--api-key, --base-url)
   ${color('cyan', 'version')}              Show CLI version
   ${color('cyan', 'mcp')}                  Start MCP server
-  ${color('cyan', 'agent setup')}          Install Trackly Apply (--client codex|claude|both; --skills-only preserves MCP)
+  ${color('cyan', 'agent setup')}          Install Trackly Apply (local) (--client codex|claude|both; --skills-only preserves MCP)
   ${color('cyan', 'agent doctor')}         Verify auth, MCP, skill, profile, resume, and compatibility
   ${color('cyan', 'agent evidence')}       Show value-free beta evidence (--window-days, --target-reviewed-runs)
   ${color('cyan', 'agent diagnose-path')}  Diagnose one exact local filesystem path (--errno optional)

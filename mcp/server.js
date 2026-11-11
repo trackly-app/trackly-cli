@@ -1,6 +1,7 @@
 'use strict';
 
-const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
+// Family titles and description tags are applied at registration (close-ai #3619).
+const { McpServer } = require('./tool-families');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { McpError } = require('@modelcontextprotocol/sdk/types.js');
 const { z } = require('zod');
@@ -549,9 +550,8 @@ function createServer() {
 
   server.tool(
     'trackly_update_status',
-    // Held with cloud auto-apply (lib/auto-apply.js): this is the hosted description. On release,
-    // point it at trackly_auto_apply again, as the hosted tool will.
-    'Update a job application status (apply, save, or dismiss).',
+    // The hosted /api/mcp text (close-ai #3619, one status story): applied also records the Tracker entry.
+    'Record a job\'s status on the user\'s job list: applied, saved or dismissed. Applied is for an application the user submitted themselves. It also records the job on the Tracker: it creates the job\'s one Tracker entry, or moves its saved or contacted entry to applied, and returns trackerEntry (created, linked, moved, existing, skipped or failed; a failed Tracker step is safe to repeat). Saved and dismissed change only the job list and never the Tracker. Later outcomes go on the Tracker: interview, offer, rejected or withdrawn with trackly_update_tracker_stage, and a pause with trackly_add_tracker_note.',
     {
       id: z.number().describe('Job posting ID'),
       action: z.enum(['applied', 'saved', 'dismissed']).describe('Status action'),
@@ -588,7 +588,7 @@ function createServer() {
   server.registerTool(
     'trackly_create_tracker_application',
     {
-      description: 'Add a job to the Tracker board (Quick Add) when it has no Tracker entry yet. Creating an entry records the job as applied: the new entry starts in the applied stage, dated appliedOn when given. Only call it after the user explicitly confirms they applied, and pass explicitUserConfirmed=true. Pass jobId, or companyName and roleTitle. Move the entry afterwards with trackly_update_tracker_stage, for example to interview. If the job, or the same company and role, is already on the board, nothing is written and the existing entry is returned with created=false. A repeated call never adds a second entry. Separate from trackly_update_status, which only sets the job list status.',
+      description: 'Add a job to the Tracker board (Quick Add) when it has no Tracker entry yet. Creating an entry records the job as applied: the new entry starts in the applied stage, dated appliedOn when given. Only call it after the user explicitly confirms they applied, and pass explicitUserConfirmed=true. Pass jobId, or companyName and roleTitle. Move the entry afterwards with trackly_update_tracker_stage, for example to interview. If the job, or the same company and role, is already on the board, nothing is written and the existing entry is returned with created=false. A repeated call never adds a second entry. Recording a Trackly job as applied with trackly_update_status creates this entry too, so this tool is mainly for applications that are not Trackly jobs (companyName and roleTitle).',
       inputSchema: z.object(trackerCreateShape()).strict(),
       annotations: { title: 'Add a job to the Tracker', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
@@ -598,7 +598,7 @@ function createServer() {
   server.registerTool(
     'trackly_update_tracker_stage',
     {
-      description: 'Move one Tracker entry to a new stage (for example rejected or interview), as if the user dragged the card on the /tracker board, with the same history, undo and conflict checks. Pass exactly one of applicationId or jobId. This is separate from trackly_update_status, which only sets the job list status: marking an entry rejected here keeps its Applied record and does not discard the job. There is no "paused" stage: record a pause with trackly_add_tracker_note and leave the stage unchanged. If the entry is already in that stage nothing is written. Returns not_found when the job has no Tracker entry yet (this tool never creates one; use trackly_create_tracker_application first), tracker_unavailable when the Tracker is switched off, and version_conflict with the entry\'s current version and stage if it kept changing; nothing is written on any error.',
+      description: 'Move one Tracker entry to a new stage (for example rejected or interview), as if the user dragged the card on the /tracker board, with the same history, undo and conflict checks. Pass exactly one of applicationId or jobId. Moving an entry never changes the job list status: marking an entry rejected here keeps its Applied record and does not dismiss the job. There is no "paused" stage: record a pause with trackly_add_tracker_note and leave the stage unchanged. If the entry is already in that stage nothing is written. Returns not_found when the job has no Tracker entry yet (this tool never creates one; trackly_update_status with applied or trackly_create_tracker_application creates it), tracker_unavailable when the Tracker is switched off, and version_conflict with the entry\'s current version and stage if it kept changing; nothing is written on any error.',
       inputSchema: z.object(trackerStageShape()).strict(),
       annotations: { title: 'Move a Tracker entry to a stage', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },

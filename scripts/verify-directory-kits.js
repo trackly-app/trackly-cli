@@ -7,6 +7,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { toolTitle } = require('../mcp/tool-families');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -90,6 +91,16 @@ function checkCatalog(check, catalog, surface, root) {
     check(/^trackly_[a-z_]+$/.test(tool.name), `${surface} tool name is not canonical: ${tool.name}`);
     check(Array.isArray(tool.scopes) && tool.scopes.length > 0, `${tool.name} must list its scopes`);
     check(!(tool.readOnlyHint && tool.destructiveHint), `${tool.name} cannot be read-only and destructive`);
+    check(tool.title === registryTitle(tool.name), `${surface} tools.json title for ${tool.name} must be the registry title "${registryTitle(tool.name)}"`);
+  }
+}
+
+/** The one title a tool name has on every surface (mcp/tool-families.js, close-ai #3619). */
+function registryTitle(name) {
+  try {
+    return toolTitle(name);
+  } catch {
+    return null;
   }
 }
 
@@ -119,9 +130,10 @@ function checkOpenaiKit(check, { root: ROOT, listing: LISTING }) {
   for (const [name, cells] of rows) {
     const tool = catalog.tools.find((candidate) => candidate.name === name);
     if (!tool) continue;
-    check(cells[0] === String(tool.readOnlyHint), `OpenAI kit README read-only column is wrong for ${name}`);
-    check(cells[1] === String(tool.destructiveHint), `OpenAI kit README destructive column is wrong for ${name}`);
-    check(cells[3]?.length > 0, `OpenAI kit README needs a justification for ${name}`);
+    check(cells[0] === registryTitle(name), `OpenAI kit README title is wrong for ${name}`);
+    check(cells[1] === String(tool.readOnlyHint), `OpenAI kit README read-only column is wrong for ${name}`);
+    check(cells[2] === String(tool.destructiveHint), `OpenAI kit README destructive column is wrong for ${name}`);
+    check(cells[4]?.length > 0, `OpenAI kit README needs a justification for ${name}`);
   }
 }
 
@@ -156,6 +168,7 @@ function checkClaudeKit(check, { root: ROOT, listing: LISTING }) {
   for (const [name, cells] of rows) {
     const tool = catalog.tools.find((candidate) => candidate.name === name);
     if (!tool) continue;
+    check(cells[0] === registryTitle(name), `Claude kit README title is wrong for ${name}`);
     check(cells[1] === claudeAnnotation(tool), `Claude kit README annotation is wrong for ${name}`);
   }
 }

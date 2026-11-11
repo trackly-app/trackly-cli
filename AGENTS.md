@@ -37,7 +37,8 @@ lib/client.js        # HTTP client: config loading, token refresh, apiRequest()
 lib/formatters.js    # Terminal output: color(), outputJobs(), outputCompanies(), outputStats(), outputContacts(), outputReferralCampaign(), outputNetworkBrief()
 mcp/server.js        # MCP server entrypoint and search/network tools, launched via `trackly mcp`
 mcp/apply-tools.js   # Trackly Apply MCP schemas, validators, and tool registration
-mcp/cloud-auto-apply.js # Held cloud auto-apply MCP tool, not registered until the hosted tool ships
+mcp/cloud-auto-apply.js # Held Trackly Apply (cloud) MCP tool, not registered until the hosted tool ships
+mcp/tool-families.js # Tool family registry (titles and description tags), mirrored from close-ai src/mcp/tool-families.ts
 mcp/tracker-tools.js # Tracker (Waypoint) MCP tool schemas and handlers, mirrored from the hosted MCP
 mcp/waypoint-reducer.js # Port of the backend Tracker reducer that decides an entry's current stage
 contracts/           # Versioned hosted/local Trackly Apply MCP schema contract
@@ -174,7 +175,7 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `POST /api/jobscout/waypoint/applications/:id/events` -- Record a stage change or note (`trackly_update_tracker_stage`, `trackly_add_tracker_note`)
 - `POST /api/jobscout/waypoint/applications/:id/events/:eventId/retract` -- Retract one event (`trackly_retract_tracker_event`)
 - `GET /api/jobscout/waypoint/sources` -- Probe that tells a switched-off Tracker (`tracker_unavailable`) from a missing entry (`not_found`)
-- `POST /api/jobscout/apply/assist-requests` -- Request cloud auto-apply (jobId, acknowledged, optional resumeId; `acknowledged: true` is the user's consent for staff to use every profile answer, sensitive ones included). Held: `trackly auto-apply` and `trackly_auto_apply` are not available in published releases until the hosted tool ships
+- `POST /api/jobscout/apply/assist-requests` -- Request Trackly Apply (cloud) (jobId, acknowledged, optional resumeId; `acknowledged: true` is the user's consent for staff to use every profile answer, sensitive ones included). Held: `trackly auto-apply` and `trackly_auto_apply` are not available in published releases until the hosted tool ships
 - `GET /api/jobscout/apply/assist-requests` -- List the user's auto-apply requests (held, as above)
 - `GET /api/jobscout/apply/queue` -- Get the user's approved application queue (`trackly_get_apply_queue`)
 - `GET /api/jobscout/application-profile` -- Get the versioned application profile (`trackly_get_application_profile`)

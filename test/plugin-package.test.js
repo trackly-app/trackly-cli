@@ -4149,7 +4149,7 @@ test('adapted trackly Apply skill is traceable to its source and safety invarian
   const discoverySkill = read('plugins/trackly/skills/trackly/SKILL.md');
   assert.match(discoverySkill, /validated posting-date signals only/);
   assert.match(discoverySkill, /never substitute first-seen time for a posting date/);
-  assert.match(discoverySkill, /Marking a job `applied` additionally requires Apply write permission/);
+  assert.match(discoverySkill, /Marking a job `applied` is for an application the user submitted themselves. It additionally requires Apply write permission/);
   assert.match(discoverySkill, /never use it to infer or claim submission/);
 
   const browserSafety = read('plugins/trackly/skills/trackly-apply/references/browser-safety.md');

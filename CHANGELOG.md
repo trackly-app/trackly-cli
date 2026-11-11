@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-11-11
+
+### Changed
+- MCP tool families (close-ai #3619). Every local MCP tool now has a family title, `<Family> · <Action>` (for example "Tracker · Move stage"), as both `title` and `annotations.title`, and its description starts with the family tag, for example `[Tracker]`. Families, in catalog order: Jobs, Companies, Network, Preferences, Profile, Job status, Tracker, Trackly Apply (local), Apply step, Trackly Apply (cloud), Chat, Feedback. Internal steps of a Trackly Apply (local) run are titled "Apply step · <Action>", tagged `[Trackly Apply · protocol step]` and say they are called by the Trackly Apply skill during a run. `mcp/tool-families.js` mirrors close-ai's registry plus the four local-only tools, and applies the labels once at registration. No tool name, input schema, scope or output shape changed; refresh your client's tool discovery to see the new titles.
+- One status story. `trackly_update_status` with `applied` is for an application you submitted yourself, and it now also records the job on your Tracker board (the backend creates the job's one entry or moves a saved or contacted entry to applied, and returns `trackerEntry`). Saved and dismissed change only the job list. `trackly_record_application_outcome(s)` are described as Trackly Apply run receipts; a submitted receipt also reaches the Tracker. The Tracker tool descriptions no longer say `trackly_update_status` only sets the job-list status.
+- The approved names everywhere: "Trackly Apply (local)" (your own AI agent fills the form in your browser and stops before Submit; you submit) and "Trackly Apply (cloud)" (Trackly applies for you and nothing runs on your computer; the command stays `trackly auto-apply` and the tool `trackly_auto_apply`, both still held). CLI help, `trackly apply`, plan-limit messages, the README "MCP Tools Reference" and `docs/trackly-tools.md` use them, and both references are now grouped under family headings with titles.
+- Skills: npm Trackly Apply skill 4.9.5, Claude skill and plugin 1.0.1, classic Codex plugin 1.1.5. The wording names Trackly Apply (local) and (cloud), and the Claude skill no longer asks to add a Tracker entry after a reconciled submission, because applied records it on its own.
+- Listing kits: the ChatGPT 1.0.9 and Claude v2 catalogs and READMEs carry the family titles, and `npm run test:plugin-submission` fails when a kit title differs from the registry.
+
+### Added
+- `test/skill-tool-references.test.js`: every `trackly_*` name in each shipped skill must exist on its surface's catalog (npm skill against the local MCP, Claude skill against the captured Claude catalog, classic skills against the captured classic catalog). `test/tool-families.test.js` checks titles, tags, the registry order and the family grouping of the README and tool docs.
+
 ## [0.26.0] - 2026-11-10
 
 ### Changed

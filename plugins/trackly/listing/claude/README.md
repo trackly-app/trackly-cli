@@ -42,54 +42,54 @@ Trackly never submits an application, never contacts an employer site from its s
 
 ## Tools
 
-Destructive tools always ask the user before they run. `openWorldHint` is false for every tool: each calls only Trackly's own API for the signed-in account.
+Each title is the tool's family and action (`<Family> · <Action>`) from Trackly's tool-family registry, and each description starts with the family tag, for example `[Tracker]`. Trackly Apply (local) protocol steps are titled "Apply step · <Action>" and tagged `[Trackly Apply · protocol step]`. Tool names, schemas and scopes are unchanged from the v2 catalog. Destructive tools always ask the user before they run. `openWorldHint` is false for every tool: each calls only Trackly's own API for the signed-in account.
 
 Listed for every user (21):
 
 | Tool | Title | Annotations | Scopes | Flag group |
 | --- | --- | --- | --- | --- |
-| `trackly_search_jobs` | Search jobs | read-only | `jobs:read`, `tracking:read` | none |
-| `trackly_get_job` | Get job details | read-only | `jobs:read`, `tracking:read` | none |
-| `trackly_search_companies` | Search companies | read-only | `jobs:read` | none |
-| `trackly_get_job_brief` | Get job brief | read-only | `jobs:read` | none |
-| `trackly_get_preferences` | Get job preferences | read-only | `jobs:read` | none |
-| `trackly_lint_application_text` | Check application text | read-only | `profile:read` | none |
-| `trackly_update_status` | Update job status | destructive | `tracking:write` | none |
-| `trackly_save_application_answers` | Save application answers | destructive | `profile:write` | none |
-| `trackly_grant_sensitive_storage_consent` | Allow sensitive-answer storage | destructive | `profile:write`, `sensitive:write` | none |
-| `trackly_revoke_sensitive_storage_consent` | Revoke sensitive-answer storage | destructive | `profile:write`, `sensitive:write` | none |
-| `trackly_get_application_profile` | Get application profile | read-only | `profile:read` | `profile_read` |
-| `trackly_get_profile_onboarding` | Get profile setup status | read-only | `profile:read` | `profile_read` |
-| `trackly_list_companies` | List tracked companies | read-only | `jobs:read` | `companies` |
-| `trackly_request_company` | Ask Trackly to monitor a company | non-destructive | `jobs:read`, `tracking:write` | `request_company` |
-| `trackly_update_experience_limits` | Set years-of-experience limits | destructive | `tracking:write` | `preferences` |
-| `trackly_list_tracker_applications` | List Tracker entries | read-only | `tracking:read` | `tracker` |
-| `trackly_create_tracker_application` | Add a job to the Tracker | destructive | `tracking:write`, `apply:write` | `tracker` |
-| `trackly_update_tracker_stage` | Move a Tracker entry | destructive | `tracking:write` | `tracker` |
-| `trackly_add_tracker_note` | Add a Tracker note | non-destructive | `tracking:write` | `tracker` |
-| `trackly_retract_tracker_event` | Retract a Tracker event | destructive | `tracking:write` | `tracker` |
-| `trackly_get_apply_queue` | Get Apply queue | read-only | `apply:read` | `apply_queue` |
+| `trackly_search_jobs` | Jobs · Search | read-only | `jobs:read`, `tracking:read` | none |
+| `trackly_get_job` | Jobs · Get details | read-only | `jobs:read`, `tracking:read` | none |
+| `trackly_search_companies` | Companies · Search | read-only | `jobs:read` | none |
+| `trackly_get_job_brief` | Network · Get job brief | read-only | `jobs:read` | none |
+| `trackly_get_preferences` | Preferences · Get | read-only | `jobs:read` | none |
+| `trackly_lint_application_text` | Profile · Check answer text | read-only | `profile:read` | none |
+| `trackly_update_status` | Job status · Mark applied, saved or dismissed | destructive | `tracking:write` | none |
+| `trackly_save_application_answers` | Profile · Save answers | destructive | `profile:write` | none |
+| `trackly_grant_sensitive_storage_consent` | Profile · Allow sensitive-answer storage | destructive | `profile:write`, `sensitive:write` | none |
+| `trackly_revoke_sensitive_storage_consent` | Profile · Revoke sensitive-answer storage | destructive | `profile:write`, `sensitive:write` | none |
+| `trackly_get_application_profile` | Profile · Get | read-only | `profile:read` | `profile_read` |
+| `trackly_get_profile_onboarding` | Profile · Get setup status | read-only | `profile:read` | `profile_read` |
+| `trackly_list_companies` | Companies · List tracked | read-only | `jobs:read` | `companies` |
+| `trackly_request_company` | Companies · Request monitoring | non-destructive | `jobs:read`, `tracking:write` | `request_company` |
+| `trackly_update_experience_limits` | Preferences · Set experience limits | destructive | `tracking:write` | `preferences` |
+| `trackly_list_tracker_applications` | Tracker · List entries | read-only | `tracking:read` | `tracker` |
+| `trackly_create_tracker_application` | Tracker · Add a job | destructive | `tracking:write`, `apply:write` | `tracker` |
+| `trackly_update_tracker_stage` | Tracker · Move stage | destructive | `tracking:write` | `tracker` |
+| `trackly_add_tracker_note` | Tracker · Add note | non-destructive | `tracking:write` | `tracker` |
+| `trackly_retract_tracker_event` | Tracker · Undo an event | destructive | `tracking:write` | `tracker` |
+| `trackly_get_apply_queue` | Trackly Apply (local) · Get queue | read-only | `apply:read` | `apply_queue` |
 
 Trackly Apply, listed only for accounts on `TRACKLY_CLAUDE_APPLY_ALLOWLIST` until Anthropic approves this listing edit (16):
 
 | Tool | Title | Annotations | Scopes | Flag group |
 | --- | --- | --- | --- | --- |
-| `trackly_list_apply_access_deferments` | List Apply access deferments | read-only | `apply:read` | `apply` |
-| `trackly_defer_apply_access` | Defer Apply access | non-destructive | `apply:write` | `apply` |
-| `trackly_clear_apply_access_deferment` | Clear an Apply access deferment | non-destructive | `apply:write` | `apply` |
-| `trackly_start_or_resume_apply` | Start or resume Trackly Apply | destructive | `apply:read`, `apply:write` | `apply` |
-| `trackly_get_apply_progress` | Get Apply progress | non-destructive | `profile:read`, `apply:read`, `apply:write` | `apply` |
-| `trackly_get_apply_snapshot` | Get an Apply member snapshot | non-destructive | `profile:read`, `apply:read`, `apply:write` | `apply` |
-| `trackly_approve_apply_resume` | Approve a resume for Apply | destructive | `apply:write` | `apply` |
-| `trackly_bind_apply_surface` | Bind an Apply browser tab | non-destructive | `apply:write` | `apply` |
-| `trackly_record_apply_dispositions` | Record Apply access results | non-destructive | `apply:write` | `apply` |
-| `trackly_resume_parked_apply_member` | Resume a parked Apply member | destructive | `apply:write` | `apply` |
-| `trackly_record_apply_observations` | Record Apply form observations | non-destructive | `apply:write` | `apply` |
-| `trackly_advance_apply_execution` | Advance an Apply execution | non-destructive | `apply:write` | `apply` |
-| `trackly_prepare_resume_artifact` | Get resume handoff | read-only | `apply:read` | `apply` |
-| `trackly_certify_review_ready` | Mark an application ready for review | non-destructive | `apply:write` | `apply` |
-| `trackly_reconcile_manual_submission` | Record a manual submission | destructive | `apply:write` | `apply` |
-| `trackly_stop_apply` | Stop Trackly Apply | destructive | `apply:write` | `apply` |
+| `trackly_list_apply_access_deferments` | Trackly Apply (local) · List deferments | read-only | `apply:read` | `apply` |
+| `trackly_defer_apply_access` | Trackly Apply (local) · Defer a job, company or provider | non-destructive | `apply:write` | `apply` |
+| `trackly_clear_apply_access_deferment` | Trackly Apply (local) · Clear a deferment | non-destructive | `apply:write` | `apply` |
+| `trackly_start_or_resume_apply` | Trackly Apply (local) · Start or resume | destructive | `apply:read`, `apply:write` | `apply` |
+| `trackly_get_apply_progress` | Trackly Apply (local) · Get progress | non-destructive | `profile:read`, `apply:read`, `apply:write` | `apply` |
+| `trackly_get_apply_snapshot` | Apply step · Get member snapshot | non-destructive | `profile:read`, `apply:read`, `apply:write` | `apply` |
+| `trackly_approve_apply_resume` | Apply step · Approve resume | destructive | `apply:write` | `apply` |
+| `trackly_bind_apply_surface` | Apply step · Bind browser tab | non-destructive | `apply:write` | `apply` |
+| `trackly_record_apply_dispositions` | Apply step · Record access results | non-destructive | `apply:write` | `apply` |
+| `trackly_resume_parked_apply_member` | Apply step · Resume a parked job | destructive | `apply:write` | `apply` |
+| `trackly_record_apply_observations` | Apply step · Record form observations | non-destructive | `apply:write` | `apply` |
+| `trackly_advance_apply_execution` | Apply step · Advance run | non-destructive | `apply:write` | `apply` |
+| `trackly_prepare_resume_artifact` | Trackly Apply (local) · Preview resume | read-only | `apply:read` | `apply` |
+| `trackly_certify_review_ready` | Apply step · Mark ready for review | non-destructive | `apply:write` | `apply` |
+| `trackly_reconcile_manual_submission` | Apply step · Record a manual submission | destructive | `apply:write` | `apply` |
+| `trackly_stop_apply` | Trackly Apply (local) · Stop | destructive | `apply:write` | `apply` |
 
 On Claude, `browserSurface` accepts only `claude_in_chrome`. `trackly_prepare_resume_artifact` returns `nextAction: review_in_trackly_web` and no document identity, so the Claude skill never approves or binds a resume: the user attaches the exact file they approve, and the attachment stays unbound.
 

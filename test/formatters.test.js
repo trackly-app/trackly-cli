@@ -13,7 +13,7 @@ test('plan refusals use only server feature, counts, reset and optional link', (
   for (const error of ['limit_reached', 'assist_limit_reached']) {
     const message = fmt.planRefusalMessage({ status: 429, error, feature: 'assist_request',
       used: 15, limit: 15, resetsAt: '2026-12-01T00:00:00Z', upgradeUrl: 'https://example.com/server-link?opaque=1' });
-    assert.match(message, /cloud auto-apply/);
+    assert.match(message, /Trackly Apply \(cloud\)/);
     assert.match(message, /Used 15 of 15/);
     assert.match(message, /Resets on.*11\/30\/2026.*PST/);
     assert.match(message, /https:\/\/example.com\/server-link\?opaque=1/);
