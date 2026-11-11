@@ -1,6 +1,6 @@
 ---
 name: trackly
-description: Search trackly for current jobs and companies, inspect job briefs and preferences, and save only the jobs the user chooses. Use when the user asks to find, compare, inspect, or track job openings.
+description: Search trackly for current jobs and companies, inspect job briefs and preferences, save only the jobs the user chooses, request trackly Apply (cloud) for a job the user names, and mark a job applied. Use when the user asks to find, compare, inspect, or track job openings, asks trackly to apply to a job for them, or says they applied.
 ---
 
 # trackly
@@ -23,7 +23,7 @@ Do not rescore an approved application inside this discovery skill. When the use
 Keep these apart and pick the one the user asked for:
 
 1. **trackly Apply (local):** the user's own agent fills the application in a controlled browser and stops before Submit; the user submits. Use the `trackly-apply` skill.
-2. **trackly Apply (cloud):** the user only requests it and Trackly applies to the employer for them, with the saved resume and every saved profile answer, sensitive ones included; nothing runs on the user's computer. Call `trackly_auto_apply` once per job, only when the user explicitly asks trackly to apply to that exact job for them. Never call it as a suggestion, as a fallback when local filling stops, or for jobs the user did not name. Search results mark supported postings with `autoApplySupported`. Use `trackly_auto_apply_status` to report request progress; never claim submission before it reports `submitted`.
+2. **trackly Apply (cloud):** the user only requests it and Trackly applies to the employer for them, with the saved resume and every saved profile answer, sensitive ones included; nothing runs on the user's computer. Call `trackly_auto_apply` once per job, only when the user explicitly asks trackly to apply to that exact job for them. Never call it as a suggestion, as a fallback when local filling stops, or for jobs the user did not name. If a request fails or its outcome is unknown, check `trackly_auto_apply_status` before asking again; never retry on your own. Search results mark supported postings with `autoApplySupported`. Use `trackly_auto_apply_status` to report request progress; never claim submission before it reports `submitted`.
 3. **Mark applied:** the user applied on their own. Call `trackly_update_status` with `applied` only after the user says so.
 
 ## Scope boundary

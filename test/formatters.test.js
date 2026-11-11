@@ -60,6 +60,7 @@ test('search output reports Trackly Apply (cloud) support from the posting, not 
     [{ id: 43, title: 'PM', isUs: false, jobUrl: 'https://jobs.ashbyhq.com/acme/43', autoApplySupported: true }, false],
     [{ id: 44, title: 'PM', isUs: true, jobUrl: 'https://careers.example.com/44' }, false],
     [{ id: 45, title: 'PM' }, false],
+    [{ id: 46, title: 'PM', isUs: true, isActive: false, jobUrl: 'https://jobs.ashbyhq.com/acme/46' }, false],
   ]) {
     const human = capture(() => fmt.outputJobs([job]), { tty: true }).replace(/\x1b\[[0-9;]*m/g, '');
     if (expected) assert.match(human, new RegExp(`Trackly Apply \\(cloud\\) supported: trackly auto-apply ${job.id}`));

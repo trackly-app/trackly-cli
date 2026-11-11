@@ -86,6 +86,15 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
         request: { id: 'request-1', jobId: 42, company: null, jobTitle: null, status: 'queued' },
         message: 'Trackly will submit this application and notify you when it is done. trackly_auto_apply_status or the Trackly web app shows its status.',
       });
+      // Company and title pass through; any other server field is not projected.
+      fixture = { status: 201, body: { request: { id: 'request-2', jobId: 42, status: 'queued', company: 'Acme',
+        jobTitle: 'PM', internalNote: 'dropped' } } };
+      payload = JSON.parse((await client.callTool({ name: 'trackly_auto_apply', arguments: { jobId: 42 } })).content[0].text);
+      assert.deepEqual(payload.request, { id: 'request-2', jobId: 42, company: 'Acme', jobTitle: 'PM', status: 'queued' });
+      assert.equal(requests.length, 2);
+      assert.deepEqual(JSON.parse(requests[1].body), { jobId: 42, acknowledged: true });
+      requests.pop();
+      fixture = { status: 201, body: { request: { id: 'request-1', jobId: 42, status: 'queued' } } };
       assert.equal(requests.length, 1);
       assert.equal(requests[0].url, '/api/jobscout/apply/assist-requests');
       assert.equal(requests[0].method, 'POST');
@@ -194,14 +203,22 @@ test('auto-apply uses the strict public MCP shape and server-owned results', asy
         { id: 7, isUs: true, jobUrl: 'http://jobs.lever.co/acme/7' },
         { id: 8, isUs: true, jobUrl: 'https://careers.example.com/8', autoApplySupported: true },
         { id: 9, isUs: true, jobUrl: 'not a url' },
+        // The scope lock reads the parsed host: the second Greenhouse US host, an uppercase host and
+        // the default port qualify; another port or a look-alike host does not.
+        { id: 10, isUs: true, jobUrl: 'https://boards.greenhouse.io/acme/jobs/10' },
+        { id: 11, isUs: true, jobUrl: 'https://JOBS.LEVER.CO/acme/11' },
+        { id: 12, isUs: true, jobUrl: 'https://jobs.lever.co:443/acme/12' },
+        { id: 13, isUs: true, jobUrl: 'https://jobs.lever.co:8443/acme/13' },
+        { id: 14, isUs: true, jobUrl: 'https://jobs.lever.co.example.com/acme/14' },
       ];
-      fixture = { status: 200, body: { jobs: searchJobs, total: 9, nextSteps: 'stale' } };
+      fixture = { status: 200, body: { jobs: searchJobs, total: 14, nextSteps: 'stale' } };
       result = await client.callTool({ name: 'trackly_search_jobs', arguments: {} });
       payload = JSON.parse(result.content[0].text);
       assert.deepEqual(payload.jobs.map(job => [job.id, job.autoApplySupported]),
-        [[1, true], [2, true], [3, true], [4, false], [5, false], [6, false], [7, false], [8, false], [9, false]]);
-      assert.equal(payload.nextSteps, 'Trackly Apply (cloud) can apply to up to 2 of these jobs for you.');
-      assert.equal(payload.total, 9);
+        [[1, true], [2, true], [3, true], [4, false], [5, false], [6, false], [7, false], [8, false], [9, false],
+          [10, true], [11, true], [12, true], [13, false], [14, false]]);
+      assert.equal(payload.nextSteps, 'Trackly Apply (cloud) can apply to up to 5 of these jobs for you.');
+      assert.equal(payload.total, 14);
       assert.equal(supported.autoApplySupported, false, 'the backend payload is not mutated');
       fixture = { status: 200, body: { jobs: [{ id: 4, isUs: false, jobUrl: 'https://jobs.lever.co/acme/4' }] } };
       result = await client.callTool({ name: 'trackly_search_jobs', arguments: {} });

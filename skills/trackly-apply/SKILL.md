@@ -13,7 +13,7 @@ Before application work, read [onboarding guidance](references/onboarding.md). G
 
 This skill is Trackly Apply (local): the user's own AI agent fills the application in the user's browser on their computer and stops before Submit, and the user submits. Two other ways to apply are not this skill:
 
-- **Trackly Apply (cloud):** the user only requests it and Trackly applies to the employer for them; nothing runs on the user's computer. Call `trackly_auto_apply` only when the user explicitly asks Trackly to apply to that job for them, and check progress with `trackly_auto_apply_status` (CLI: `trackly auto-apply <jobId>` and `trackly auto-apply --status`). Never switch a local run to it on your own, for example after a blocker.
+- **Trackly Apply (cloud):** the user only requests it and Trackly applies to the employer for them; nothing runs on the user's computer. Call `trackly_auto_apply` only when the user explicitly asks Trackly to apply to that exact job for them, once per job, and check progress with `trackly_auto_apply_status` (CLI: `trackly auto-apply <jobId>` and `trackly auto-apply --status`). If a request fails or its outcome is unknown, check `trackly_auto_apply_status` before asking again; never retry on your own. Never claim the application was submitted before the status says `submitted`. Never switch a local run to it on your own, for example after a blocker.
 - **Mark applied:** the user applied on their own. Record it with `trackly_update_status` and `action: applied` (CLI: `trackly mark-applied <jobId>`).
 
 ## Skill version

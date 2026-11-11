@@ -1594,3 +1594,50 @@ test('a stream error before handler installation is reported and fails', async (
   assert.equal(shutdownAnalytics.mock.callCount(), 1);
   assert.deepEqual(exits, [1]);
 });
+
+test('analytics keeps trackly_auto_apply strict: acknowledged cannot be supplied and is always sent as true', async (t) => {
+  const configDir = createTempConfigDir();
+  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
+  const requests = [];
+  const httpServer = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      requests.push({ method: req.method, url: req.url, body });
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ request: { id: 'request-1', jobId: 42, status: 'queued' } }));
+    });
+  });
+  await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => httpServer.close(resolve)));
+  await withEnv({ TRACKLY_API_KEY: 'trk_test_fixture', TRACKLY_CONFIG_DIR: configDir,
+    TRACKLY_BASE_URL: `http://127.0.0.1:${httpServer.address().port}` }, async () => {
+    const server = createServer();
+    configureServerAnalytics(server, {
+      analytics: {
+        env: ENABLED_ENV,
+        loadSdk: () => require('@posthog/mcp'),
+        createRelay: () => ({ capture() {}, async _shutdown() {} }),
+      },
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'trackly-auto-apply-analytics-test', version: '1.0.0' });
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      for (const args of [{ jobId: 42, acknowledged: false }, { jobId: 42, resumeId: 7 }, { jobId: 42, context: 'ok', extra: 1 }]) {
+        const result = await client.callTool({ name: 'trackly_auto_apply', arguments: args });
+        assert.equal(result.isError, true, JSON.stringify(args));
+      }
+      assert.equal(requests.length, 0, 'rejected arguments never reach the API');
+      const result = await client.callTool({ name: 'trackly_auto_apply', arguments: { jobId: 42, context: 'The user asked Trackly to apply.' } });
+      assert.notEqual(result.isError, true);
+      assert.equal(requests.length, 1);
+      assert.deepEqual(JSON.parse(requests[0].body), { jobId: 42, acknowledged: true });
+    } finally {
+      await client.close().catch(() => {});
+      await server.close().catch(() => {});
+      await shutdownMcpAnalytics(server);
+    }
+  });
+});

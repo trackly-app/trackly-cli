@@ -937,13 +937,17 @@ const HOSTED_DEPLOYABLE_PATHS = Object.freeze([
   'src/middleware/school-request-paths.ts',
   'src/middleware/school-ingress.ts',
   'src/routes/admin-read-query.ts',
+  // close-ai #3536: Trackly Apply (cloud) descriptors, request body and refusals (whole-byte
+  // locked as autoApply). Absent in reviewed source b5d59e26, so it is an inherited record.
+  'src/mcp/auto-apply.ts',
 ]);
 
 // Recaptured from reviewed source b5d59e26 (close-ai #3625 head) and deployed merge
 // 96781f59, the production deploy (run 42965813816) after #3536 (Trackly Apply (cloud), 3ea1ab64).
 // The #3625 head branched before #3536 merged, so the nine deployable paths #3536 changed
-// are inherited from first parent 3ea1ab64 with the reviewed #3536 head 078cf663 bytes;
-// the other 41 deployable paths preserve the reviewed b5d59e26 bytes.
+// and src/mcp/auto-apply.ts, which #3536 added, are inherited from first parent 3ea1ab64
+// with the reviewed #3536 head 078cf663 bytes; the other 41 deployable paths preserve the
+// reviewed b5d59e26 bytes.
 const REVIEWED_INHERITED_BASELINE = Object.freeze([
   Object.freeze({
     sourceCommit: 'b5d59e26d59a191c832fd7945d5dc06c25ad5270',
@@ -1026,13 +1030,33 @@ const REVIEWED_INHERITED_BASELINE = Object.freeze([
     inheritedSha256: 'ee284c1c7226aeb5cc21ffb30bb31efd3d2bc310e65f041d57ab4acc5ea41361',
     originCommit: '078cf663dab5b446bf77979f800e916f28715c46', // close-ai #3536 head (Trackly Apply (cloud) tools)
   }),
+  Object.freeze({
+    sourceCommit: 'b5d59e26d59a191c832fd7945d5dc06c25ad5270',
+    mergeCommit: '96781f59f208ef839334a2a71954c9ef1b3d7005',
+    firstParent: '3ea1ab6455f235a87e53cd367cb8576011da5de0',
+    relativePath: 'src/mcp/auto-apply.ts',
+    sourceSha256: null, // absent in the reviewed #3625 head
+    inheritedSha256: '70ddc98d755977267e9fc1c56380b0d518b5b03d77373c5f3cb55f4c2a527e03',
+    originCommit: '078cf663dab5b446bf77979f800e916f28715c46', // close-ai #3536 head (Trackly Apply (cloud) tools)
+  }),
 ]);
+
+function gitPathExists(repository, commit, file) {
+  try {
+    childProcess.execFileSync('git', ['-C', repository, 'cat-file', '-e', commit + ':' + file], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function assertMergeCommitPreservesPaths(repository, sourceCommit, mergeCommit, relativePaths, inheritedBaseline = []) {
   const unused = new Set(inheritedBaseline);
   const digest = (commit, file) => sha256ExactBytes(gitOutput(repository, ['show', commit + ':' + file], null));
   for (const relativePath of relativePaths) {
-    const sourceHash = digest(sourceCommit, relativePath);
+    // A path the reviewed source does not have yet (sourceSha256: null) passes only through an
+    // inherited-baseline record that proves its bytes came from a reviewed origin commit.
+    const sourceHash = gitPathExists(repository, sourceCommit, relativePath) ? digest(sourceCommit, relativePath) : null;
     const mergedHash = digest(mergeCommit, relativePath);
     if (sourceHash !== mergedHash) {
       const records = inheritedBaseline.filter((record) => record.relativePath === relativePath);
@@ -1137,7 +1161,8 @@ function verifyHostedSnapshotGitProvenance(cliRoot, backendRoot) {
     reviewIdentity: 'src/services/review-identity.ts',
     applicationProfileService: 'src/services/application-profile/service.ts',
     // close-ai #3536: the classic trackly_auto_apply and trackly_auto_apply_status descriptors,
-    // refusals and search flag all come from this file.
+    // refusals and search-flag wording come from this file; the posting-host scope it applies
+    // comes from assist-requests.ts and is AST-locked against lib/auto-apply.js below.
     autoApply: 'src/mcp/auto-apply.ts',
   };
   for (const [lockName, relativePath] of Object.entries(lockedSources)) {
@@ -9420,6 +9445,34 @@ assertImportBinding(
       openWorldHint: false,
     })`,
     autoApplySourcePath,
+  );
+}
+{
+  // close-ai #3536: jobAutoApplySupported uses assistPostingTarget, the enqueue's own scope lock.
+  // lib/auto-apply.js mirrors both, so the hosted table and function are locked to the npm copy.
+  const assistRequestsPath = path.join(backendRoot, 'src', 'services', 'application-profile', 'assist-requests.ts');
+  const assistRequestsSource = fs.readFileSync(assistRequestsPath, 'utf8');
+  const { ASSIST_POSTING_HOSTS: localAssistPostingHosts } = require(path.join(cliRoot, 'lib', 'auto-apply.js'));
+  assertActiveVariableInitializerAst(
+    assistRequestsSource,
+    'ASSIST_POSTING_HOSTS',
+    `{ ${Object.entries(localAssistPostingHosts).map(([host, ats]) => `${JSON.stringify(host)}: ${JSON.stringify(ats)}`).join(', ')} }`,
+    assistRequestsPath,
+  );
+  assertActiveFunctionDefinitionAst(
+    assistRequestsSource,
+    'assistPostingTarget',
+    `function assistPostingTarget(postingUrl: string | null) {
+      let url: URL;
+      try {
+        url = new URL(postingUrl ?? '');
+      } catch {
+        return null;
+      }
+      const ats = url.protocol === 'https:' ? ASSIST_POSTING_HOSTS[url.host] : undefined;
+      return ats ? { host: url.host, ats } : null;
+    }`,
+    assistRequestsPath,
   );
 }
 for (const toolName of executablePluginTools) {
