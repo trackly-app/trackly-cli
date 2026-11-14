@@ -137,6 +137,8 @@
     "trackly_contacts_at_company",
     "trackly_get_company_workspace",
     "trackly_request_company",
+    "trackly_favorite_companies",
+    "trackly_unfavorite_companies",
     "trackly_get_apply_queue",
     "trackly_get_application_profile",
     "trackly_get_profile_onboarding",

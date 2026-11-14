@@ -35,7 +35,7 @@ trackly jobs --function product
 
 ## At a Glance
 
-5,400+ companies | 250K+ jobs | 40+ ATS types | CLI + MCP | 58 local + 55 hosted MCP tools
+5,400+ companies | 250K+ jobs | 40+ ATS types | CLI + MCP | 60 local + 57 hosted MCP tools
 
 ## CLI Commands
 
@@ -107,7 +107,7 @@ OAuth sign-in is the default for every client. An API key is optional and only
 needed for headless clients that cannot complete an interactive sign-in: send
 `Authorization: Bearer trk_...` with a key from **Settings → API Keys**.
 
-Remote connections get 55 hosted tools. They share the search, company, status, and
+Remote connections get 57 hosted tools. They share the search, company, status, and
 Apply tools with the local server and add `trackly_chat`; the 4 local-only
 tools listed below are not available remotely. Hosted setup and tool details
 are at [usetrackly.app/connector](https://usetrackly.app/connector).
@@ -201,11 +201,11 @@ Hosted and local releases are separate: the current client schema is authoritati
 
 ## MCP Tools Reference
 
-The local stdio server (`trackly mcp`) registers the 58 tools below. Four are
+The local stdio server (`trackly mcp`) registers the 60 tools below. Four are
 local-only because they run their checks on your machine:
 `trackly_diagnose_local_path`, `trackly_lint_application_text`,
 `trackly_validate_apply_resume_upload`, and `trackly_validate_apply_tab_keep_set`.
-The hosted server omits those four and adds `trackly_chat`, for 55 hosted tools.
+The hosted server omits those four and adds `trackly_chat`, for 57 hosted tools.
 
 | Tool | Description |
 |------|-------------|
@@ -222,6 +222,8 @@ The hosted server omits those four and adds `trackly_chat`, for 55 hosted tools.
 | trackly_contacts_at_company | Search contacts at a specific company |
 | trackly_get_company_workspace | Full company workspace (jobs, contacts, hiring managers, campaigns) |
 | trackly_request_company | Request a company be added to Trackly (rate-limited to 5 pending) |
+| trackly_favorite_companies | Favorite up to 100 companies by ID, name or URL; request missing ones and favorite them when added |
+| trackly_unfavorite_companies | Remove up to 100 companies from favorites by ID (undo) |
 | trackly_get_apply_queue | Get user-approved jobs ready for execution |
 | trackly_get_application_profile | Get versioned profile answers and provenance |
 | trackly_get_profile_onboarding | Get schema plus missing questions |
@@ -332,7 +334,7 @@ trackly config --base-url http://127.0.0.1:3000  # Point at a different backend
 | Job search + filters | Yes | Yes | Yes |
 | Apply/save/dismiss | Yes | Yes | Yes |
 | AI-powered search | Yes (trackly ask) | Yes | Yes |
-| MCP integration | Yes (58 local tools) | -- | -- |
+| MCP integration | Yes (60 local tools) | -- | -- |
 | Browser required | No | Yes | No |
 | Best for | Terminal + AI agents | Visual browsing | Custom integrations |
 
@@ -346,7 +348,7 @@ Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly l
 
 **What MCP servers exist for job searching?**
 
-trackly-cli includes a built-in MCP server with 58 tools: the complete Trackly
+trackly-cli includes a built-in MCP server with 60 tools: the complete Trackly
 job-search and application set plus `get_more_tools`, which lets agents report
 a missing capability. Run `trackly mcp` or use
 `trackly agent setup --client claude`.

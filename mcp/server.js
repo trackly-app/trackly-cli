@@ -8,6 +8,12 @@ const { apiRequest, createTracklyAccessError, hasAuth, maintenanceOutput } = req
 const { version: PACKAGE_VERSION } = require('../package.json');
 const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 const { registerApplyTools } = require('./apply-tools');
+const {
+  FAVORITE_COMPANIES_MAX,
+  FAVORITE_COMPANIES_DESCRIPTION,
+  UNFAVORITE_COMPANIES_DESCRIPTION,
+  favoriteCompaniesRequestBody,
+} = require('./favorite-companies');
 const { configureMcpAnalytics, shutdownMcpAnalytics } = require('./analytics');
 const { normalizeJobResult, unavailableJobFromError, jobFailureGuidance } = require('../lib/job-result');
 
@@ -599,6 +605,34 @@ function createServer() {
         source: 'mcp',
       }, false, false, MCP_USER_AGENT);
     }, 'Failed to request company')
+  );
+
+  // "Favorite a list" (close-ai #3867). Same names, schemas and descriptions as the hosted
+  // server (close-ai src/mcp/favorite-companies-tool.ts); both call the same REST endpoints, so
+  // company matching, quotas and the 100-company cap are enforced server-side.
+  server.tool(
+    'trackly_favorite_companies',
+    FAVORITE_COMPANIES_DESCRIPTION,
+    {
+      companyIds: z.array(z.number().int().positive()).max(FAVORITE_COMPANIES_MAX).optional().describe('Trackly company IDs to favorite, e.g. from trackly_search_companies.'),
+      names: z.array(z.string().min(1).max(2048)).max(FAVORITE_COMPANIES_MAX).optional().describe('Company names or website/careers URLs to match and favorite, e.g. ["Stripe", "https://ramp.com"].'),
+      requestNames: z.array(z.string().min(1).max(2048)).max(FAVORITE_COMPANIES_MAX).optional().describe('Company names to request without matching, favorited automatically once Trackly adds them. Use for a needsChoice item the user wants requested separately.'),
+    },
+    wrapTool(async ({ companyIds, names, requestNames }) => {
+      return apiRequest('POST', '/api/jobscout/companies/favorites/bulk',
+        favoriteCompaniesRequestBody({ companyIds, names, requestNames }), false, false, MCP_USER_AGENT);
+    }, 'Failed to favorite companies')
+  );
+
+  server.tool(
+    'trackly_unfavorite_companies',
+    UNFAVORITE_COMPANIES_DESCRIPTION,
+    {
+      companyIds: z.array(z.number().int().positive()).min(1).max(FAVORITE_COMPANIES_MAX).describe('Trackly company IDs to remove from favorites.'),
+    },
+    wrapTool(async ({ companyIds }) => {
+      return apiRequest('POST', '/api/jobscout/companies/favorites/bulk-remove', { companyIds }, false, false, MCP_USER_AGENT);
+    }, 'Failed to unfavorite companies')
   );
 
   registerApplyTools(server, {
