@@ -23,6 +23,10 @@ const UNFAVORITE_COMPANIES_DESCRIPTION = 'Remove up to 100 companies from the us
   + 'and failed (company_not_found). Safe to repeat.';
 
 function favoriteCompaniesRequestBody({ companyIds, names, requestNames } = {}) {
+  const total = (companyIds ? companyIds.length : 0) + (names ? names.length : 0) + (requestNames ? requestNames.length : 0);
+  if (total > FAVORITE_COMPANIES_MAX) {
+    throw new Error(`At most ${FAVORITE_COMPANIES_MAX} companies per call in total across companyIds, names and requestNames (got ${total}).`);
+  }
   return {
     ...(companyIds && companyIds.length ? { companyIds } : {}),
     ...(names && names.length ? { names } : {}),
