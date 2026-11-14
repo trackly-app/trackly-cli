@@ -1,5 +1,5 @@
 interface:
-  display_name: "trackly Apply"
+  display_name: "trackly Apply (local)"
   short_description: "Fill approved applications for review"
   brand_color: "#000000"
   default_prompt: "Use $trackly-apply to fill my next approved application and stop before Submit."

@@ -140,6 +140,11 @@ test('job lookups distinguish unavailable postings from failures through the rea
           assert.equal(payload.retryable, retryable, label);
           assert.equal(payload.maxRetries, retryable ? 1 : 0, label);
           if (retryable) assert.ok(payload.retryAfterSeconds >= 5, label);
+          if (status === 429) {
+            assert.equal(payload.message, payload.nextStep.message, label);
+            assert.equal(payload.hint, undefined, label);
+            assert.doesNotMatch(payload.message, /shortly/, label);
+          }
           if (label === 'default rate delay') assert.equal(payload.retryAfterSeconds, 60);
           if (label === 'longer rate limit') assert.equal(payload.retryAfterSeconds, 600);
           if (label === 'longer access delay' || label === 'header rate delay') assert.equal(payload.retryAfterSeconds, 600);

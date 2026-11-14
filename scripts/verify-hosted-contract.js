@@ -15,7 +15,7 @@ const assertResumeGlobalParserCarveout = createResumeParserVerifier({ activeName
 const sha256ExactBytes = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 // close-ai #3867 adds exactly trackly_favorite_companies and trackly_unfavorite_companies to
 // hostedMcpToolNames (after trackly_request_company); every other fixture byte is unchanged.
-const CHECKED_IN_HOSTED_FIXTURE_SHA256 = '6d5ff320ae648d813b88934144380dc77e2990da62ae2e2bf61730818d98694c';
+const CHECKED_IN_HOSTED_FIXTURE_SHA256 = '3698945f38df401e77d63485d3e83b4ca14233f26ecb811f853ad15c67ac12f9';
 const HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256 = Object.freeze({
   applyCheckpointActionVariant: '6d83fd691e69b578f683c5e367cc1706a8f74b336e0ff435195f580c2350587c',
   applyCheckpointActionSchema: '6f0b0698b13997eda7100ec00720fff199d936270d232c7de5f55a8fcef2c2ab',
@@ -49,11 +49,26 @@ const HOSTED_GENERAL_RATE_LIMIT_SHA256 = 'c724c5215e1014a5e4cb598cb8487a4524e51e
 // the empty prompt handler, the shared search request, Claude's search wrapper
 // and the per-surface registerPluginTool helper. Scope enforcement stays in
 // plugin-scopes; this helper only shapes the published descriptors.
+// close-ai #3325 (recaptured at 7c7032c87): OpenAI search results drop only the
+// retired autoApplySupported flag; every other surface returns the response unchanged.
+// close-ai #3441 (recaptured at 6cd11dfb): plugin search forwards the hosted roleTypes
+// filter (deduplicated, comma-separated); #3462: the server reports the imported
+// published package version TRACKLY_PLUGIN_VERSION.
+// close-ai #3604 (recaptured at 6a5b05f5): the prefix adds the per-server hidden-tool set,
+// the directory profile path (includeSensitive only on request; sensitive applicability
+// only for a sensitive:read grant) and the Claude Apply allowlist decision. The helper
+// skips non-contract names on the classic surface (KTD1), records directory tools hidden
+// from tools/list, gates every directory call on the runtime flags before the handler
+// (KTD8), registers Claude's split Apply tools from the OpenAI split definitions behind
+// claudeGuarded (KTD6, KTD4), and skips switched-off OpenAI split definitions.
+// close-ai #3619 (recaptured at 8f7ba68e): every surface except Muse registers with the
+// family title and tag from tool-families.ts (withToolFamilyLabels, locked below), and
+// Claude's trackly_update_status keeps the status-story text registered for its Tracker group.
 const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' && options.surface !== 'openai' && options.surface !== 'muse'
     && options.surface !== 'claude') {
     throw new Error('Unknown plugin tool surface');
   }
-  const server = new McpServer({ name: 'trackly', version: PLUGIN_VERSION });
+  const server = new McpServer({ name: 'trackly', version: TRACKLY_PLUGIN_VERSION });
   server.server.registerCapabilities({ prompts: {} });
   server.server.setRequestHandler(ListPromptsRequestSchema, () => ({ prompts: [] }));
 
@@ -70,6 +85,8 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
     if (params.locationFilter) query.set('locationFilter', params.locationFilter);
     else if (Array.isArray(params.usStates) && params.usStates.length > 0) query.set('locationFilter', 'us');
     if (params.jobModality) query.set('jobModality', params.jobModality);
+    // Same passthrough as the hosted trackly_search_jobs (#3429): deduplicated, comma-separated.
+    if (Array.isArray(params.roleTypes)) query.set('roleTypes', [...new Set<string>(params.roleTypes)].join(','));
     if (params.status) query.set('status', params.status);
     if (params.sponsorship) {
       query.set('sponsorship', params.sponsorship);
@@ -79,7 +96,17 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
     if (params.sort) query.set('sort', params.sort);
     if (params.limit) query.set('limit', String(params.limit));
     if (params.offset !== undefined) query.set('offset', String(params.offset));
-    return requestApi('GET', \`/api/jobscout/jobs?\${query}\`, authToken);
+    // The REST mapper keeps the retired constant false; surfaces that list trackly_auto_apply
+    // get the Trackly Apply (cloud) answer (TRA-890) and, when one applies, a nextSteps line.
+    // A switched-off auto_apply group (KTD8) also withdraws the offer, so search never promises a
+    // tool that answers temporarily_unavailable. Read per call, like the tool gate.
+    const autoApplyDirectorySurface = directorySurfaceOf(options.surface);
+    const autoApplyOffered = surfaceListsAutoApply(options.surface)
+      && !(autoApplyDirectorySurface
+        && directoryToolUnavailableReason('trackly_auto_apply', autoApplyDirectorySurface, options.userId) !== null);
+    return withAutoApplySupport(await requestApi('GET', \`/api/jobscout/jobs?\${query}\`, authToken), {
+      enabled: autoApplyOffered,
+    });
   };
   const claudeSearchJobs = async (params: any) => {
     try {
@@ -89,6 +116,22 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
     }
   };
 
+  const hiddenToolNames = new Set<string>();
+  /**
+   * For a hosted grant the backend resolves the encrypted employment status, which
+   * decides whether work history is required (students and unemployed users), only
+   * when asked and only for a grant with sensitive:read. Without it, those users
+   * would read as missing work history. The resolution itself is not returned.
+   */
+  const directoryProfilePath = (includeSensitive: boolean) => {
+    const query = new URLSearchParams();
+    if (includeSensitive) query.set('includeSensitive', 'true');
+    if (options.grantedScopes?.includes('sensitive:read')) query.set('resolveSensitiveApplicability', 'true');
+    const suffix = query.toString();
+    return suffix ? \`/api/jobscout/application-profile?\${suffix}\` : '/api/jobscout/application-profile';
+  };
+  // Parsed once per server; listing is per request, so a setting change still applies without a deploy.
+  const claudeApplyAllowed = options.surface === 'claude' ? claudeApplyAllowedForUser(options.userId) : false;
   const registerPluginTool = (
     name: string,
     config: Record<string, any>,
@@ -99,14 +142,35 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
         type: 'oauth2',
         scopes: requiredScopesForPluginTool(toolName, options.surface) || [],
       }];
+      const directorySurface = directorySurfaceOf(options.surface);
+      if (directorySurface
+        && isDirectoryToolHidden(toolName, directorySurface, options.userId, process.env, claudeApplyAllowed)) {
+        hiddenToolNames.add(toolName);
+      }
+      // KTD8: a switched-off group keeps the tool listed and answers with a
+      // stable unavailable result before any backend call.
+      const gatedHandler: typeof handler = directorySurface
+        ? async (params) => {
+          const reason = directoryToolUnavailableReason(toolName, directorySurface, options.userId);
+          return reason ? directoryUnavailableResult(reason) : toolHandler(params);
+        }
+        : toolHandler;
+      // Family titles and description tags (#3619) on every surface except
+      // Muse, whose partner-reviewed copy stays byte-identical (KTD3).
+      const labeledConfig = options.surface === 'muse'
+        ? toolConfig
+        : withToolFamilyLabels(toolName, toolConfig, options.surface);
       return server.registerTool<z.ZodRawShape, z.ZodRawShape>(toolName, {
-        ...toolConfig,
+        ...labeledConfig,
         _meta: { ...toolConfig._meta, securitySchemes },
       } as any, (params, extra) => captureHostedMcpTool(
-        toolName, extra.requestId, () => toolHandler(params),
+        toolName, extra.requestId, () => gatedHandler(params),
       ));
     };
     if (options.surface === 'legacy') {
+      // The classic catalog is the frozen contract (23 tools in 1.1.0); directory-only
+      // registrations never reach it (KTD1).
+      if (!Object.hasOwn(TRACKLY_PLUGIN_TOOL_SCOPES, name)) return;
       const required = requiredScopesForPluginTool(name, 'legacy') ?? [];
       if (required.some((scope) => scope.startsWith('apply:'))) {
         config = {
@@ -120,10 +184,34 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
       return register(name, { ...config, inputSchema: discovered.inputSchema }, discovered.handler);
     }
     if (options.surface === 'claude') {
-      if (!isClaudeToolName(name)) return;
-      const entry = CLAUDE_TOOLS[name];
       const { _meta, ...rest } = config;
       const meta = museRegistrationMeta(_meta);
+      if (CLAUDE_SPLIT_SOURCES.has(name)) {
+        // KTD6: the dispatcher-shaped tools publish an empty schema on Claude,
+        // so Claude reuses the split definitions ChatGPT already passed review with.
+        for (const definition of openaiToolDefinitions(name, config.inputSchema)) {
+          if (!isClaudeToolName(definition.name)) continue;
+          const entry = CLAUDE_TOOLS[definition.name];
+          register(definition.name, {
+            ...rest,
+            title: entry.title,
+            description: entry.description,
+            inputSchema: claudeInputSchema(definition.name, definition.inputSchema),
+            ...(definition.progressOperation && config.outputSchema ? {
+              outputSchema: config.outputSchema.extend({ operation: z.literal(definition.progressOperation) }),
+            } : {}),
+            annotations: claudeToolAnnotations(definition.name),
+            ...(meta ? { _meta: meta } : {}),
+          }, claudeGuarded(async (input) => {
+            const parsed = config.inputSchema.safeParse(definition.toLegacyInput(input));
+            if (!parsed.success) return errorContent(new Error('Invalid tool input'), 'Invalid tool input');
+            return handler(parsed.data);
+          }));
+        }
+        return;
+      }
+      if (!isClaudeToolName(name)) return;
+      const entry = CLAUDE_TOOLS[name];
       const discovered = museDiscoveryRegistration(
         rest.inputSchema,
         name === 'trackly_search_jobs' ? claudeSearchJobs : handler,
@@ -131,11 +219,11 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
       return register(name, {
         ...rest,
         title: entry.title,
-        description: entry.description,
+        description: name === 'trackly_update_status' ? config.description : entry.description,
         inputSchema: claudeInputSchema(name, discovered.inputSchema),
         annotations: claudeToolAnnotations(name),
         ...(meta ? { _meta: meta } : {}),
-      }, discovered.handler);
+      }, claudeGuarded(discovered.handler));
     }
     if (options.surface === 'muse') {
       if (!isMuseToolName(name)) return;
@@ -150,6 +238,7 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
       }, discovered.handler);
     }
     for (const definition of openaiToolDefinitions(name, config.inputSchema)) {
+      if (!isDirectoryToolOn(definition.name, 'openai')) continue;
       register(definition.name, {
         ...config,
         inputSchema: definition.inputSchema,
@@ -168,8 +257,31 @@ const HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE = `if (options.surface !== 'legacy' &&
       });
     }
   };`;
+// close-ai #3604: the five Tracker tools share one handler set bound to this factory's
+// requestApi and authToken; directory results drop Tracker contact fields (R9).
+// close-ai #3619 (recaptured at 8f7ba68e): the one status story reads, per surface, whether the
+// directory's Tracker tools are switched off; trackly_update_status then names no Tracker tool and
+// sends trackerSync: false there. Only the directory registry gate decides it.
+const HOSTED_PLUGIN_FACTORY_INTER_REGISTRATION_SOURCE = `const statusDirectory = directorySurfaceOf(options.surface);
+  const trackerToolsOff = statusDirectory !== null
+    && directoryToolUnavailableReason('trackly_update_tracker_stage', statusDirectory, options.userId) !== null;
+  const tracker = createTrackerToolHandlers(requestApi, authToken);
+  const trackerTool = (run: (params: any) => Promise<unknown>, fallback: string) => wrapTool(
+    async (params) => withoutTrackerContacts(await run(params)), fallback,
+  );`;
+// close-ai #3604: tools hidden for this user stay callable (stable unavailable result)
+// but leave tools/list; hideToolsFromList is locked below.
+const HOSTED_PLUGIN_FACTORY_TAIL_SUFFIX_SOURCE = `if (hiddenToolNames.size > 0) hideToolsFromList(server, hiddenToolNames);`;
 
 // Exact reviewed telemetry helpers; attribution cannot become request authority.
+// close-ai #3619 (recaptured at 8f7ba68e): how src/mcp/tool-families.ts builds a title and
+// prefixes a description. mcp/tool-families.js mirrors exactly this composition.
+const HOSTED_TOOL_FAMILY_COMPOSITION_AST_SHA256 = Object.freeze({
+  toolFamilyTitle: 'a70f2bdb27699cefc2f415d5b088d8a8099b2d1154629d5c8787ae1a1128e88f',
+  toolFamilyDescription: '5c2659290bea682c9ba746d82b71054572d42bc996bd211b74894ae003182da4',
+  withToolFamilyLabels: 'b3a2e481b41dd6b63acd822d880a46911fdf888970ffd05c86a37dff4c1e8ae1',
+});
+
 const HOSTED_MCP_ANALYTICS_HELPER_AST_SHA256 = Object.freeze({
   "runWithHostedMcpToolContext": "a1a973ac01a2943d4e5751bd61c32e290d49069bbc7db05925e67956156f93f5",
   "captureHostedMcpTool": "d661823521f8d974ffa3ecdc608f9dd5c6cec9a79eda441ad9b87bf8e2afcc4f",
@@ -207,9 +319,13 @@ const HOSTED_JOB_RESULT_SHA256 = 'e337bad5f2ebcdb4ebfa3379498852fa6fe8f78758f9b5
 // which now also owns profileFieldReferenceSchema (same bytes, moved). Questions
 // carry only key, label, input type, sensitivity class and option labels/values;
 // guidance points at https://usetrackly.app/profile and never submits.
-const HOSTED_PLUGIN_ONBOARDING_SHA256 = '5d4c4bd48dcc81f5230eb01e1e3269fa4ce4c9a2340eb232f6cb4104befd26ae';
+// close-ai #3604 (recaptured at 6a5b05f5): the question builder is extracted unchanged into
+// the exported onboardingQuestions, which the directory setup-status read also uses.
+const HOSTED_PLUGIN_ONBOARDING_SHA256 = 'c2a4976100e800cfc68fe3785d33fc7c715ad2e1264767dbd74aa5b96c72242d';
 // close-ai #2105: rate-limit client IP resolution mounted in the global inventory.
-const HOSTED_CLIENT_IP_SHA256 = '9e09a30d819487315ea4e02d3c1ad1c3a584e65d36bd42882a0aad01610ee7ed';
+// close-ai #3460 (recaptured at 6cd11dfb): exports TRUST_PROXY_HOPS (still 1) and applies the
+// same hop policy to WebSocket upgrades via resolveUpgradeClientIp; Express resolution is unchanged.
+const HOSTED_CLIENT_IP_SHA256 = 'c1406043c3cc3de3c918044403a179b2227fad4967ed8cdd732c9ddc96efceba';
 // Exact deployed observation module; its imported literal path is resolved only after provenance verification.
 const HOSTED_OBSERVATION_ROUTE_SOURCE_SHA256 = 'a26b97cca7047c14df805f306aa00047d9264fdeb5136094c285b69a754cdfe9';
 const HOSTED_APPLY_REPLAY_HELPER_AST_SHA256 = Object.freeze({
@@ -228,6 +344,27 @@ const LOCAL_ONLY_CONSTANTS = [];
 const HOSTED_ONLY_TOOLS = [
   'trackly_chat',
 ];
+// Source-only additions awaiting a coordinated backend/CLI release. Fixture mode
+// tolerates the names listed here; backend verification never does. Empty: close-ai
+// #3536 (deployed in 96781f59) registers trackly_auto_apply and trackly_auto_apply_status,
+// and createServer registers both directly.
+const PENDING_HOSTED_TOOLS = [];
+
+// The static scan above reads only direct top-level registrations, so a tool
+// registered conditionally, in a helper or through an unscanned module would be
+// invisible to it. Build the real local catalog and require that it equals the
+// statically locked names, so the release check describes what users receive.
+function assertRuntimeLocalCatalog(cliRoot, expectedNames, message) {
+  // Load the checked tree fresh: a cached module from an earlier verification would hide edits.
+  const mcpRoot = `${fs.realpathSync(path.join(cliRoot, 'mcp'))}${path.sep}`;
+  for (const cached of Object.keys(require.cache)) {
+    if (cached.startsWith(mcpRoot)) delete require.cache[cached];
+  }
+  const serverModule = require(path.join(cliRoot, 'mcp', 'server.js'));
+  assert.equal(typeof serverModule.createServer, 'function', 'mcp/server.js must export createServer');
+  const runtimeNames = Object.keys(serverModule.createServer()._registeredTools || {});
+  assert.deepEqual([...runtimeNames].sort(), [...expectedNames].sort(), message);
+}
 
 const parsedSourceCache = new Map();
 
@@ -503,7 +640,11 @@ function directHostedToolRegistrationsInNamedFactory(
   sourcePath,
   expectedToolCatalog,
   {
-    helperAstSha256 = '2fe648415f8e9b36be4db0e48a88952c8995784b112ef7cdae42e13529cfa97e',
+    // close-ai #3603 (recaptured at 6cd11dfb): the helper forwards optional MCP
+    // tool annotations unchanged; scope, analytics context and handler wrapping are as reviewed.
+    // close-ai #3619 (recaptured at 8f7ba68e): it adds the family title, annotations.title and
+    // description tag through withToolFamilyLabels(toolName, ..., 'hosted') and changes nothing else.
+    helperAstSha256 = '1aa48dac5ecb68d402ab46034568b0e3254ea5d6a4c9105d9544bd4b411b8f1e',
   } = {},
 ) {
   const ast = parseFullSource(source, sourcePath);
@@ -570,6 +711,9 @@ function directHostedToolRegistrationsInNamedFactory(
     'truthCertificationInputSchema',
     'truthCertificationSchema',
     'startApplyRunSchema',
+    // close-ai #3603: the five Tracker tools share one handler set bound to this
+    // factory's requestApi and authToken; its initializer is locked exactly below.
+    'tracker',
   ]);
   const registrationCalls = new Set(registrations.map(({ call }) => call));
   const allowedServerMemberCalls = [];
@@ -586,6 +730,16 @@ function directHostedToolRegistrationsInNamedFactory(
         )),
         `${expectedFunction} in ${sourcePath} may declare only the reviewed hosted schema bindings`,
       );
+      for (const declaration of statement.declarations.filter((candidate) => candidate.id.name === 'tracker')) {
+        assert.deepEqual(
+          canonicalSchemaAst(declaration.init),
+          canonicalSchemaAst(babelParser.parseExpression(
+            'createTrackerToolHandlers(requestApi, authToken)',
+            { plugins: ['typescript'] },
+          )),
+          `${expectedFunction} in ${sourcePath} must bind Tracker handlers only to its own requestApi and authToken`,
+        );
+      }
       continue;
     }
     if (statement.type === 'ExpressionStatement' && registrationCalls.has(statement.expression)) continue;
@@ -776,6 +930,8 @@ const HOSTED_DEPLOYABLE_PATHS = Object.freeze([
   'src/mcp/plugin-resume-router.ts',
   'src/mcp/plugin-resume-store.ts',
   'src/mcp/plugin-scopes.ts',
+  // close-ai #3604: the ChatGPT and Claude scope rows and runtime flags now live here.
+  'src/mcp/directory-surface-registry.ts',
   'src/mcp/mcp-scopes.ts',
   'src/mcp/oauth-provider.ts',
   'src/mcp/mcp-tokens.ts',
@@ -807,17 +963,39 @@ const HOSTED_DEPLOYABLE_PATHS = Object.freeze([
   'src/middleware/school-request-paths.ts',
   'src/middleware/school-ingress.ts',
   'src/routes/admin-read-query.ts',
+  // close-ai #3536: Trackly Apply (cloud) descriptors, request body and refusals (whole-byte
+  // locked as autoApply). Absent in reviewed source b5d59e26, so it is an inherited record.
+  'src/mcp/auto-apply.ts',
+  // close-ai #3619 (recaptured at 8f7ba68e): the plugin trackly_update_status text comes from
+  // status-story.ts, and every family title and description tag from tool-families.ts. Both are
+  // whole-byte locked (statusStory, toolFamilies), so a wording or separator change needs a recapture.
+  'src/mcp/status-story.ts',
+  'src/mcp/tool-families.ts',
 ]);
 
-// Recaptured from reviewed source 3d479b94 and ordinary deployed merge 71e7f9bf.
-// All 49 deployable paths preserve the reviewed bytes; no inherited exception applies.
+// Recaptured from reviewed source 9d495993 (close-ai #3635 head, MCP tool families) and
+// deployed merge 8f7ba68e (deploy run 43001328904, 2026-11-11 3:03 AM PST), which also
+// carries #3631 (one status story) and #3641 through first parent 92c6e576. The #3635
+// head already merged main after #3631, and the first parent changed none of the 51
+// deployable paths, so every one preserves the reviewed bytes; no inherited exception applies.
 const REVIEWED_INHERITED_BASELINE = Object.freeze([]);
+
+function gitPathExists(repository, commit, file) {
+  try {
+    childProcess.execFileSync('git', ['-C', repository, 'cat-file', '-e', commit + ':' + file], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function assertMergeCommitPreservesPaths(repository, sourceCommit, mergeCommit, relativePaths, inheritedBaseline = []) {
   const unused = new Set(inheritedBaseline);
   const digest = (commit, file) => sha256ExactBytes(gitOutput(repository, ['show', commit + ':' + file], null));
   for (const relativePath of relativePaths) {
-    const sourceHash = digest(sourceCommit, relativePath);
+    // A path the reviewed source does not have yet (sourceSha256: null) passes only through an
+    // inherited-baseline record that proves its bytes came from a reviewed origin commit.
+    const sourceHash = gitPathExists(repository, sourceCommit, relativePath) ? digest(sourceCommit, relativePath) : null;
     const mergedHash = digest(mergeCommit, relativePath);
     if (sourceHash !== mergedHash) {
       const records = inheritedBaseline.filter((record) => record.relativePath === relativePath);
@@ -872,13 +1050,15 @@ function verifyHostedSnapshotGitProvenance(cliRoot, backendRoot) {
     mergeCommit,
     `${backendRoot} must be checked out at the exact deployed runtime merge commit`,
   );
-  for (const commit of [sourceCommit, fixture.sourceRuntime.parent, mergeCommit, ...fixture.mergedRuntime.parents]) {
+  for (const commit of [sourceCommit, ...fixture.sourceRuntime.parents, mergeCommit, ...fixture.mergedRuntime.parents]) {
     gitOutput(backendRoot, ['cat-file', '-e', `${commit}^{commit}`]);
   }
+  // The reviewed head may itself merge main (close-ai #3433 head 1a0474f4), so its
+  // parents are recorded as an exact ordered list, like the deployed merge's.
   assert.deepEqual(
     gitOutput(backendRoot, ['show', '-s', '--format=%P', sourceCommit]).trim().split(/\s+/),
-    [fixture.sourceRuntime.parent],
-    `${sourceCommit} must have the recorded reviewed parent`,
+    fixture.sourceRuntime.parents,
+    `${sourceCommit} must have the recorded reviewed parents in order`,
   );
   assert.deepEqual(
     gitOutput(backendRoot, ['show', '-s', '--format=%P', mergeCommit]).trim().split(/\s+/),
@@ -905,6 +1085,9 @@ function verifyHostedSnapshotGitProvenance(cliRoot, backendRoot) {
       `${relativePath} working bytes must exactly match the deployed runtime merge commit`,
     );
   }
+  // Recaptured at close-ai 6cd11dfb: pluginServer carries #3441 (plugin search roleTypes)
+  // and #3462 (masked readiness account, resume parse status, package version);
+  // applicationProfileService carries #3462 (default resume read through resumeData with parse status).
   const lockedSources = {
     pluginServer: 'src/mcp/plugin-server.ts',
     pluginScopes: 'src/mcp/plugin-scopes.ts',
@@ -916,6 +1099,13 @@ function verifyHostedSnapshotGitProvenance(cliRoot, backendRoot) {
     databasePoolPolicy: 'src/config/database-pool.ts',
     reviewIdentity: 'src/services/review-identity.ts',
     applicationProfileService: 'src/services/application-profile/service.ts',
+    // close-ai #3536: the classic trackly_auto_apply and trackly_auto_apply_status descriptors,
+    // refusals and search-flag wording come from this file; the posting-host scope it applies
+    // comes from assist-requests.ts and is AST-locked against lib/auto-apply.js below.
+    autoApply: 'src/mcp/auto-apply.ts',
+    // close-ai #3619: the one status story and the family registry (titles, tags, sentences).
+    statusStory: 'src/mcp/status-story.ts',
+    toolFamilies: 'src/mcp/tool-families.ts',
   };
   for (const [lockName, relativePath] of Object.entries(lockedSources)) {
     const committedBytes = gitOutput(backendRoot, ['show', `${mergeCommit}:${relativePath}`], null);
@@ -1247,7 +1437,13 @@ function directToolRegistrationsInExportedFunction(
     // four-statement prefix and helper-shape checks below then do not apply.
     lockedPrefixSource = null,
     expectedPrefixDeclarators = null,
+    serverVersionIdentifier = 'PLUGIN_VERSION',
     uiResourceLoopSource = null,
+    // close-ai #3604: exact statements that may sit between registrations (in
+    // order), and exact statements between the UI resource loop and the return.
+    // Both are compared as canonical AST, so nothing else can slip in.
+    lockedInterRegistrationSource = null,
+    lockedTailSuffixSource = null,
   } = {},
 ) {
   assertImportBinding(
@@ -1293,9 +1489,15 @@ function directToolRegistrationsInExportedFunction(
   }
   assert.ok(registrations.length > 0, `${expectedFunction} in ${sourcePath} must directly register tools`);
   const firstRegistrationIndex = registrationStatementIndexes[0];
+  const interRegistrationStatements = factory.body.body
+    .slice(firstRegistrationIndex, registrationStatementIndexes.at(-1) + 1)
+    .filter((_, offset) => !registrationStatementIndexes.includes(firstRegistrationIndex + offset));
   assert.deepEqual(
-    registrationStatementIndexes,
-    Array.from({ length: registrations.length }, (_, index) => firstRegistrationIndex + index),
+    interRegistrationStatements.map((statement) => canonicalSchemaAst(statement)),
+    lockedInterRegistrationSource === null
+      ? []
+      : parseFullSource(lockedInterRegistrationSource, `${expectedFunction} locked inter-registration statements`)
+        .program.body.map((statement) => canonicalSchemaAst(statement)),
     `${expectedFunction} in ${sourcePath} must register tools in one unconditional contiguous block`,
   );
 
@@ -1351,7 +1553,7 @@ function directToolRegistrationsInExportedFunction(
   assert.deepEqual(
     canonicalSchemaAst(serverBindings[0].init),
     canonicalSchemaAst(babelParser.parseExpression(
-      "new McpServer({ name: 'trackly', version: PLUGIN_VERSION })",
+      `new McpServer({ name: 'trackly', version: ${serverVersionIdentifier} })`,
       { plugins: ['typescript'] },
     )),
     `${expectedFunction} in ${sourcePath} must use the locked pure server initializer`,
@@ -1563,8 +1765,22 @@ function directToolRegistrationsInExportedFunction(
       `${expectedFunction} in ${sourcePath} may contain at most one exact locked plugin UI resource loop`,
     );
   }
+  const expectedTailSuffixStatements = lockedTailSuffixSource === null
+    ? []
+    : parseFullSource(lockedTailSuffixSource, `${expectedFunction} locked tail suffix`).program.body;
+  const actualTailSuffixStatements = expectedTailSuffixStatements.length === 0
+    ? []
+    : factory.body.body.slice(-1 - expectedTailSuffixStatements.length, -1);
+  assert.deepEqual(
+    actualTailSuffixStatements.map((statement) => canonicalSchemaAst(statement)),
+    expectedTailSuffixStatements.map((statement) => canonicalSchemaAst(statement)),
+    `${expectedFunction} in ${sourcePath} must end with its exact reviewed tail before the return`,
+  );
   if (uiResourceLoops.length === 1) {
-    const actualUiResourceStatements = factory.body.body.slice(registrationStatementIndexes.at(-1) + 1, -1);
+    const actualUiResourceStatements = factory.body.body.slice(
+      registrationStatementIndexes.at(-1) + 1,
+      -1 - expectedTailSuffixStatements.length,
+    );
     assert.deepEqual(
       actualUiResourceStatements.map((statement) => canonicalSchemaAst(statement)),
       expectedUiResourceStatements.map((statement) => canonicalSchemaAst(statement)),
@@ -1583,6 +1799,12 @@ function directToolRegistrationsInExportedFunction(
       .map((statement) => statement.expression.callee.object.object),
     helperRegisterToolCallee.object,
     ...(uiResourceReceiver ? [uiResourceReceiver] : []),
+    // A locked tail may pass the server to one reviewed module-level helper
+    // (close-ai #3604: hideToolsFromList); the helper itself is locked by AST.
+    ...actualTailSuffixStatements.flatMap((statement) => {
+      const call = statement.type === 'IfStatement' ? statement.consequent?.expression : statement.expression;
+      return (call?.arguments ?? []).filter((argument) => argument.type === 'Identifier' && argument.name === 'server');
+    }),
     factoryReturns[0].argument,
   ];
   assert.deepEqual(
@@ -1794,6 +2016,9 @@ function assertMachineAccessSemantics(accessSource, accessPath, oauthSource, oau
   assertActiveFunctionDefinitionAst(oauthSource, 'requireMcpEntitlement', HOSTED_REQUIRE_MCP_ENTITLEMENT_SOURCE, oauthPath);
 }
 
+// close-ai #3604 (recaptured at 6a5b05f5): the directory servers (and the classic one,
+// which ignores them) also receive the verified token's own userId and granted scopes, for
+// the per-surface runtime flags, the Claude Apply allowlist and sensitive-applicability reads.
 const HOSTED_PLUGIN_ROUTER_FACTORY_SOURCE = `function createTracklyPluginRouter(surface: CuratedMcpSurface = MCP_PLUGIN_SURFACE) {
   if (surface !== MCP_PLUGIN_SURFACE && surface !== MCP_OPENAI_SURFACE && surface !== MCP_MUSE_SURFACE
     && surface !== MCP_CLAUDE_SURFACE) {
@@ -1825,7 +2050,9 @@ const HOSTED_PLUGIN_ROUTER_FACTORY_SOURCE = `function createTracklyPluginRouter(
       const server = surface === MCP_MUSE_SURFACE
         ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'muse' })
         : claude
-        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'claude' })
+        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, {
+          surface: 'claude', userId: authInfo.extra.userId, grantedScopes: authInfo.scopes,
+        })
         : createTracklyPluginMcpServer(authToken, apiRequest, async () => {
           const { capability, filenameSha256: _filenameHash, ...document } = await pluginResumeDocuments(surface.resource).prepare({
             userId: authInfo.extra.userId, authEpoch: authInfo.extra.authEpoch,
@@ -1834,6 +2061,8 @@ const HOSTED_PLUGIN_ROUTER_FACTORY_SOURCE = `function createTracklyPluginRouter(
           return { ...document, openUrl: \`\${surface.resource}/resume#\${capability}\` };
         }, surface === MCP_OPENAI_SURFACE ? MCP_OPENAI_SURFACE.resumePath : MCP_PLUGIN_SURFACE.resumePath, {
           surface: surface === MCP_OPENAI_SURFACE ? 'openai' : 'legacy',
+          userId: authInfo.extra.userId,
+          grantedScopes: authInfo.scopes,
         });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       const analyticsContext = buildHostedMcpAnalyticsContext({
@@ -2592,18 +2821,33 @@ function assertPluginRoutePrecedence(
   return canonicalMount;
 }
 
+// A direct app.listen statement is either `app.listen(...);` or, since close-ai
+// #3460 (voice relay), exactly `const server = app.listen(...);` so the reviewed
+// WebSocket relay and graceful shutdown can attach to the same HTTP server.
+function directAppListenCall(statement) {
+  if (statement?.type === 'ExpressionStatement'
+    && statement.expression?.type === 'CallExpression'
+    && babelCalleeName(statement.expression.callee) === 'app.listen') return statement.expression;
+  if (statement?.type === 'VariableDeclaration'
+    && statement.kind === 'const'
+    && statement.declarations.length === 1
+    && statement.declarations[0].id?.type === 'Identifier'
+    && statement.declarations[0].id.name === 'server'
+    && statement.declarations[0].init?.type === 'CallExpression'
+    && babelCalleeName(statement.declarations[0].init.callee) === 'app.listen') return statement.declarations[0].init;
+  return null;
+}
+
 function assertServerListenSemantics(
   source,
   sourcePath,
-  { listenAstSha256 = '791d37989e4e894d2abd4634ce723c795fb8611cdc8dd865c0534d9ee97bbfe7' } = {},
+  // close-ai #3460 (recaptured at 6cd11dfb): the reviewed callback is unchanged;
+  // only the call is now bound as `const server = app.listen(...)`.
+  { listenAstSha256 = '80fbe9619b5f8e7cacb829a105d559bc938918c23450e9a8318206cfd5ea01c7' } = {},
 ) {
   assertActiveVariableInitializerAst(source, 'PORT', 'process.env.PORT || 3000', sourcePath);
   const startServer = activeNamedDefinitionAst(source, 'startServer', sourcePath);
-  const directListens = startServer.body.body.filter((statement) => (
-    statement.type === 'ExpressionStatement'
-    && statement.expression?.type === 'CallExpression'
-    && babelCalleeName(statement.expression.callee) === 'app.listen'
-  ));
+  const directListens = startServer.body.body.filter((statement) => directAppListenCall(statement) !== null);
   assert.equal(directListens.length, 1, `startServer in ${sourcePath} must have exactly one direct app.listen statement`);
   const allListens = [];
   function visitListens(node) {
@@ -2629,7 +2873,7 @@ function assertServerListenSemantics(
     }
   }
   visitListens(startServer.body);
-  const listenCall = directListens[0].expression;
+  const listenCall = directAppListenCall(directListens[0]);
   assert.deepEqual(
     allListens,
     [listenCall],
@@ -2846,16 +3090,19 @@ function assertLivePluginRouterMount(
     1,
     `startServer in ${sourcePath} must isolate createApp in one side-effect-free declaration`,
   );
-  const liveListens = startServer.body.body.filter((statement) => (
-    statement.type === 'ExpressionStatement'
-    && statement.expression?.type === 'CallExpression'
-    && babelCalleeName(statement.expression.callee) === 'app.listen'
-  ));
+  const liveListens = startServer.body.body.filter((statement) => directAppListenCall(statement) !== null);
   assert.equal(liveListens.length, 1, `startServer in ${sourcePath} must listen on the exact createApp result`);
   const liveListenIndex = startServer.body.body.indexOf(liveListens[0]);
   // close-ai #2792 (refresh grace sweep) and #2802 (Muse trace retention)
   // add exactly one guarded background-maintenance block after the guards.
+  // close-ai #3552 (recaptured at 6cd11dfb) starts the outreach worker before it;
+  // a rejected worker configuration fails startup instead of serving traffic.
   const lockedStartServerPrelude = parseFullSource(`installProcessGuards();
+  try { startOutreachWorker(getOutreachData()); }
+  catch (error) {
+    logger.error('outreach-agent','Worker configuration rejected at API startup');
+    throw error;
+  }
   if (shouldRunStartupDbWrites()) {
     startRefreshGraceSweep();
     startMuseTraceRetention(pool, (postgresCode) => {
@@ -2877,6 +3124,37 @@ function assertLivePluginRouterMount(
     startServer.body.body.indexOf(liveAppStatements[0]) + 1,
     `startServer in ${sourcePath} must immediately listen on the exact createApp result`,
   );
+  // close-ai #3460 (recaptured at 6cd11dfb): when the listener is bound, the HTTP
+  // server is used only by the reviewed voice relay upgrade handler (UUID path,
+  // origin allowlist, per-IP unauthenticated cap, one-time token claim) and the
+  // graceful shutdown. This locks the startServer call sites: no other statement may use the
+  // bound server. The bodies of src/routes/voice-relay.ts and src/services/api-shutdown.ts are
+  // reviewed per recapture (at 6cd11dfb the relay adds only an 'upgrade' listener); they are
+  // not byte-pinned here.
+  if (liveListens[0].type === 'VariableDeclaration') {
+    const lockedServerAttachments = parseFullSource(`const stopVoiceRelay = attachVoiceRelay(server, voiceRelayDependencies(requireAuth, isVoiceV3Enabled, isVoiceV3Pilot));
+  installApiShutdown({ server, stopVoice: stopVoiceRelay, stopSummaries: stopVoiceRelaySummaries,
+    closeDatabase: () => pool.end(), exit: code => process.exit(code) });`, 'locked startServer server attachments').program.body;
+    const attachments = startServer.body.body.slice(
+      liveListenIndex + 1,
+      liveListenIndex + 1 + lockedServerAttachments.length,
+    );
+    assert.deepEqual(
+      canonicalSchemaAst(attachments),
+      canonicalSchemaAst(lockedServerAttachments),
+      `startServer in ${sourcePath} must attach only the reviewed voice relay and shutdown to the listening server`,
+    );
+    const serverReferences = collectBindingReferences(
+      startServer.body.body.slice(liveListenIndex + 1 + lockedServerAttachments.length),
+      'server',
+      () => false,
+    );
+    assert.deepEqual(
+      serverReferences,
+      [],
+      `startServer in ${sourcePath} must not reference the listening server outside its reviewed attachments`,
+    );
+  }
   assertActiveTopLevelStatementAst(
     source,
     `if (require.main === module) {
@@ -3199,58 +3477,46 @@ function assertImmutablePluginToolScopesSemantics(source, sourcePath) {
     lockedFunctionReferences.length > 0,
     `requiredScopesForPluginTool in ${sourcePath} must read ${name}`,
   );
-  // close-ai #2711: diagnostics name a tool only when the legacy or OpenAI
-  // catalog knows it (both via the locked requiredScopesForPluginTool).
+  // close-ai #3604 (recaptured at 6a5b05f5): diagnostics name a tool only when the
+  // legacy catalog (locked requiredScopesForPluginTool) or the byte-locked directory
+  // surface registry knows it.
   assertActiveFunctionDefinitionAst(
     source,
     'diagnosticToolName',
     `function diagnosticToolName(value: unknown): string {
-      return typeof value === 'string' && (requiredScopesForPluginTool(value) !== null || requiredScopesForPluginTool(value, 'openai') !== null)
+      return typeof value === 'string' && (requiredScopesForPluginTool(value) !== null || directoryToolEntry(value) !== null)
         ? value
         : '[redacted]';
     }`,
     sourcePath,
   );
-  // close-ai #2711: the OpenAI catalog is the legacy map minus the two apply
-  // work tools, plus apply:write progress actions and two read tools that
-  // reuse trackly_get_apply_work's scopes. Both readers of the legacy map are
-  // locked exactly here.
+  // close-ai #3604 (KTD1): the OpenAI scope rows are the directory registry rows published
+  // on 'openai'; the legacy map is no longer read to derive them. The registry module is
+  // whole-byte locked, and the legacy map stays referenced only by its names catalog and
+  // requiredScopesForPluginTool.
+  assertImportBinding(source, 'DIRECTORY_TOOLS', 'DIRECTORY_TOOLS', './directory-surface-registry.js', sourcePath);
+  assertImportBinding(source, 'directoryToolEntry', 'directoryToolEntry', './directory-surface-registry.js', sourcePath);
   const sharedScopesStatements = ast.program.body.filter((statement) => (
     statement.type === 'VariableDeclaration'
     && statement.declarations.some((declarator) => (
-      declarator.id?.type === 'ObjectPattern'
-      && declarator.init?.type === 'Identifier' && declarator.init.name === name
+      declarator.init?.type === 'Identifier' && declarator.init.name === name
     ))
   ));
   assert.equal(
     sharedScopesStatements.length,
-    1,
-    `${sourcePath} must derive the shared OpenAI scope rows from ${name} exactly once`,
-  );
-  assert.deepEqual(
-    canonicalSchemaAst(sharedScopesStatements[0]),
-    canonicalSchemaAst(parseFullSource(
-      `const { trackly_report_apply_progress: _progress, trackly_get_apply_work: _work, ...sharedToolScopes } = ${name};`,
-      'locked shared OpenAI scope rows',
-    ).program.body[0]),
-    `${sourcePath} must remove exactly the two legacy apply work tools from the shared OpenAI scope rows`,
+    0,
+    `${sourcePath} must not alias or destructure ${name}`,
   );
   const openaiScopesBinding = 'TRACKLY_OPENAI_TOOL_SCOPES';
   assertActiveVariableInitializerAst(
     source,
     openaiScopesBinding,
-    `Object.freeze({
-      ...sharedToolScopes,
-      ...Object.fromEntries(Object.values(OPENAI_PROGRESS_ACTIONS).map(({ name }) => [name, ['apply:write'] as const])),
-      trackly_get_apply_progress: TRACKLY_PLUGIN_TOOL_SCOPES.trackly_get_apply_work,
-      trackly_get_apply_snapshot: TRACKLY_PLUGIN_TOOL_SCOPES.trackly_get_apply_work,
-    })`,
+    `Object.freeze(
+      Object.fromEntries(Object.entries(DIRECTORY_TOOLS as Record<string, DirectoryToolEntry>)
+        .filter(([, entry]) => entry.surfaces.includes('openai'))
+        .map(([name, entry]) => [name, entry.scopes])),
+    )`,
     sourcePath,
-  );
-  const openaiScopesReferences = collectBindingReferences(
-    activeVariableDeclarator(source, openaiScopesBinding, sourcePath).declarator.init,
-    name,
-    () => false,
   );
   const references = collectBindingReferences(ast, name, () => false);
   assert.deepEqual(
@@ -3258,11 +3524,9 @@ function assertImmutablePluginToolScopesSemantics(source, sourcePath) {
     [
       declaration.id,
       ...namesReferences,
-      sharedScopesStatements[0].declarations[0].init,
-      ...openaiScopesReferences,
       ...lockedFunctionReferences,
     ],
-    `${name} in ${sourcePath} must not be reassigned, mutated, aliased, escaped, or referenced outside its locked names catalog, OpenAI catalog derivation, and requiredScopesForPluginTool`,
+    `${name} in ${sourcePath} must not be reassigned, mutated, aliased, escaped, or referenced outside its locked names catalog and requiredScopesForPluginTool`,
   );
 }
 
@@ -3554,7 +3818,9 @@ function assertPluginUiContractSemantics(
   sourcePath,
   // close-ai #2705: the card accepts only the legacy or OpenAI resume path and
   // now also rejects an open URL with a query string; copy drops the accent.
-  { htmlAstSha256 = '70f7e4141deb76f0c53d3389c8bd60ba0a07d16076b57fab003c22b62562a891' } = {},
+  // close-ai #3462 (recaptured at 6cd11dfb): ui/initialize reports the imported
+  // TRACKLY_PLUGIN_VERSION (JSON-encoded) instead of the literal '1.0.0'.
+  { htmlAstSha256 = '00667f49eb669234c58df27ca340c66a856517fa90c4841045a7a2d85e188e1a' } = {},
 ) {
   assertActiveVariableInitializerAst(
     source,
@@ -3564,6 +3830,7 @@ function assertPluginUiContractSemantics(
   );
   assertImportBinding(source, 'MCP_ISSUER', 'MCP_ISSUER', './mcp-config.js', sourcePath);
   assertActiveVariableInitializerAst(source, 'UI_DOMAIN', 'MCP_ISSUER', sourcePath);
+  assertImportBinding(source, 'TRACKLY_PLUGIN_VERSION', 'TRACKLY_PLUGIN_VERSION', './plugin-version.js', sourcePath);
   assertActiveVariableInitializerAst(
     source,
     'TRACKLY_PLUGIN_UI',
@@ -7254,7 +7521,11 @@ function verifyCheckedInHostedContractFixture(
   assert.equal(fixture.formatVersion, 3);
   const commitPattern = /^[a-f0-9]{40}$/;
   assert.match(fixture.sourceRuntime.commit, commitPattern);
-  assert.match(fixture.sourceRuntime.parent, commitPattern);
+  assert.ok(
+    Array.isArray(fixture.sourceRuntime.parents) && [1, 2].includes(fixture.sourceRuntime.parents.length),
+    `${fixturePath} must record the reviewed runtime commit's one or two parents`,
+  );
+  for (const commit of fixture.sourceRuntime.parents) assert.match(commit, commitPattern);
   assert.match(fixture.mergedRuntime.commit, commitPattern);
   assert.deepEqual(
     fixture.mergedRuntime.parents.filter((commit) => commit === fixture.sourceRuntime.commit),
@@ -7295,7 +7566,7 @@ function verifyCheckedInHostedContractFixture(
     localApplyContract.sharedContractVersion || localApplyContract.contractVersion,
     `${fixturePath} must identify the checked-in shared Apply contract version it was captured against`,
   );
-  assert.equal(fixture.pluginContractVersion, '1.0.0');
+  assert.equal(fixture.pluginContractVersion, '1.1.0');
   const lock = JSON.parse(fs.readFileSync(path.join(path.dirname(fixturePath), 'skill-lock.json'), 'utf8'));
   const snapshotNames = fixture.publicTools.map(([name]) => name);
   assert.deepEqual(snapshotNames, lock.publicToolAllowlist, `${fixturePath} public tool-name snapshot drifted`);
@@ -7339,9 +7610,12 @@ function verifyCheckedInHostedContractFixture(
   ]);
   const localNames = localRegistrations.map(({ name }) => name);
   assert.equal(new Set(localNames).size, localNames.length, 'Executable local MCP names must be unique');
+  for (const name of PENDING_HOSTED_TOOLS) {
+    assert.ok(!lock.hostedMcpToolAllowlist.includes(name), `${name} is already in the hosted lock; remove its pending allowance`);
+  }
   assert.deepEqual(
     [...localNames].sort(),
-    [...lock.hostedMcpToolAllowlist.filter((name) => !HOSTED_ONLY_TOOLS.includes(name)), ...LOCAL_ONLY_TOOLS].sort(),
+    [...lock.hostedMcpToolAllowlist.filter((name) => !HOSTED_ONLY_TOOLS.includes(name)), ...LOCAL_ONLY_TOOLS, ...PENDING_HOSTED_TOOLS].sort(),
     'Executable local MCP registrations must exactly match the locked hosted catalog minus hosted-only chat plus local-only tools',
   );
   // The Apply registration call must be live: imported from ./apply-tools and
@@ -7364,6 +7638,12 @@ function verifyCheckedInHostedContractFixture(
     localServerSourcePath,
     { mustPrecedeSoleFinalReturn: true },
   );
+  // After every static check, so a static violation keeps its specific message.
+  assertRuntimeLocalCatalog(
+    cliRoot,
+    localNames,
+    'The runtime local MCP catalog must equal its statically scanned registrations',
+  );
   assert.deepEqual(fixture.sourceSha256, {
     pluginServer: lock.publicExecutableContract.pluginServerSha256,
     pluginScopes: lock.publicExecutableContract.pluginScopesSha256,
@@ -7376,6 +7656,9 @@ function verifyCheckedInHostedContractFixture(
     azureRateLimitOptions: lock.publicExecutableContract.azureRateLimitOptionsSha256,
     authRateLimit: lock.publicExecutableContract.authRateLimitSha256,
     applicationProfileService: lock.publicExecutableContract.applicationProfileServiceSha256,
+    autoApply: lock.publicExecutableContract.autoApplySha256,
+    statusStory: lock.publicExecutableContract.statusStorySha256,
+    toolFamilies: lock.publicExecutableContract.toolFamiliesSha256,
   }, `${fixturePath} hosted source snapshot drifted from the packaged executable lock`);
   for (const digest of [
     lock.publicExecutableContract.pluginServerSha256,
@@ -7389,11 +7672,14 @@ function verifyCheckedInHostedContractFixture(
     lock.publicExecutableContract.azureRateLimitOptionsSha256,
     lock.publicExecutableContract.authRateLimitSha256,
     lock.publicExecutableContract.applicationProfileServiceSha256,
+    lock.publicExecutableContract.autoApplySha256,
+    lock.publicExecutableContract.statusStorySha256,
+    lock.publicExecutableContract.toolFamiliesSha256,
     ...Object.values(lock.publicExecutableContract.descriptorSha256),
     ...Object.values(lock.publicExecutableContract.handlerSha256),
   ]) assert.match(digest, /^[a-f0-9]{64}$/);
   console.log(
-    `Historical hosted contract fixture passes for captured Apply ${fixture.applyContractVersion}; the ${snapshotNames.length}-tool public facade and ${fixture.hostedMcpToolNames.length}-tool hosted MCP catalogs are locked.`,
+    `Historical hosted contract fixture passes for captured Apply ${fixture.applyContractVersion}; the ${snapshotNames.length}-tool public facade and ${fixture.hostedMcpToolNames.length}-tool hosted MCP catalogs are locked; pending hosted registration (not deployed parity): ${PENDING_HOSTED_TOOLS.join(', ') || 'none'}.`,
   );
 }
 
@@ -8239,7 +8525,7 @@ assertExactHostedSourceSha256(
 );
 const hostedPluginOnboardingPath = path.join(backendRoot, 'src', 'mcp', 'plugin-onboarding.ts');
 const hostedPluginOnboardingSource = fs.readFileSync(hostedPluginOnboardingPath, 'utf8');
-for (const importedName of ['applyOnboardingSchema', 'buildApplyOnboarding', 'profileFieldReferenceSchema']) {
+for (const importedName of ['applyOnboardingSchema', 'buildApplyOnboarding', 'onboardingQuestions', 'profileFieldReferenceSchema']) {
   assertImportBinding(hostedPluginSource, importedName, importedName, './plugin-onboarding.js', hostedPluginSourcePath);
 }
 assertExactHostedSourceSha256(
@@ -8253,6 +8539,11 @@ assertActiveVariableInitializerAst(
   '10 * 1024 * 1024',
   hostedPluginSourcePath,
 );
+// close-ai #3462 (recaptured at 6cd11dfb): an optional caller AbortSignal bounds the
+// readiness account lookup, and the User-Agent reports the imported package version.
+assertImportBinding(
+  hostedPluginSource, 'TRACKLY_PLUGIN_VERSION', 'TRACKLY_PLUGIN_VERSION', './plugin-version.js', hostedPluginSourcePath,
+);
 assertActiveFunctionDefinitionAst(
   hostedPluginSource,
   'apiRequest',
@@ -8263,6 +8554,7 @@ assertActiveFunctionDefinitionAst(
     body?: unknown,
     extraHeaders: Record<string, string> = {},
     timeoutMs = 60_000,
+    signal?: AbortSignal,
   ): Promise<any> {
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -8280,12 +8572,13 @@ assertActiveFunctionDefinitionAst(
       const bodyString = body === undefined ? null : JSON.stringify(body);
       const request = https.request({
         method,
+        signal,
         hostname: url.hostname,
         port: url.port || 443,
         path: \`\${url.pathname}\${url.search}\`,
         headers: {
           Authorization: \`Bearer \${authToken}\`,
-          'User-Agent': \`trackly-plugin-mcp/\${PLUGIN_VERSION}\`,
+          'User-Agent': \`trackly-plugin-mcp/\${TRACKLY_PLUGIN_VERSION}\`,
           Accept: 'application/json',
           'Content-Type': 'application/json',
           ...(bodyString ? { 'Content-Length': String(Buffer.byteLength(bodyString)) } : {}),
@@ -8369,10 +8662,72 @@ assertActiveFunctionDefinitionAst(
   }`,
   hostedPluginSourcePath,
 );
+// close-ai #3604 (recaptured at 6a5b05f5): errorContent keeps the reviewed backend payload,
+// now built by backendErrorPayload, and adds one branch: a TrackerToolError (imported from the
+// Tracker handlers the hosted MCP already uses) carries its fixed-string payload, with Tracker
+// contact names and emails removed at any depth (R9), plus its HTTP status.
+assertImportBinding(hostedPluginSource, 'TrackerToolError', 'TrackerToolError', './tracker-tools.js', hostedPluginSourcePath);
+// close-ai #3536 (recaptured at 96781f59): errorContent returns a Trackly Apply (cloud) refusal
+// first, with the fixed per-surface payload src/mcp/auto-apply.ts builds (whole-byte locked as autoApply).
+for (const name of ['AutoApplyRefusal', 'autoApplyRefusalResult']) {
+  assertImportBinding(hostedPluginSource, name, name, './auto-apply.js', hostedPluginSourcePath);
+}
+// close-ai #3544 (recaptured at 5d443853): trackly_search_jobs and trackly_get_job append the
+// shared match-score status sentence imported from claude-tools.ts. Its exact text is part of
+// the classic descriptors, so the constant is locked here as well as its import.
+assertImportBinding(
+  hostedPluginSource, 'MATCH_SCORE_STATUS_DESCRIPTION', 'MATCH_SCORE_STATUS_DESCRIPTION', './claude-tools.js', hostedPluginSourcePath,
+);
+{
+  const claudeToolsPath = path.join(backendRoot, 'src', 'mcp', 'claude-tools.ts');
+  assertActiveVariableInitializerAst(
+    fs.readFileSync(claudeToolsPath, 'utf8'),
+    'MATCH_SCORE_STATUS_DESCRIPTION',
+    `'matchScoreStatus=pending means owned waiting parse or score work; '
+      + 'matchScoreReason=parse_required or score_required names a missing prerequisite without promising completion. '
+      + 'outside_scoring_window means outside the automatic 30-day window, description_unavailable means no usable '
+      + 'description, inactive means a closed posting, and not_scored means unknown. Saved scores take precedence; '
+      + 'a missing numeric score is unavailable.'`,
+    claudeToolsPath,
+  );
+}
 assertActiveFunctionDefinitionAst(
   hostedPluginSource,
   'errorContent',
   `function errorContent(error: any, fallback: string) {
+    if (error instanceof AutoApplyRefusal) return autoApplyRefusalResult(error);
+    const payload = error instanceof TrackerToolError
+      ? { ...withoutTrackerContacts(error.payload), status: error.status }
+      : backendErrorPayload(error, fallback);
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+      isError: true,
+    };
+  }`,
+  hostedPluginSourcePath,
+);
+assertActiveVariableInitializerAst(
+  hostedPluginSource,
+  'TRACKER_CONTACT_KEYS',
+  "new Set(['contactName', 'contactEmail'])",
+  hostedPluginSourcePath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedPluginSource,
+  'withoutTrackerContacts',
+  `function withoutTrackerContacts<T>(value: T): T {
+    if (Array.isArray(value)) return value.map(withoutTrackerContacts) as T;
+    if (!value || typeof value !== 'object') return value;
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => !TRACKER_CONTACT_KEYS.has(key))
+      .map(([key, child]) => [key, withoutTrackerContacts(child)])) as T;
+  }`,
+  hostedPluginSourcePath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedPluginSource,
+  'backendErrorPayload',
+  `function backendErrorPayload(error: any, fallback: string): Record<string, unknown> {
     const body = error?.responseBody;
     const payload: Record<string, unknown> = {
       error: typeof error?.message === 'string' ? error.message : fallback,
@@ -8394,10 +8749,7 @@ assertActiveFunctionDefinitionAst(
         .slice(0, 100);
     }
     if (typeof body?.retryable === 'boolean') payload.retryable = body.retryable;
-    return {
-      content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
-      isError: true,
-    };
+    return payload;
   }`,
   hostedPluginSourcePath,
 );
@@ -8458,7 +8810,9 @@ for (const [name, expectedDigest] of Object.entries(HOSTED_MCP_ANALYTICS_HELPER_
 assertImportedBindingNeverRedeclared(
   hostedPluginSource, 'captureHostedMcpTool', 'captureHostedMcpTool', './server.js', hostedPluginSourcePath,
 );
-const executablePluginRegistrations = directToolRegistrationsInExportedFunction(
+// close-ai #3604 (recaptured at 6a5b05f5): the factory options also carry the verified
+// token's userId and granted scopes (directory flags, Claude Apply allowlist, sensitive applicability).
+const allExecutablePluginRegistrations = directToolRegistrationsInExportedFunction(
   hostedPluginSource,
   'createTracklyPluginMcpServer',
   'registerPluginTool',
@@ -8467,9 +8821,20 @@ const executablePluginRegistrations = directToolRegistrationsInExportedFunction(
     requireUiResourceLoop: true,
     expectedParameters: `authToken: string, requestApi: PluginApiRequest = apiRequest, prepareResume?: () => Promise<PluginResumePreview>,
       resumePath = '/api/plugin/trackly/mcp/resume',
-      options: { surface: 'legacy' | 'openai' | 'muse' | 'claude' } = { surface: 'legacy' }`,
+      options: {
+        surface: 'legacy' | 'openai' | 'muse' | 'claude';
+        userId?: number;
+        grantedScopes?: readonly string[];
+      } = { surface: 'legacy' }`,
     lockedPrefixSource: HOSTED_PLUGIN_FACTORY_PREFIX_SOURCE,
-    expectedPrefixDeclarators: ['server', 'searchJobsRequest', 'claudeSearchJobs', 'registerPluginTool'],
+    expectedPrefixDeclarators: [
+      'server', 'searchJobsRequest', 'claudeSearchJobs', 'hiddenToolNames', 'directoryProfilePath',
+      'claudeApplyAllowed', 'registerPluginTool',
+    ],
+    lockedInterRegistrationSource: HOSTED_PLUGIN_FACTORY_INTER_REGISTRATION_SOURCE,
+    lockedTailSuffixSource: HOSTED_PLUGIN_FACTORY_TAIL_SUFFIX_SOURCE,
+    // close-ai #3462: the server reports the imported published package version.
+    serverVersionIdentifier: 'TRACKLY_PLUGIN_VERSION',
     // close-ai #2777/#3180: Muse and Claude publish no Apply UI cards; #2705
     // renders each card with the surface's own resume path.
     uiResourceLoopSource: `const uiResources = Object.entries(TRACKLY_PLUGIN_UI) as Array<[keyof typeof TRACKLY_PLUGIN_UI, string]>;
@@ -8494,9 +8859,60 @@ const executablePluginRegistrations = directToolRegistrationsInExportedFunction(
   }`,
   },
 );
+// close-ai #3604 (recaptured at 6a5b05f5): the factory also registers eleven
+// directory-only tools for ChatGPT and Claude. The locked prefix returns before
+// registering any name outside contracts/trackly-plugin-tools.json on the classic
+// surface (KTD1). close-ai #3536 (1.1.0) added only trackly_auto_apply and
+// trackly_auto_apply_status to the classic facade, now 23 tools. Each directory-only
+// registration is pinned here by exact name, annotations, descriptor bytes and handler
+// bytes; its scopes come from the byte-locked directory surface registry.
+const HOSTED_DIRECTORY_ONLY_PLUGIN_TOOLS = Object.freeze({
+  trackly_get_application_profile: Object.freeze({ annotations: 'readOnlyAnnotations', descriptorSha256:
+    'f9aadd63b5ba6f08e950515437ac4fc024adc3914edf148f9109de228b5ed66e',
+    handlerSha256: '9f7ca65c791b618107537ce5e2c4781210caea96bab8c71984ecbec3802707a5' }),
+  trackly_get_profile_onboarding: Object.freeze({ annotations: 'readOnlyAnnotations', descriptorSha256:
+    'd1d3e1c430b8a16732470b72d956c230defaa33ac70c885261b0fd70a16d3de0',
+    handlerSha256: '7da022b5e08e2447a8dbfd1fe83e011bd6d6a0dc7412a887befb0630d79c9288' }),
+  trackly_list_companies: Object.freeze({ annotations: 'readOnlyAnnotations', descriptorSha256:
+    'ccc31b4b80914d0266c5a1a6536b6dfaa51bce10f1bbc52d3fbf42c889d2f7fa',
+    handlerSha256: 'db691a80b5c2692898a5649eed8dfc692a7ab5383f867da657fd86f7f90f873f' }),
+  trackly_request_company: Object.freeze({ annotations: 'mutationAnnotations(false, false)', descriptorSha256:
+    '19db72560ee2fec16424d7447dd5e41c7924008a6624b920cefb448109bcd612',
+    handlerSha256: '828927ac81b6abecac2d72ad4ef758e778dd11b60a4f8d700941f8be1e8f1ba9' }),
+  trackly_update_experience_limits: Object.freeze({ annotations: 'mutationAnnotations(true, false)', descriptorSha256:
+    'dcbb3e59b0b196002548e8db52f17b1669fdc878426e7e84aa2875e1cc340438',
+    handlerSha256: '52a844e89f5afb55d2aa720a217760cb3e55083d38f55168dd739ca17dcfd15c' }),
+  trackly_list_tracker_applications: Object.freeze({ annotations: 'readOnlyAnnotations', descriptorSha256:
+    'fe9335c93ef054c00db13fbe3ff7aa270facc694d012d141a95f611fabeeb985',
+    handlerSha256: 'b79f39148a04762e2d1bea7454c5ff27ef1beb4518243fc4b01b8772b913bdd1' }),
+  trackly_create_tracker_application: Object.freeze({ annotations: 'mutationAnnotations(true, true)', descriptorSha256:
+    'c06a00f7d2cacab54a82ca5c3db0d7e5765ea1e0d7b6a9fcf1f8c2596208e7d4',
+    handlerSha256: 'ce17b9049b513c0ac5d71c6bccf1d0bcb405bc32d8aeceb5d88c10c5840e6e00' }),
+  trackly_update_tracker_stage: Object.freeze({ annotations: 'mutationAnnotations(true, true)', descriptorSha256:
+    '63b7bb71391178d1c632922b8ed439f4733182dc3649cd270e0583d8a4d4b68b',
+    handlerSha256: '7a51cd6cb4390e91d554842877003a08a40275fd761f31fb11d75c2d9b141472' }),
+  trackly_add_tracker_note: Object.freeze({ annotations: 'mutationAnnotations(false, true)', descriptorSha256:
+    '36d99505238ac95e3d46390ec1e66f84d0938105e1c949e50ce4dc5f935e6e97',
+    handlerSha256: 'fb642951a7c2e6486aff236088f607e92f1ced139521b430f099e92f0c757f59' }),
+  trackly_retract_tracker_event: Object.freeze({ annotations: 'mutationAnnotations(true, true)', descriptorSha256:
+    '239873b93635709bdc30ba0c18dca33525a94e8f163895f5cf830c0a310c0eea',
+    handlerSha256: 'bb324147e7664f3e083fedeca33afe26822c7eb83c04e4b98a4c67114ec3f505' }),
+  trackly_get_apply_queue: Object.freeze({ annotations: 'readOnlyAnnotations', descriptorSha256:
+    '1c05ef26663fa169d8540b1aa908e56dd22e6155e3200a9afa62e2ce28d8baa7',
+    handlerSha256: '067787364228376d289733e6ee07525f3eb04490a307ec82fbea37c033016ad2' }),
+});
+const directoryOnlyPluginRegistrations = allExecutablePluginRegistrations
+  .filter(({ name }) => Object.hasOwn(HOSTED_DIRECTORY_ONLY_PLUGIN_TOOLS, name));
+assert.deepEqual(
+  directoryOnlyPluginRegistrations.map(({ name }) => name).sort(),
+  Object.keys(HOSTED_DIRECTORY_ONLY_PLUGIN_TOOLS).sort(),
+  'Executable hosted plugin source must register each reviewed directory-only tool exactly once',
+);
+const executablePluginRegistrations = allExecutablePluginRegistrations
+  .filter(({ name }) => !Object.hasOwn(HOSTED_DIRECTORY_ONLY_PLUGIN_TOOLS, name));
 const executablePluginTools = executablePluginRegistrations.map((registration) => registration.name);
 const sortedExecutablePluginTools = [...executablePluginTools].sort();
-assert.equal(hostedPluginContract.contractVersion, '1.0.0');
+assert.equal(hostedPluginContract.contractVersion, '1.1.0');
 assert.deepEqual(
   hostedPluginContract.lifecycle,
   pluginLock.publicLifecycleContract,
@@ -8515,6 +8931,24 @@ const executableScopeContract = staticStringArrayMap(
   hostedPluginScopesPath,
 );
 assertMcpScopeHelperSemantics(hostedMcpScopesSource, hostedMcpScopesPath);
+// close-ai #3604 (recaptured at 6a5b05f5): the directory surface registry is the only
+// source of the ChatGPT and Claude scope rows (directory-native, KTD3), the runtime
+// surface:group flags and the Claude Apply allowlist, all failing closed (KTD8). It is
+// whole-byte locked, as plugin-scopes.ts is, so any scope, flag or allowlist change
+// needs a reviewed recapture.
+const HOSTED_DIRECTORY_SURFACE_REGISTRY_SHA256 = '63a5663b5ef412c09bfceb75b392a574032cd37c78279a6f863d4742fe073758';
+const hostedDirectoryRegistryPath = path.join(backendRoot, 'src', 'mcp', 'directory-surface-registry.ts');
+assertExactHostedSourceSha256(
+  fs.readFileSync(hostedDirectoryRegistryPath, 'utf8'),
+  HOSTED_DIRECTORY_SURFACE_REGISTRY_SHA256,
+  hostedDirectoryRegistryPath,
+);
+for (const importedName of [
+  'directoryToolUnavailableReason', 'directoryUnavailableResult', 'claudeApplyAllowedForUser',
+  'isDirectoryToolHidden', 'isDirectoryToolOn',
+]) {
+  assertImportBinding(hostedPluginSource, importedName, importedName, './directory-surface-registry.js', hostedPluginSourcePath);
+}
 assertImmutablePluginScopeFreeMethods(hostedPluginScopesSource, hostedPluginScopesPath);
 assertImmutablePluginToolScopesSemantics(hostedPluginScopesSource, hostedPluginScopesPath);
 assertJsonRpcResponseClassifierSemantics(hostedPluginScopesSource, hostedPluginScopesPath);
@@ -8568,23 +9002,26 @@ assert.equal(
 assertActiveFunctionDefinitionAst(
   hostedPluginScopesSource,
   'requiredScopesForPluginTool',
+  // close-ai #3604 (recaptured at 6a5b05f5): Muse keeps the legacy rows; ChatGPT and
+  // Claude read only their own published rows from the byte-locked directory registry
+  // (directory-native scopes, KTD3); the classic surface reads only the legacy map.
   `function requiredScopesForPluginTool(toolName: string, surface: PluginToolSurface = 'legacy'): McpScope[] | null {
-  // Muse and Claude serve their own catalogs on the legacy scope rows; neither
-  // may fall through to the OpenAI map.
+  // Muse serves its own catalog on the legacy scope rows; it never falls
+  // through to the directory registry.
   if (surface === 'muse') {
     if (!isMuseToolName(toolName)) return null;
     return requiredScopesForPluginTool(toolName, 'legacy');
   }
-  if (surface === 'claude') {
-    if (!isClaudeToolName(toolName)) return null;
-    return requiredScopesForPluginTool(toolName, 'legacy');
+  if (surface === 'openai' || surface === 'claude') {
+    const entry = directoryToolEntry(toolName);
+    return entry?.surfaces.includes(surface) ? [...entry.scopes] : null;
   }
-  const catalog = surface === 'legacy' ? TRACKLY_PLUGIN_TOOL_SCOPES : TRACKLY_OPENAI_TOOL_SCOPES;
-  if (!Object.hasOwn(catalog, toolName)) return null;
-  return [...(catalog as Record<string, readonly McpScope[]>)[toolName]];
+  if (!Object.hasOwn(TRACKLY_PLUGIN_TOOL_SCOPES, toolName)) return null;
+  return [...(TRACKLY_PLUGIN_TOOL_SCOPES as Record<string, readonly McpScope[]>)[toolName]];
 }`,
   hostedPluginScopesPath,
 );
+// close-ai #3604: a directory profile read that asks for sensitive values also needs sensitive:read.
 assertActiveFunctionDefinitionAst(
   hostedPluginScopesSource,
   'requiredScopesForPluginToolCall',
@@ -8599,6 +9036,9 @@ assertActiveFunctionDefinitionAst(
   const input = args as Record<string, unknown>;
   if (toolName === 'trackly_prepare_resume_artifact' && input.operation === 'preview') {
     required.push('profile:read', 'sensitive:read');
+  }
+  if (toolName === 'trackly_get_application_profile' && input.includeSensitive === true) {
+    required.push('sensitive:read');
   }
   if (toolName === 'trackly_update_status' && input.action === 'applied' && surface !== 'muse') {
     required.push('apply:write');
@@ -8870,7 +9310,7 @@ assert.deepEqual(
   'Packaged public scope lock must cover every hosted plugin tool',
 );
 assert.ok(
-  executablePluginTools.every((name) => !/referral|contact|outreach|trackly_chat|(?:^|_)submit(?:_|$)/.test(name)),
+  allExecutablePluginRegistrations.every(({ name }) => !/referral|contact|outreach|trackly_chat|(?:^|_)submit(?:_|$)/.test(name)),
   'Hosted plugin must not expose referral, contact, outreach, or agent-in-agent tools',
 );
 assert.ok(
@@ -8933,7 +9373,54 @@ const mutationAnnotationContract = {
   trackly_certify_review_ready: 'mutationAnnotations(false, true)',
   trackly_reconcile_manual_submission: 'mutationAnnotations(false, true)',
   trackly_stop_apply: 'mutationAnnotations(true, true)',
+  // close-ai #3536: the shared constant below, equal to mutationAnnotations(true, false).
+  trackly_auto_apply: 'AUTO_APPLY_TOOL_ANNOTATIONS',
 };
+assertImportBinding(
+  hostedPluginSource, 'AUTO_APPLY_TOOL_ANNOTATIONS', 'AUTO_APPLY_TOOL_ANNOTATIONS', './auto-apply.js', hostedPluginSourcePath,
+);
+{
+  const autoApplySourcePath = path.join(backendRoot, 'src', 'mcp', 'auto-apply.ts');
+  assertActiveVariableInitializerAst(
+    fs.readFileSync(autoApplySourcePath, 'utf8'),
+    'AUTO_APPLY_TOOL_ANNOTATIONS',
+    `Object.freeze({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    })`,
+    autoApplySourcePath,
+  );
+}
+{
+  // close-ai #3536: jobAutoApplySupported uses assistPostingTarget, the enqueue's own scope lock.
+  // lib/auto-apply.js mirrors both, so the hosted table and function are locked to the npm copy.
+  const assistRequestsPath = path.join(backendRoot, 'src', 'services', 'application-profile', 'assist-requests.ts');
+  const assistRequestsSource = fs.readFileSync(assistRequestsPath, 'utf8');
+  const { ASSIST_POSTING_HOSTS: localAssistPostingHosts } = require(path.join(cliRoot, 'lib', 'auto-apply.js'));
+  assertActiveVariableInitializerAst(
+    assistRequestsSource,
+    'ASSIST_POSTING_HOSTS',
+    `{ ${Object.entries(localAssistPostingHosts).map(([host, ats]) => `${JSON.stringify(host)}: ${JSON.stringify(ats)}`).join(', ')} }`,
+    assistRequestsPath,
+  );
+  assertActiveFunctionDefinitionAst(
+    assistRequestsSource,
+    'assistPostingTarget',
+    `function assistPostingTarget(postingUrl: string | null) {
+      let url: URL;
+      try {
+        url = new URL(postingUrl ?? '');
+      } catch {
+        return null;
+      }
+      const ats = url.protocol === 'https:' ? ASSIST_POSTING_HOSTS[url.host] : undefined;
+      return ats ? { host: url.host, ats } : null;
+    }`,
+    assistRequestsPath,
+  );
+}
 for (const toolName of executablePluginTools) {
   const annotations = registrationDescriptorPropertyAst(
     hostedPluginSource,
@@ -8984,6 +9471,23 @@ assert.deepEqual(
   executableHandlerDigests,
   pluginLock.publicExecutableContract.handlerSha256,
   'Executable hosted plugin handler implementations drifted from the packaged exact-byte behavior digest lock',
+);
+for (const registration of directoryOnlyPluginRegistrations) {
+  const expected = HOSTED_DIRECTORY_ONLY_PLUGIN_TOOLS[registration.name];
+  assert.deepEqual(
+    canonicalSchemaAst(registrationDescriptorPropertyAst(hostedPluginSource, registration, 'annotations', hostedPluginSourcePath)),
+    canonicalSchemaAst(parseExpectedExpression(expected.annotations, `${registration.name}.annotations contract`)),
+    `${registration.name} must publish its locked annotations ${expected.annotations}`,
+  );
+}
+assert.deepEqual(
+  Object.fromEntries(directoryOnlyPluginRegistrations.map((registration) => {
+    const [, descriptor, handler] = registrationArgumentSources(hostedPluginSource, registration, hostedPluginSourcePath);
+    return [registration.name, { descriptorSha256: sha256ExactBytes(descriptor), handlerSha256: sha256ExactBytes(handler) }];
+  })),
+  Object.fromEntries(Object.entries(HOSTED_DIRECTORY_ONLY_PLUGIN_TOOLS)
+    .map(([name, { descriptorSha256, handlerSha256 }]) => [name, { descriptorSha256, handlerSha256 }])),
+  'Executable directory-only plugin descriptors or handlers drifted from their reviewed exact-byte digests',
 );
 assert.equal(
   sha256ExactBytes(hostedPluginSource),
@@ -9274,6 +9778,11 @@ assert.equal(
   executableLocalToolNames.length,
   'Executable local MCP source must not register a tool name more than once',
 );
+assertRuntimeLocalCatalog(
+  cliRoot,
+  executableLocalToolNames,
+  'The runtime local MCP catalog must equal its statically scanned registrations',
+);
 assert.deepEqual(
   [...executableLocalToolNames].sort(),
   [
@@ -9483,9 +9992,21 @@ assertDescriptorUsesTopLevelBinding(
   'readinessOutputSchema',
   hostedPluginSourcePath,
 );
+// close-ai #3462 (recaptured at 6cd11dfb): readiness also reads the caller's own
+// /api/jobscout/me, bounded by the orchestration timeout, only to report a masked
+// sign-in email (maskConnectedEmail below) and its availability.
+assertWrappedHandlerDirectStatementAst(
+  readinessRegistration,
+  `const accountRequest = requestApi(
+    'GET', '/api/jobscout/me', authToken, undefined, {},
+    APPLY_ORCHESTRATION_REQUEST_TIMEOUT_MS, accountController.signal,
+  ).finally(() => clearTimeout(accountDeadline));`,
+  hostedPluginSourcePath,
+);
 assertWrappedHandlerDirectStatementAst(
   readinessRegistration,
   `return projectApplyReadiness({
+    accountResponse: value(accountResult),
     schema: value(schemaResult),
     profileResponse: value(profileResult),
     queue: value(queueResult),
@@ -9507,6 +10028,14 @@ const readinessRootProperties = schemaObjectPropertyAsts(
   hostedPluginSourcePath,
 );
 assert.ok(readinessRootProperties.profile, 'readinessOutputSchema is missing profile');
+// close-ai #3462: the only identity readiness publishes is the masked sign-in email.
+assertSchemaPropertyExpression(
+  readinessRootProperties,
+  'account',
+  `z.object({ maskedEmail: z.string().nullable() }).strict()
+    .describe('Connected sign-in account, with the email local part masked. Never the application email or an internal user ID.')`,
+  'readinessOutputSchema',
+);
 const readinessProperties = namedProperties(
   objectSchemaProperties(readinessRootProperties.profile, 'readinessOutputSchema.profile'),
   'readinessOutputSchema.profile',
@@ -9522,9 +10051,13 @@ const readinessProfileContract = {
   confirmed: 'z.boolean()',
   sensitiveStorageConsent: 'z.boolean()',
   defaultResumeAvailable: 'z.boolean()',
+  // close-ai #3462: parse status only (an enum or null), never resume content.
+  defaultResumeParseStatus: `z.enum(['parsed', 'pending', 'failed']).nullable()
+    .describe('Default resume parsing only; null means no default resume or unavailable status. Parsed does not establish Apply readiness or upload approval.')`,
   completeness: 'z.object({ completed: nullableCountSchema, total: nullableCountSchema, percent: nullableCountSchema }).strict()',
   missingRequired: 'z.array(profileFieldReferenceSchema).max(100)',
-  availableFields: 'z.array(profileFieldReferenceSchema).max(100)',
+  availableFields: `z.array(profileFieldReferenceSchema).max(100)
+    .describe('Saved resolved fields, including intentionally blank and declined answers. System defaults are excluded.')`,
 };
 assertExactSchemaProperties(
   readinessProperties,
@@ -9636,37 +10169,11 @@ for (const statement of [
   `const rawProfile = profileResponse?.profile;`,
   `const profileBodyAvailable = availability.profile && readinessProfileAvailable(rawProfile);`,
   `const profile: any = profileBodyAvailable ? rawProfile : undefined;`,
-  `const fieldLabels = new Map<string, string>(
-    (Array.isArray(safeSchema?.fields) ? safeSchema.fields : []).flatMap((field: unknown) => {
-      if (!field || typeof field !== 'object' || Array.isArray(field)) return [];
-      const value = field as Record<string, unknown>;
-      return typeof value.key === 'string' && typeof value.label === 'string'
-        ? [[value.key, value.label] as const]
-        : [];
-    }),
-  );`,
-  // close-ai #3158: the two whole-collection requirements get fixed labels from
-  // the locked PROFILE_COLLECTION_LABELS constant.
-  `for (const [key, label] of PROFILE_COLLECTION_LABELS) fieldLabels.set(key, label);`,
-  `for (const field of Array.isArray(safeSchema?.educationFields) ? safeSchema.educationFields : []) {
-    if (!field || typeof field !== 'object' || Array.isArray(field)) continue;
-    const value = field as Record<string, unknown>;
-    if (typeof value.key === 'string' && typeof value.label === 'string') {
-      fieldLabels.set(\`education.\${value.key}\`, value.label);
-    }
-  }`,
-  `const missingRequiredKeys = Array.isArray(profile?.completeness?.missingKeys)
-    ? (profile.completeness.missingKeys as unknown[]).flatMap((key): string[] => (
-      readinessMissingProfileKey(key)
-        ? [key]
-        : []
-    )).slice(0, 100)
-    : [];`,
-  `const missingRequired = missingRequiredKeys.flatMap((key) => (
-    key === 'documents.default_resume' && schemaProjectionAvailable
-      ? [{ key, label: 'Default resume' }]
-      : fieldLabels.has(key) ? [{ key, label: fieldLabels.get(key)! }] : []
-  ));`,
+  // close-ai #3604 (recaptured at 6a5b05f5): the schema label map and the missing-required
+  // projection are extracted unchanged into schemaFieldLabels and missingRequiredFields
+  // (both locked exactly below), which the directory setup-status read also uses.
+  `const fieldLabels = schemaFieldLabels(safeSchema);`,
+  `const { missingRequiredKeys, missingRequired } = missingRequiredFields(profile, fieldLabels, schemaProjectionAvailable);`,
   `const profileProjectionAvailable = schemaProjectionAvailable
     && profileBodyAvailable
     && missingRequired.length === missingRequiredKeys.length;`,
@@ -9682,11 +10189,14 @@ for (const statement of [
         && typeof profile.fields[key] === 'object'
         && !Array.isArray(profile.fields[key])
         && RESOLVED_PROFILE_STATES.has(profile.fields[key].state)
+        && profile.fields[key].source !== CATALOG_DEFAULT_SOURCE
       ))
       .sort()
       .slice(0, 100)
       .map((key) => ({ key, label: fieldLabels.get(key)! }))
     : [];`,
+  // close-ai #3462: the masked email is projected only from a successful /me response.
+  `const maskedEmail = accountResponse?.success === true ? maskConnectedEmail(accountResponse.user?.email) : null;`,
 ]) {
   assertActiveFunctionDirectStatementAst(
     hostedPluginSource,
@@ -9696,10 +10206,85 @@ for (const statement of [
   );
 }
 
+// close-ai #3604: the readiness helpers extracted from projectApplyReadiness. The
+// label map still takes only static key/label pairs, the two locked collection labels
+// and education labels; missing keys still pass readinessMissingProfileKey and cap at 100.
+assertActiveFunctionDefinitionAst(
+  hostedPluginSource,
+  'schemaFieldLabels',
+  `function schemaFieldLabels(safeSchema: any): Map<string, string> {
+    const fieldLabels = new Map<string, string>(
+      (Array.isArray(safeSchema?.fields) ? safeSchema.fields : []).flatMap((field: unknown) => {
+        if (!field || typeof field !== 'object' || Array.isArray(field)) return [];
+        const value = field as Record<string, unknown>;
+        return typeof value.key === 'string' && typeof value.label === 'string'
+          ? [[value.key, value.label] as const]
+          : [];
+      }),
+    );
+    for (const [key, label] of PROFILE_COLLECTION_LABELS) fieldLabels.set(key, label);
+    for (const field of Array.isArray(safeSchema?.educationFields) ? safeSchema.educationFields : []) {
+      if (!field || typeof field !== 'object' || Array.isArray(field)) continue;
+      const value = field as Record<string, unknown>;
+      if (typeof value.key === 'string' && typeof value.label === 'string') {
+        fieldLabels.set(\`education.\${value.key}\`, value.label);
+      }
+    }
+    return fieldLabels;
+  }`,
+  hostedPluginSourcePath,
+);
+assertActiveFunctionDefinitionAst(
+  hostedPluginSource,
+  'missingRequiredFields',
+  `function missingRequiredFields(profile: any, fieldLabels: Map<string, string>, schemaAvailable: boolean) {
+    const missingRequiredKeys = Array.isArray(profile?.completeness?.missingKeys)
+      ? (profile.completeness.missingKeys as unknown[]).flatMap((key): string[] => (
+        readinessMissingProfileKey(key)
+          ? [key]
+          : []
+      )).slice(0, 100)
+      : [];
+    const missingRequired = missingRequiredKeys.flatMap((key) => (
+      key === 'documents.default_resume' && schemaAvailable
+        ? [{ key, label: 'Default resume' }]
+        : fieldLabels.has(key) ? [{ key, label: fieldLabels.get(key)! }] : []
+    ));
+    return { missingRequiredKeys, missingRequired };
+  }`,
+  hostedPluginSourcePath,
+);
+assertImportBinding(
+  hostedPluginSource,
+  'CATALOG_DEFAULT_SOURCE',
+  'CATALOG_DEFAULT_SOURCE',
+  '../services/application-profile/profile-derived.js',
+  hostedPluginSourcePath,
+);
+// close-ai #3462: keeps the first and last character of a local part longer than two
+// characters and the domain; anything malformed or over 254 characters becomes null.
+assertActiveFunctionDefinitionAst(
+  hostedPluginSource,
+  'maskConnectedEmail',
+  `function maskConnectedEmail(value: unknown): string | null {
+    if (typeof value !== 'string' || value.length > 254) return null;
+    const match = /^([^\\s@<>]+)@([a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\\.[a-z]{2,})$/i.exec(value);
+    if (!match) return null;
+    const [, local, domain] = match;
+    return \`\${local.length > 2 ? \`\${local[0]}•••••\${local.at(-1)}\` : '•••••'}@\${domain}\`;
+  }`,
+  hostedPluginSourcePath,
+);
 const readinessProjectionProperties = functionSoleReturnObjectProperties(
   hostedPluginSource,
   'projectApplyReadiness',
   hostedPluginSourcePath,
+);
+assertBabelPropertyExpression(
+  readinessProjectionProperties,
+  'account',
+  '{ maskedEmail }',
+  'projectApplyReadiness projection',
 );
 const readinessProfileProjectionProperties = staticBabelObjectProperties(
   readinessProjectionProperties.profile,
@@ -9711,6 +10296,14 @@ assertBabelPropertyExpression(
   'missingRequired',
   'projectApplyReadiness profile projection',
 );
+assertBabelPropertyExpression(
+  readinessProfileProjectionProperties,
+  'defaultResumeParseStatus',
+  `['parsed', 'pending', 'failed'].includes(profile?.defaultResume?.parseStatus)
+    ? profile.defaultResume.parseStatus as 'parsed' | 'pending' | 'failed'
+    : null`,
+  'projectApplyReadiness profile projection',
+);
 const readinessAvailability = readinessProjectionProperties.availability;
 assert.equal(
   readinessAvailability?.type,
@@ -9719,14 +10312,20 @@ assert.equal(
 );
 assert.equal(
   readinessAvailability.properties.length,
-  3,
-  'projectApplyReadiness availability must preserve base status plus locked schema/profile availability',
+  4,
+  'projectApplyReadiness availability must preserve base status plus locked account/schema/profile availability',
 );
 assert.equal(readinessAvailability.properties[0]?.type, 'SpreadElement');
 assert.equal(readinessAvailability.properties[0]?.argument?.type, 'Identifier');
 assert.equal(readinessAvailability.properties[0]?.argument?.name, 'availability');
 const readinessAvailabilityProperties = staticBabelObjectProperties(
   { ...readinessAvailability, properties: readinessAvailability.properties.slice(1) },
+  'projectApplyReadiness availability projection',
+);
+assertBabelPropertyExpression(
+  readinessAvailabilityProperties,
+  'account',
+  'accountResponse?.success === true',
   'projectApplyReadiness availability projection',
 );
 assertBabelPropertyExpression(
@@ -9764,7 +10363,8 @@ const applyOutputContract = {
   batchId: 'nullableCountSchema',
   memberIds: 'z.array(z.number().int().min(1)).max(APPLY_EXECUTION_MAX_TARGET)',
   proposedWave: 'applyProposedWaveOutputSchema.optional()',
-  nextAction: "z.enum(['work_ready', 'use_active_target', 'advance_or_refresh', 'restart_after_reauthorization', 'access_review', 'complete', 'manual_review', 'capability_disabled'])",
+  // close-ai #3413/#3418: a plan refusal with no prepared work reports limit_reached.
+  nextAction: "z.enum(['work_ready', 'use_active_target', 'advance_or_refresh', 'restart_after_reauthorization', 'access_review', 'complete', 'manual_review', 'capability_disabled', 'limit_reached'])",
   noSubmit: 'z.literal(true)',
 };
 assert.deepEqual(
@@ -10225,7 +10825,8 @@ const progressOutputContract = {
     replay: z.boolean(),
   }).strict().optional()`,
   proposedWave: 'applyProposedWaveOutputSchema.optional()',
-  nextAction: "z.enum(['work_ready', 'access_review', 'advance_or_refresh', 'capability_disabled']).optional()",
+  // close-ai #3413/#3418: a plan refusal with no prepared work reports limit_reached.
+  nextAction: "z.enum(['work_ready', 'access_review', 'advance_or_refresh', 'capability_disabled', 'limit_reached']).optional()",
   noSubmit: 'z.literal(true)',
 };
 assert.deepEqual(
@@ -10446,10 +11047,20 @@ assertPluginManualSubmissionRouteSemantics(
         idempotencyKey: applyIdempotencyKey(req),
       }, applyRunCallerContext(req));
       res.json({ success: true, ...result });
+      // close-ai #3619 (recaptured at 8f7ba68e): after the response, the recorded manual
+      // submission also makes sure the job has its one Tracker entry; it never throws.
+      void ensureTrackerEntriesForSubmittedRuns(pool, userId(req)!, [positiveInteger(req.params.id, 'Apply run id')]);
     } catch (error) {
       sendError(res, error);
     }
   });`,
+);
+assertImportBinding(
+  hostedTracklyApplySource,
+  'ensureTrackerEntriesForSubmittedRuns',
+  'ensureTrackerEntriesForSubmittedRuns',
+  '../services/waypoint/ensure-applied.js',
+  hostedTracklyApplyPath,
 );
 
 const stopRegistration = pluginToolRegistration('trackly_stop_apply');
@@ -10476,6 +11087,24 @@ assertWrappedHandlerAst(
   )`,
   hostedPluginSourcePath,
 );
+
+// close-ai #3619 (KTD11): mcp/tool-families.js must equal close-ai's family
+// registry for every shared tool name, so npm titles and tags cannot drift.
+assert.deepEqual(
+  require('./verify-tool-families').verifyBackendDir(backendRoot),
+  [],
+  'mcp/tool-families.js drifted from close-ai src/mcp/tool-families.ts',
+);
+// The registry comparison covers data only. How close-ai joins the tag, the family sentence
+// and the description, and how it sets title and annotations.title, is locked here, so a change
+// to that composition (which npm mirrors in descriptionPrefix/labelRegisteredTool) fails the gate.
+{
+  const toolFamiliesPath = path.join(backendRoot, 'src', 'mcp', 'tool-families.ts');
+  const toolFamiliesSource = fs.readFileSync(toolFamiliesPath, 'utf8');
+  for (const [name, digest] of Object.entries(HOSTED_TOOL_FAMILY_COMPOSITION_AST_SHA256)) {
+    assertActiveFunctionAstSha256(toolFamiliesSource, name, digest, toolFamiliesPath);
+  }
+}
 
 console.log(
   `Trackly Apply local contract ${local.contractVersion} matches shared hosted contract ${sharedLocal.contractVersion}; the ${hostedPluginTools.length}-tool public plugin facade matches at ${hostedPluginContract.contractVersion}.`,

@@ -35,9 +35,23 @@ trackly jobs --function product
 
 ## At a Glance
 
-5,400+ companies | 250K+ jobs | 40+ ATS types | CLI + MCP | 60 local + 57 hosted MCP tools
+5,400+ companies | 250K+ jobs | 40+ ATS types | CLI + MCP | 67 local + 64 hosted MCP tools
 
 ## CLI Commands
+
+Trackly offers three different ways to handle an application. They are never mixed up:
+
+| | What happens | How |
+|---|---|---|
+| **Trackly Apply (local)** | Your own AI agent (Claude in Chrome, Codex or computer use) fills the application in your browser on your computer and stops before Submit. You submit. | `trackly agent setup` installs the Trackly Apply (local) skill and MCP; then ask your agent to use Trackly Apply (local). |
+| **Trackly Apply (cloud)** | You only request it. Trackly applies to the employer for you with your default resume (or `--resume-id`) and every saved profile answer, sensitive ones included, and notifies you; nothing runs on your computer. US Greenhouse, Lever and Ashby postings; each request counts toward your Trackly Apply (cloud) allowance. | `trackly auto-apply <jobId>`; check progress with `trackly auto-apply --status`. Agents use the MCP tools `trackly_auto_apply` and `trackly_auto_apply_status`. |
+| **Mark applied** | You applied on your own and record it. The job also goes on your Tracker board. | `trackly mark-applied <jobId>` (`trackly apply <jobId>` does the same, for existing scripts). |
+
+`trackly apply` with no job ID prints this summary.
+
+Plan response errors in `--json` mode emit a structured object
+on stdout and exit nonzero; check the exit code before treating output as a
+successful result.
 
 ```bash
 trackly jobs                          # List jobs
@@ -58,10 +72,15 @@ trackly status                        # Alias for stats
 trackly preferences                   # Show discovery preferences and experience limits
 trackly preferences experience product=2 strategy=5  # Replace role-specific limits
 trackly preferences experience clear # Turn role-specific experience filtering off
-trackly apply 1234                    # Mark as applied
+trackly apply                         # How to apply with Trackly (Trackly Apply (local), Trackly Apply (cloud), mark applied)
+trackly mark-applied 1234             # Record a job you applied to yourself
+trackly apply 1234                    # Same as mark-applied (kept for existing scripts)
+trackly auto-apply 1234               # Request Trackly Apply (cloud): Trackly applies for you
+trackly auto-apply --status           # List your Trackly Apply (cloud) requests
+trackly auto-apply --help             # What Trackly Apply (cloud) does, next to the other two ways
 trackly save 1234                     # Save a job
 trackly dismiss 1234                  # Dismiss a job
-trackly ask "PM jobs in SF"           # Natural language search (20/day)
+trackly ask "PM jobs in SF"           # Natural language search
 trackly contacts "Stripe"             # Search contacts at a company
 trackly brief 1234                    # Get network brief for a job
 trackly referral start 1234           # Start a referral campaign
@@ -76,10 +95,12 @@ trackly config --api-key trk_xxx      # Save an API key for future commands
 trackly version                       # Show installed version
 trackly whoami                        # Show current user
 trackly logout                        # Clear credentials
-trackly agent setup --client both    # Install Trackly Apply for Codex + Claude Code
+trackly agent setup --client both    # Install Trackly Apply (local) for Codex + Claude Code
 trackly agent doctor                 # Verify setup, profile, resume, and compatibility
 trackly agent diagnose-path /path/to/upload.pdf --errno ENOSPC --json  # Diagnose one exact local path
 ```
+
+Search results set `autoApplySupported` to true for jobs Trackly Apply (cloud) can apply to (active US Greenhouse, Lever and Ashby postings); it does not decide Trackly Apply (local) eligibility. `trackly whoami` shows your plan when the server returns it. Plan refusals display server usage and reset information, plus an upgrade link only when the server provides one. Searches have no daily cap.
 
 Add `--json` to any command for JSON output. Use `--api-key <key>` or `--base-url <url>` as one-off global flags when needed.
 
@@ -107,10 +128,24 @@ OAuth sign-in is the default for every client. An API key is optional and only
 needed for headless clients that cannot complete an interactive sign-in: send
 `Authorization: Bearer trk_...` with a key from **Settings → API Keys**.
 
-Remote connections get 57 hosted tools. They share the search, company, status, and
-Apply tools with the local server and add `trackly_chat`; the 4 local-only
+Remote connections get 64 hosted tools. They share the search, company, status,
+Tracker, and Apply tools with the local server and add `trackly_chat`; the 4 local-only
 tools listed below are not available remotely. Hosted setup and tool details
 are at [usetrackly.app/connector](https://usetrackly.app/connector).
+
+### Trackly Apply (local) skill for Claude
+
+If you connected Trackly from the Claude directory, the Trackly Apply (local) skill
+teaches Claude to finish your Apply setup and fill applications you approved
+in your own browser with Claude in Chrome. It stops before Submit; you always
+submit yourself. Each [GitHub release](https://github.com/trackly-app/trackly-cli/releases)
+attaches two downloads built from [`plugins/trackly-claude`](plugins/trackly-claude):
+
+- `trackly-apply-claude-skill-<version>.zip`: upload it in claude.ai under Settings, Capabilities, Skills.
+- `trackly-claude-plugin-<version>.zip`: a Claude Code plugin with the skill and the Claude connector. See its [README](plugins/trackly-claude/README.md) to install it.
+
+Trackly Apply (local) on the Claude connector is enabled per account while the
+updated directory listing is in review.
 
 ### Local (CLI via stdio, for Cursor / Windsurf / Claude Code)
 
@@ -201,74 +236,139 @@ Hosted and local releases are separate: the current client schema is authoritati
 
 ## MCP Tools Reference
 
-The local stdio server (`trackly mcp`) registers the 60 tools below. Four are
+The local stdio server (`trackly mcp`) registers the 67 tools below. Four are
 local-only because they run their checks on your machine:
 `trackly_diagnose_local_path`, `trackly_lint_application_text`,
 `trackly_validate_apply_resume_upload`, and `trackly_validate_apply_tab_keep_set`.
-The hosted server omits those four and adds `trackly_chat`, for 57 hosted tools.
+The hosted server has 64 hosted tools once close-ai #3870 deploys, including the five Tracker tools, the two Trackly Apply (cloud) tools and the two Favorite a list tools.
 
-| Tool | Description |
-|------|-------------|
-| trackly_search_jobs | Search by roles, regions, states/provinces, internship level, favorites, recency, annual USD salary floor, sponsorship, work arrangement, and pipeline status |
-| trackly_get_job | Get details by Trackly ID, with availability and retry guidance |
-| trackly_search_companies | Semantic company search |
-| trackly_list_companies | List all tracked companies |
-| trackly_get_stats | Job tracker metrics and status counts |
-| trackly_get_preferences | Read bounded discovery preferences, edit availability, and save revision |
-| trackly_update_experience_limits | Atomically replace role-specific limits on a job's stated minimum years |
-| trackly_update_status | Mark jobs as applied, saved, or dismissed |
-| trackly_ask | Natural language job search (20/day) |
-| trackly_get_job_brief | Get a network brief, with availability and retry guidance |
-| trackly_contacts_at_company | Search contacts at a specific company |
-| trackly_get_company_workspace | Full company workspace (jobs, contacts, hiring managers, campaigns) |
-| trackly_request_company | Request a company be added to Trackly (rate-limited to 5 pending) |
-| trackly_favorite_companies | Favorite up to 100 companies by ID, name or URL; request missing ones and favorite them when added |
-| trackly_unfavorite_companies | Remove up to 100 companies from favorites by ID (undo) |
-| trackly_get_apply_queue | Get user-approved jobs ready for execution |
-| trackly_get_application_profile | Get versioned profile answers and provenance |
-| trackly_get_profile_onboarding | Get schema plus missing questions |
-| trackly_update_application_profile | Save scoped answers with optimistic concurrency; revoking sensitive storage takes a two-step confirmation |
-| trackly_start_apply_execution | Start a target-counted accessible Apply execution |
-| trackly_get_active_apply_execution | Recover the active execution before legacy batch recovery |
-| trackly_get_apply_execution | Read the authoritative progress funnel and immutable child waves |
-| trackly_list_recoverable_apply_executions | List bounded exact-member recovery candidates after context loss |
-| trackly_recover_exact_apply_members | Recover only one explicitly confirmed candidate set without substitutes |
-| trackly_list_apply_review_handoffs | Rediscover active, value-free review-handoff receipts for one execution |
-| trackly_claim_apply_review_handoff | Claim and classify one exact review-handoff group before reconciliation |
-| trackly_get_apply_execution_snapshot | Fetch a compact bounded projection for current execution members and required profile keys |
-| trackly_resume_parked_apply_member | Explicitly resume one parked member for a fresh non-mutating access probe |
-| trackly_approve_apply_execution_resume | Approve one exact resume identity for an unchanged execution snapshot |
-| trackly_advance_apply_execution | Transactionally create the next eligible immutable wave with frozen accessKnowledge |
-| trackly_list_apply_access_deferments | List persistent user access deferments |
-| trackly_defer_apply_access | Persist a job or company deferment from a Trackly jobId |
-| trackly_clear_apply_access_deferment | Clear one discovered user access deferment |
-| trackly_record_apply_execution_dispositions | Record typed, value-free access classifications |
-| trackly_stop_apply_execution | Stop an execution without changing saved-job state |
-| trackly_create_apply_batch | Freeze an exact recent-first approved batch |
-| trackly_cancel_apply_batch | Retire a legacy fixed batch after explicit user confirmation |
-| trackly_get_active_apply_batch | Recover the newest unexpired active batch after context loss |
-| trackly_get_apply_batch | Read frozen membership with opaque pagination |
-| trackly_claim_apply_batch | Acquire or renew a batch mutation lease |
-| trackly_checkpoint_apply_batch | Bulk-record redacted inspection checkpoints and human actions |
-| trackly_bind_apply_surface | Bind an initial or recovered browser surface to the existing run and exact requisition URL |
-| trackly_record_apply_surface_evidence | Record current-epoch inventory, missing-tab, close-receipt, and post-close absence evidence |
-| trackly_record_apply_submission_evidence | Record redacted submit-request, success-page, user-confirmation, or provider-receipt evidence |
-| trackly_approve_apply_batch_resume | Approve one exact default resume for the current frozen run set |
-| trackly_certify_apply_batch_truth | Certify final answer and wording fingerprints after every other review-readiness gate |
-| trackly_start_apply_run | Start or reuse a manual-submit browser run |
-| trackly_get_apply_evidence | Get aggregate, value-free beta evidence and release readiness |
-| trackly_get_apply_protocol | Get current workflow and compatibility rules |
-| trackly_report_apply_observation | Send redacted ATS mechanics feedback |
-| trackly_lint_application_text | Locally lint application writing and return only value-free violations plus a draft hash |
-| trackly_diagnose_local_path | Locally diagnose the exact implicated filesystem path without deleting files |
-| trackly_validate_apply_tab_keep_set | Locally validate an exact expected/keep tab set against complete caller-supplied inventories without controlling the browser or sending tab IDs remotely |
-| trackly_validate_apply_resume_upload | Locally validate adapter capability and ordered value-free attachment proof stages |
-| trackly_report_apply_observations | Bulk-send up to 20 leased, batch-bound redacted observations |
-| trackly_record_application_outcome | Record review or confirmed submission outcome |
-| trackly_record_application_outcomes | Bulk-record up to 20 leased batch outcomes with per-member conflicts |
-| trackly_prepare_resume | Prepare a private expiring resume file for upload |
-| trackly_verify_prepared_resume | Recheck the confirmed resume immediately before attachment |
-| get_more_tools | Report a missing capability so Trackly can improve its MCP surface |
+Every tool has a family title (`<Family> · <Action>`), and its description starts with the family tag, for example `[Tracker]`. Tool names never change.
+
+### Jobs
+
+| Title | Tool | Description |
+|-------|------|-------------|
+| Jobs · Search | trackly_search_jobs | Search by roles, regions, states/provinces, internship level, favorites, recency, annual USD salary floor, sponsorship, work arrangement, and pipeline status |
+| Jobs · Get details | trackly_get_job | Get details by Trackly ID, with availability and retry guidance |
+| Jobs · Ask in plain language | trackly_ask | Natural language job search |
+
+### Companies
+
+| Title | Tool | Description |
+|-------|------|-------------|
+| Companies · Search | trackly_search_companies | Semantic company search |
+| Companies · List tracked | trackly_list_companies | List all tracked companies |
+| Companies · Request monitoring | trackly_request_company | Request a company be added to Trackly (rate-limited to 5 pending) |
+| Companies · Favorite a list | trackly_favorite_companies | Favorite up to 100 companies by ID, name or URL; request missing ones and favorite them when added |
+| Companies · Unfavorite | trackly_unfavorite_companies | Remove up to 100 companies from favorites by ID (undo) |
+
+### Network
+
+| Title | Tool | Description |
+|-------|------|-------------|
+| Network · Get job brief | trackly_get_job_brief | Get a network brief, with availability and retry guidance |
+| Network · Find contacts | trackly_contacts_at_company | Search contacts at a specific company |
+| Network · Get company workspace | trackly_get_company_workspace | Full company workspace (jobs, contacts, hiring managers, campaigns) |
+
+### Preferences
+
+| Title | Tool | Description |
+|-------|------|-------------|
+| Preferences · Get | trackly_get_preferences | Read bounded discovery preferences, edit availability, and save revision |
+| Preferences · Set experience limits | trackly_update_experience_limits | Atomically replace role-specific limits on a job's stated minimum years |
+
+### Profile
+
+| Title | Tool | Description |
+|-------|------|-------------|
+| Profile · Get | trackly_get_application_profile | Get versioned profile answers and provenance |
+| Profile · Get setup status | trackly_get_profile_onboarding | Get schema plus missing questions |
+| Profile · Update answers | trackly_update_application_profile | Save scoped answers with optimistic concurrency; revoking sensitive storage takes a two-step confirmation |
+| Profile · Check answer text | trackly_lint_application_text | Locally lint application writing and return only value-free violations plus a draft hash |
+
+### Job status
+
+| Title | Tool | Description |
+|-------|------|-------------|
+| Job status · Mark applied, saved or dismissed | trackly_update_status | Record applied, saved or dismissed on your job list. Applied also records the job on the Tracker (one entry, never a duplicate) and returns `trackerEntry` |
+| Job status · Get counts | trackly_get_stats | Job tracker metrics and status counts |
+
+### Tracker
+
+| Title | Tool | Description |
+|-------|------|-------------|
+| Tracker · List entries | trackly_list_tracker_applications | List Tracker board entries by stage, company or role text, or job ID; one entry with its events by applicationId |
+| Tracker · Add a job | trackly_create_tracker_application | Add an application to the Tracker board without duplicates, mainly one that is not a Trackly job (`trackly_update_status` applied already adds Trackly jobs) |
+| Tracker · Move stage | trackly_update_tracker_stage | Move one Tracker entry to a stage (rejected, interview, offer...) with an optional dated note |
+| Tracker · Add note | trackly_add_tracker_note | Add a dated note to one Tracker entry without changing its stage |
+| Tracker · Undo an event | trackly_retract_tracker_event | Undo one Tracker event the user names |
+
+### Trackly Apply (local)
+
+Your own AI agent fills the form in your browser and stops before Submit; you submit.
+
+| Title | Tool | Description |
+|-------|------|-------------|
+| Trackly Apply (local) · Get queue | trackly_get_apply_queue | Get user-approved jobs ready for execution |
+| Trackly Apply (local) · List deferments | trackly_list_apply_access_deferments | List persistent user access deferments |
+| Trackly Apply (local) · Defer a job, company or provider | trackly_defer_apply_access | Persist a job or company deferment from a Trackly jobId |
+| Trackly Apply (local) · Clear a deferment | trackly_clear_apply_access_deferment | Clear one discovered user access deferment |
+| Trackly Apply (local) · Stop a run | trackly_stop_apply_execution | Stop an execution without changing saved-job state |
+
+### Apply steps
+
+Internal steps of a Trackly Apply (local) run. The Trackly Apply skill calls them with IDs from earlier steps; they are not standalone actions.
+
+| Title | Tool | Description |
+|-------|------|-------------|
+| Apply step · Get protocol | trackly_get_apply_protocol | Get current workflow and compatibility rules |
+| Apply step · Start a run | trackly_start_apply_execution | Start a target-counted accessible Apply execution |
+| Apply step · Recover active run | trackly_get_active_apply_execution | Recover the active execution before legacy batch recovery |
+| Apply step · Get run | trackly_get_apply_execution | Read the authoritative progress funnel and immutable child waves |
+| Apply step · Get run snapshot | trackly_get_apply_execution_snapshot | Fetch a compact bounded projection for current execution members and required profile keys |
+| Apply step · Advance run | trackly_advance_apply_execution | Transactionally create the next eligible immutable wave with frozen accessKnowledge |
+| Apply step · Record access results | trackly_record_apply_execution_dispositions | Record typed, value-free access classifications |
+| Apply step · Resume a parked job | trackly_resume_parked_apply_member | Explicitly resume one parked member for a fresh non-mutating access probe |
+| Apply step · Approve resume for run | trackly_approve_apply_execution_resume | Approve one exact resume identity for an unchanged execution snapshot |
+| Apply step · List recoverable runs | trackly_list_recoverable_apply_executions | List bounded exact-member recovery candidates after context loss |
+| Apply step · Recover jobs from a run | trackly_recover_exact_apply_members | Recover only one explicitly confirmed candidate set without substitutes |
+| Apply step · List review handoffs | trackly_list_apply_review_handoffs | Rediscover active, value-free review-handoff receipts for one execution |
+| Apply step · Claim a review handoff | trackly_claim_apply_review_handoff | Claim and classify one exact review-handoff group before reconciliation |
+| Apply step · Create batch | trackly_create_apply_batch | Freeze an exact recent-first approved batch |
+| Apply step · Cancel batch | trackly_cancel_apply_batch | Retire a legacy fixed batch after explicit user confirmation |
+| Apply step · Get batch | trackly_get_apply_batch | Read frozen membership with opaque pagination |
+| Apply step · Recover active batch | trackly_get_active_apply_batch | Recover the newest unexpired active batch after context loss |
+| Apply step · Claim batch lease | trackly_claim_apply_batch | Acquire or renew a batch mutation lease |
+| Apply step · Checkpoint batch | trackly_checkpoint_apply_batch | Bulk-record redacted inspection checkpoints and human actions |
+| Apply step · Bind browser tab | trackly_bind_apply_surface | Bind an initial or recovered browser surface to the existing run and exact requisition URL |
+| Apply step · Record tab evidence | trackly_record_apply_surface_evidence | Record current-epoch inventory, missing-tab, close-receipt, and post-close absence evidence |
+| Apply step · Record submission evidence | trackly_record_apply_submission_evidence | Record redacted submit-request, success-page, user-confirmation, or provider-receipt evidence |
+| Apply step · Approve resume for batch | trackly_approve_apply_batch_resume | Approve one exact default resume for the current frozen run set |
+| Apply step · Certify answers | trackly_certify_apply_batch_truth | Certify final answer and wording fingerprints after every other review-readiness gate |
+| Apply step · Start a legacy run | trackly_start_apply_run | Start or reuse a manual-submit browser run |
+| Apply step · Get beta evidence | trackly_get_apply_evidence | Get aggregate, value-free beta evidence and release readiness |
+| Apply step · Report observation | trackly_report_apply_observation | Send redacted ATS mechanics feedback |
+| Apply step · Report observations | trackly_report_apply_observations | Bulk-send up to 20 leased, batch-bound redacted observations |
+| Apply step · Record run outcome | trackly_record_application_outcome | Record a Trackly Apply run receipt (review_ready, submitted, failed or blocked); a submitted receipt also reaches the Tracker |
+| Apply step · Record run outcomes | trackly_record_application_outcomes | Bulk-record up to 20 leased batch run receipts with per-member conflicts; submitted receipts also reach the Tracker |
+| Apply step · Prepare resume file | trackly_prepare_resume | Prepare a private expiring resume file for upload |
+| Apply step · Verify resume file | trackly_verify_prepared_resume | Recheck the confirmed resume immediately before attachment |
+| Apply step · Diagnose a local file path | trackly_diagnose_local_path | Locally diagnose the exact implicated filesystem path without deleting files |
+| Apply step · Validate resume upload | trackly_validate_apply_resume_upload | Locally validate adapter capability and ordered value-free attachment proof stages |
+| Apply step · Validate kept tabs | trackly_validate_apply_tab_keep_set | Locally validate an exact expected/keep tab set against complete caller-supplied inventories without controlling the browser or sending tab IDs remotely |
+
+### Trackly Apply (cloud)
+
+| Title | Tool | Description |
+|-------|------|-------------|
+| Trackly Apply (cloud) · Request | trackly_auto_apply | Trackly Apply (cloud): ask Trackly to apply to one job for the user (not Trackly Apply (local), which fills the form in the user's browser) |
+| Trackly Apply (cloud) · Check requests | trackly_auto_apply_status | List the user's Trackly Apply (cloud) requests and their status |
+
+### Feedback
+
+| Title | Tool | Description |
+|-------|------|-------------|
+| Feedback · Report a missing tool | get_more_tools | Report a missing capability so Trackly can improve its MCP surface |
 
 ## Authentication
 
@@ -334,7 +434,7 @@ trackly config --base-url http://127.0.0.1:3000  # Point at a different backend
 | Job search + filters | Yes | Yes | Yes |
 | Apply/save/dismiss | Yes | Yes | Yes |
 | AI-powered search | Yes (trackly ask) | Yes | Yes |
-| MCP integration | Yes (60 local tools) | -- | -- |
+| MCP integration | Yes (67 local tools) | -- | -- |
 | Browser required | No | Yes | No |
 | Best for | Terminal + AI agents | Visual browsing | Custom integrations |
 
@@ -344,11 +444,11 @@ Web: [usetrackly.app](https://usetrackly.app) | API docs: [usetrackly.app/develo
 
 **How do I track job applications from the terminal?**
 
-Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly login` or configure an API key, then use `trackly jobs` to browse openings and `trackly apply <id>` to mark applications. All data syncs with the Trackly web app at usetrackly.app.
+Install trackly-cli (`npm install -g trackly-cli`), authenticate with `trackly login` or configure an API key, then use `trackly jobs` to browse openings and `trackly mark-applied <id>` (or `trackly apply <id>`) for applications you submitted yourself. All data syncs with the Trackly web app at usetrackly.app.
 
 **What MCP servers exist for job searching?**
 
-trackly-cli includes a built-in MCP server with 60 tools: the complete Trackly
+trackly-cli includes a built-in MCP server with 67 tools: the complete Trackly
 job-search and application set plus `get_more_tools`, which lets agents report
 a missing capability. Run `trackly mcp` or use
 `trackly agent setup --client claude`.

@@ -128,41 +128,54 @@ the private backend plugin registry. `plugin-server.test.ts` locks every row
 below, so a change to any hint fails CI. Paste these one-line justifications
 into the portal.
 
-`openWorldHint` is false for all 21 tools. Every tool calls only Trackly's own
+Since plugin 1.1.6 (close-ai #3619) the classic surface carries the same family titles and description tags as every other Trackly surface: the Title column is the one title each tool name has everywhere (`mcp/tool-families.js`), and each description starts with its family tag, for example `[Job status]`, ahead of the existing `Requires trackly Apply (apply:* scopes).` sentence on Apply tools. Names, schemas, annotation hints and scopes are unchanged.
+
+`openWorldHint` is false for all 23 tools. Every tool calls only Trackly's own
 API, scoped to the signed-in account. The Apply services have no outbound
 network client and never fetch employer sites. Stored postings are served
-without live employer-site hydration. Employer pages are opened and filled by
-the host's own browser tool, and only the user clicks Submit.
+without live employer-site hydration. For Trackly Apply (local), employer pages
+are opened and filled by the host's own browser tool, and only the user clicks
+Submit. Trackly Apply (cloud) (`trackly_auto_apply`, contract 1.1.0) only queues
+a request for one job the user explicitly asked Trackly to apply to; Trackly
+submits it later, outside the call and outside the host browser.
 
-| Tool | Read only | Destructive | Justification |
-| --- | --- | --- | --- |
-| `trackly_search_jobs` | true | false | Searches Trackly's stored job index for this account. Writes nothing. |
-| `trackly_get_job` | true | false | Reads one stored posting. No live employer-site fetch. |
-| `trackly_search_companies` | true | false | Searches Trackly's monitored-company list. |
-| `trackly_get_job_brief` | true | false | Reads a precomputed role and company summary. |
-| `trackly_get_preferences` | true | false | Reads the user's saved discovery preferences. |
-| `trackly_get_apply_readiness` | true | false | Makes five parallel GETs for profile, schema, queue, protocol and execution state. |
-| `trackly_lint_application_text` | true | false | Computes in memory only. Text is neither stored nor echoed. |
-| `trackly_list_apply_access_deferments` | true | false | Lists the account's active deferments. |
-| `trackly_prepare_resume_artifact` | true | false | Reads the original saved resume and issues a private expiring preview; never attaches or submits. |
-| `trackly_update_status` | false | false | Sets a tracker stage (saved, dismissed or applied). The same tool reverses it. |
-| `trackly_save_application_answers` | false | true | Overwrites saved profile answers. The education list is a confirmed replace-all. |
-| `trackly_grant_sensitive_storage_consent` | false | false | Records consent only. Adds no answers and can be revoked. |
-| `trackly_revoke_sensitive_storage_consent` | false | true | Revokes consent and deletes stored sensitive answers. |
-| `trackly_defer_apply_access` | false | false | Inserts an owner-scoped deferment that keeps Apply off that job, company or provider until `trackly_clear_apply_access_deferment` clears it (it has no expiry). Nothing is deleted. |
-| `trackly_clear_apply_access_deferment` | false | false | Soft-clears one deferment (`cleared_at`), which can be re-deferred. |
-| `trackly_start_or_resume_apply` | false | false | Creates or resumes a no-submit Apply execution and claims its batch lease. |
-| `trackly_get_apply_work` | false | false | Not read-only, because each call claims or renews the private batch lease. |
-| `trackly_report_apply_progress` | false | false | Records exact-document approval, value-free observations and dispositions, or advances the execution to its next wave. Advancing only queues new no-submit work and never deletes or overwrites user data. |
-| `trackly_certify_review_ready` | false | false | Records a review-ready checkpoint. Never submits. |
-| `trackly_reconcile_manual_submission` | false | false | Records a submission the user made themselves. Never submits forms. |
-| `trackly_stop_apply` | false | true | Moves the execution to a terminal stopped state. Continuing requires a new execution. |
+| Tool | Title | Read only | Destructive | Justification |
+| --- | --- | --- | --- | --- |
+| `trackly_search_jobs` | Jobs · Search | true | false | Searches Trackly's stored job index for this account. Writes nothing. |
+| `trackly_get_job` | Jobs · Get details | true | false | Reads one stored posting. No live employer-site fetch. |
+| `trackly_search_companies` | Companies · Search | true | false | Searches Trackly's monitored-company list. |
+| `trackly_get_job_brief` | Network · Get job brief | true | false | Reads a precomputed role and company summary. |
+| `trackly_get_preferences` | Preferences · Get | true | false | Reads the user's saved discovery preferences. |
+| `trackly_get_apply_readiness` | Trackly Apply (local) · Check readiness | true | false | Makes five parallel GETs for profile, schema, queue, protocol and execution state. |
+| `trackly_lint_application_text` | Profile · Check answer text | true | false | Computes in memory only. Text is neither stored nor echoed. |
+| `trackly_list_apply_access_deferments` | Trackly Apply (local) · List deferments | true | false | Lists the account's active deferments. |
+| `trackly_prepare_resume_artifact` | Trackly Apply (local) · Preview resume | true | false | Reads the original saved resume and issues a private expiring preview; never attaches or submits. |
+| `trackly_update_status` | Job status · Mark applied, saved or dismissed | false | false | Sets a job-list status (saved, dismissed or applied); applied also records the job on the user's Tracker board. The same tool reverses the job-list status. |
+| `trackly_auto_apply` | Trackly Apply (cloud) · Request | false | true | Trackly Apply (cloud): queues a request for Trackly to apply to one job the user explicitly asked for. Destructive because it leads to a real application. |
+| `trackly_auto_apply_status` | Trackly Apply (cloud) · Check requests | true | false | Lists the user's Trackly Apply (cloud) requests and their status. |
+| `trackly_save_application_answers` | Profile · Save answers | false | true | Overwrites saved profile answers. The education list is a confirmed replace-all. |
+| `trackly_grant_sensitive_storage_consent` | Profile · Allow sensitive-answer storage | false | false | Records consent only. Adds no answers and can be revoked. |
+| `trackly_revoke_sensitive_storage_consent` | Profile · Revoke sensitive-answer storage | false | true | Revokes consent and deletes stored sensitive answers. |
+| `trackly_defer_apply_access` | Trackly Apply (local) · Defer a job, company or provider | false | false | Inserts an owner-scoped deferment that keeps Apply off that job, company or provider until `trackly_clear_apply_access_deferment` clears it (it has no expiry). Nothing is deleted. |
+| `trackly_clear_apply_access_deferment` | Trackly Apply (local) · Clear a deferment | false | false | Soft-clears one deferment (`cleared_at`), which can be re-deferred. |
+| `trackly_start_or_resume_apply` | Trackly Apply (local) · Start or resume | false | false | Creates or resumes a no-submit Apply execution and claims its batch lease. |
+| `trackly_get_apply_work` | Apply step · Get current work | false | false | Not read-only, because each call claims or renews the private batch lease. |
+| `trackly_report_apply_progress` | Apply step · Report progress | false | false | Records exact-document approval, value-free observations and dispositions, or advances the execution to its next wave. Advancing only queues new no-submit work and never deletes or overwrites user data. |
+| `trackly_certify_review_ready` | Apply step · Mark ready for review | false | false | Records a review-ready checkpoint. Never submits. |
+| `trackly_reconcile_manual_submission` | Apply step · Record a manual submission | false | false | Records a submission the user made themselves. Never submits forms. |
+| `trackly_stop_apply` | Trackly Apply (local) · Stop | false | true | Moves the execution to a terminal stopped state. Continuing requires a new execution. |
 
 The fixture-pinned `mutationAnnotationContract` in
 `scripts/verify-hosted-contract.js` mirrors the runtime pinned in
 `hosted-contract-fixture.json`. The fixture is recaptured from the deployed
-close-ai merge `6be6d4d2105f7de7f491c7b55bfdf00057d193f4` (close-ai #3186; it
-was `dded739620bcdee1e6863324c8f660e6b999d0cc` from trackly-app/trackly-cli#154), retaining
+close-ai merge `8f7ba68e73280afec40fd5d674a6f2bb774bfa06` (close-ai #3635, MCP tool families, deployed
+2026-11-11 3:03 AM PST with #3631 one status story; no inherited paths;
+it was `96781f59f208ef839334a2a71954c9ef1b3d7005` from close-ai #3625 after the #3536 Trackly Apply (cloud) merge,
+`5d443853272518bcc0f0b673e29d03d9f45715d5` from close-ai #3544 after the #3604 directory-parity merge,
+`6cd11dfb1c5b59dbb11b325c3a4f68a1a3fc8b23` from close-ai #3603,
+`7c7032c87d97b3270681281ff33fa3d8887259c9` from close-ai #3433,
+`71e7f9bfa73df85bbd483ee07712a38d386b79a1`, `6be6d4d2105f7de7f491c7b55bfdf00057d193f4`
+from trackly-app/trackly-cli#186, and `dded739620bcdee1e6863324c8f660e6b999d0cc` from trackly-app/trackly-cli#154), retaining
 `trackly_defer_apply_access` and `trackly_clear_apply_access_deferment` to
 `mutationAnnotations(false, true)`, matching the table above.
 The backend helper's signature is
@@ -173,11 +186,47 @@ non-destructive, which matches the Destructive column above, and idempotent (ret
 
 Accepted backend rule (Alan, 2026-10-24): in `audit` and `enforce` modes, verified machine credentials skip the request-level invite gate (close-ai #2789). The Berkeley-only check for CLI and MCP sign-in is decided earlier, at Google sign-in (`googleTracklyOAuthDecision` in close-ai `src/config/passport.ts`, keyed on the `cli:`/`mcp:` OAuth state), and this gate does not pin it. These credentials are hosted MCP OAuth, MCP bearer tokens, non-extension API keys and `client_platform: 'trackly-cli'` JWTs. `client_platform` is a signed claim that the server sets when it mints the token; no header or User-Agent counts as proof. `assertMachineAccessSemantics` in `scripts/verify-hosted-contract.js` pins the request-level rule exactly, so any change to it fails the coordinated gate.
 
+### Directory catalogs after close-ai #3604
+
+The same factory also serves the ChatGPT (`/api/plugin/trackly/openai/mcp`, 40
+tools after close-ai #3536) and Claude (`/api/plugin/trackly/claude/mcp`, 21 tools, plus 16 Trackly
+Apply tools for accounts on `TRACKLY_CLAUDE_APPLY_ALLOWLIST`) directory
+catalogs. The table above describes this package's classic 23-tool surface
+(close-ai #3604 left the 21 tools byte-identical, and #3536 added the two
+Trackly Apply (cloud) tools, which Claude excludes): the registration helper
+returns before registering any name outside `contracts/trackly-plugin-tools.json`
+on the classic surface. The coordinated gate pins that guard as exact AST and
+pins each of the eleven directory-only registrations (profile read and setup
+status, companies list, company request, experience limits, Apply queue and the
+five Tracker tools) by name, annotations, descriptor bytes and handler bytes.
+Their scopes come from `src/mcp/directory-surface-registry.ts`, which is now a
+deployable path and whole-byte locked, as `plugin-scopes.ts` is.
+
+Directory listing material lives beside this package and is checked by
+`npm run test:plugin-submission`:
+
+- [`listing/openai/`](listing/openai/): the ChatGPT `trackly-openai` 1.0.9 kit:
+  the captured 40-tool catalog, the pinned close-ai package source and portal
+  justifications for the thirteen new tools. 1.0.9 updates the existing app
+  record; Rescan and approval of every new tool come before submission.
+- [`listing/claude/`](listing/claude/): the Claude v2 listing text, the
+  approved consent lines and the 37-tool table. The listing edit waits for the
+  real-client dry run, and Claude Apply opens to everyone only after Anthropic
+  approves the edit.
+- [`../trackly-claude/`](../trackly-claude/): the Claude Trackly Apply skill and
+  Claude Code plugin, released as `trackly-apply-claude-skill-<version>.zip` and
+  `trackly-claude-plugin-<version>.zip` with each trackly-cli GitHub release
+  (`auto-release.yml`). Every tool name the skill uses must exist in the Claude
+  catalog, and `claude plugin validate --strict` must pass when the CLI is installed.
+
+Portal steps for both directories stay in Kevin's local session; nothing in this
+repository signs in to a portal or submits a listing.
+
 ## Product verification
 
 - Require an unauthenticated HTTP 200 response from `https://usetrackly.app/plugins/trackly` and verify its logo, support, privacy, and terms links before submission.
 - Run `npm run test:hosted-contract` without `TRACKLY_BACKEND_DIR` and require the checked-in hosted-tool contract fixture to pass in the standalone CLI checkout.
-- Separately run `TRACKLY_BACKEND_DIR=/absolute/path/to/backend-candidate npm run test:hosted-contract` against the exact backend release candidate and require the executable plugin catalog to match the locked 21-tool allowlist.
+- Separately run `TRACKLY_BACKEND_DIR=/absolute/path/to/backend-candidate npm run test:hosted-contract` against the exact backend release candidate and require the executable plugin catalog to match the locked 23-tool allowlist (contract 1.1.0).
 - Run `TRACKLY_BACKEND_DIR=/absolute/path/to/backend-candidate npm run test:review-auth-contract` against the exact deployed reviewer-auth runtime and require its dedicated identity, credential, migration, token-lifecycle, and plugin-resource bindings to pass. This is independent of the fixture-pinned Trackly Apply provenance gate above; do not require both checks to use the same historical backend checkout.
 - Execute all six internal positive and all three negative `listing/submission-tests.json` fixtures with the synthetic reviewer account. The OpenAI portal accepts exactly five positive cases: submit only the five IDs listed in `reviewEnvironment.portalPositiveCaseIds`, plus all three negative cases. Preserve the result shapes, tool sequence, exact-resume approval and attachment evidence (or explicit manual fallback), and forbidden-action evidence for the submission packet.
 - Use the reviewer-facing briefs in `listing/submission-tests.json` when copying

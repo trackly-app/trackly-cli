@@ -39,6 +39,7 @@ async function runAgainstMock(t, args, respond, childEnv = {}) {
     req.on('end', () => {
       requests.push({ method: req.method, url: req.url, body });
       const r = (respond && respond(req)) || { status: 200, json: {} };
+      if (r.disconnect) return req.socket.destroy();
       if (r.body !== undefined) {
         res.writeHead(r.status || 200, r.headers || { 'Content-Type': 'application/octet-stream' });
         res.end(r.body);
@@ -64,6 +65,364 @@ function query(requests) {
   return u.searchParams;
 }
 
+const HUMAN_ENV = { NODE_OPTIONS: `--require=${path.join(__dirname, 'force-tty.js')}`, NO_COLOR: '1' };
+
+test('auto-apply requests Trackly Apply (cloud) with acknowledgement and optional resume', async (t) => {
+  for (const resumeId of [undefined, 21]) {
+    const args = ['auto-apply', '42', ...(resumeId ? ['--resume-id', String(resumeId)] : [])];
+    const response = { request: { id: 'request-1', jobId: 42, status: 'queued' } };
+    for (const env of [HUMAN_ENV, {}]) {
+      const { result, requests } = await runAgainstMock(t, args, () => ({ status: 201, json: response }), env);
+      assert.equal(result.code, 0, result.stderr);
+      assert.equal(result.stderr, '');
+      assert.equal(requests.length, 1);
+      assert.equal(requests[0].method, 'POST');
+      assert.equal(requests[0].url, '/api/jobscout/apply/assist-requests');
+      assert.deepEqual(JSON.parse(requests[0].body), { jobId: 42, acknowledged: true, ...(resumeId ? { resumeId } : {}) });
+      if (env === HUMAN_ENV) {
+        assert.match(result.stdout, /Trackly Apply \(cloud\) request request-1: queued/);
+        assert.match(result.stdout, /Trackly will apply and notify you/);
+      } else assert.deepEqual(JSON.parse(result.stdout), { ...response, message: 'Trackly will apply and notify you.' });
+    }
+  }
+});
+
+test('auto-apply --status lists requests without enqueueing', async (t) => {
+  for (const requests of [[], [{ id: 'request-1', jobId: 42, status: 'submitted', applicantMessage: 'Applied successfully.' }]]) {
+    for (const env of [HUMAN_ENV, {}]) {
+      const run = await runAgainstMock(t, ['auto-apply', '--status'], () => ({ json: { requests } }), env);
+      assert.equal(run.result.code, 0, run.result.stderr);
+      assert.equal(run.requests.length, 1);
+      assert.equal(run.requests[0].method, 'GET');
+      assert.equal(run.requests[0].url, '/api/jobscout/apply/assist-requests');
+      assert.equal(run.requests[0].body, '');
+      if (env === HUMAN_ENV) assert.match(run.result.stdout, requests.length ? /Job 42: submitted.*\n.*Applied successfully/ : /No Trackly Apply \(cloud\) requests/);
+      else assert.deepEqual(JSON.parse(run.result.stdout), { requests });
+    }
+  }
+});
+
+test('malformed auto-apply responses never report success or retry the mutation', async (t) => {
+  for (const [args, body] of [
+    [['auto-apply', '42'], {}], [['auto-apply', '42'], { request: null }],
+    [['auto-apply', '42'], { request: { id: 'x', jobId: 41, status: 'queued' } }],
+    [['auto-apply', '42'], { request: { id: 'x', jobId: 42 } }],
+    [['auto-apply', '--status'], {}], [['auto-apply', '--status'], { requests: null }],
+    [['auto-apply', '--status'], { requests: [{}] }],
+    [['auto-apply', '42'], '<html>unexpected-response</html>'],
+    [['auto-apply', '--status'], '<html>unexpected-response</html>'],
+  ]) {
+    for (const env of [HUMAN_ENV, {}]) {
+      const { result, requests } = await runAgainstMock(t, args, () => (typeof body === 'string' ? { status: 201, body } : { status: 201, json: body }), env);
+      assert.equal(result.code, 1);
+      const message = env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message;
+      assert.match(message, /Invalid Trackly Apply \(cloud\) response.*Check your request status/);
+      assert.doesNotMatch(result.stdout + result.stderr, /TypeError|Trackly will apply/);
+      assert.equal(requests.length, 1);
+    }
+  }
+});
+
+test('mark-applied reports what happened on the Tracker board with fixed text only', async (t) => {
+  const cases = [
+    [{ state: 'created' }, 'stdout', /Added to your Tracker board\./],
+    [{ state: 'linked' }, 'stdout', /Linked to the matching card on your Tracker board\./],
+    [{ state: 'moved' }, 'stdout', /Moved its Tracker card to applied\./],
+    [{ state: 'existing', reason: 'ambiguous' }, 'stderr', /More than one Tracker card matches this job/],
+    [{ state: 'skipped', reason: 'tracker_unavailable' }, 'stderr', /The Tracker board was not updated \(it is switched off\)\./],
+    [{ state: 'skipped', reason: 'surface_disabled' }, 'stderr', /The Tracker board was not updated \(it is switched off\)\./],
+    // Other skips (for example nothing to build an entry from) never claim the Tracker is off.
+    [{ state: 'skipped', reason: 'no_evidence' }, 'stderr', /^The Tracker board was not updated\.$/m],
+    [{ state: 'moved', reason: 'stage_not_current' }, 'stderr', /A later event on its Tracker card still decides the card's stage/],
+    // close-ai returns stage_not_current with existing too, when a later-dated event keeps the card earlier.
+    [{ state: 'existing', reason: 'stage_not_current' }, 'stderr', /A later event on its Tracker card still decides the card's stage/],
+    [{ state: 'created', reason: 'stage_not_current' }, 'stderr', /A later event on its Tracker card still decides the card's stage/],
+    [{ state: 'failed', reason: 'lock_timeout', retryable: true }, 'stderr', /Run the same command again; it is safe to repeat\./],
+  ];
+  for (const [trackerEntry, stream, expected] of cases) {
+    const body = { success: true, status: 'applied_confirmed', trackerEntry };
+    const { result } = await runAgainstMock(t, ['mark-applied', '42'], () => ({ json: body }), HUMAN_ENV);
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /Job 42 marked as/);
+    assert.match(result[stream], expected, trackerEntry.state);
+    // JSON callers get the backend object unchanged.
+    const json = await runAgainstMock(t, ['mark-applied', '42'], () => ({ json: body }));
+    assert.deepEqual(JSON.parse(json.result.stdout), body);
+  }
+  // An existing card at applied or later, an unknown future state, or an older backend without trackerEntry adds no line.
+  for (const body of [{ success: true, trackerEntry: { state: 'existing' } }, { success: true, trackerEntry: { state: 'some_future_state' } }, { success: true }]) {
+    const { result } = await runAgainstMock(t, ['mark-applied', '42'], () => ({ json: body }), HUMAN_ENV);
+    assert.equal(result.stdout.trim(), 'Job 42 marked as applied.');
+    assert.equal(result.stderr, '');
+  }
+});
+
+test('apply <id> still marks a job applied exactly as in 0.25.0, with a mark-applied hint', async (t) => {
+  for (const env of [HUMAN_ENV, {}]) {
+    const { result, requests } = await runAgainstMock(t, ['apply', '42'], () => ({ json: { success: true } }), env);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].method, 'POST');
+    assert.equal(requests[0].url, '/api/jobscout/tracker/jobs/42/stage');
+    assert.deepEqual(JSON.parse(requests[0].body), { stage: 'applied' });
+    if (env === HUMAN_ENV) {
+      assert.match(result.stdout, /Job 42 marked as/);
+      assert.match(result.stderr, /trackly mark-applied <id>/);
+    } else {
+      assert.deepEqual(JSON.parse(result.stdout), { success: true });
+      assert.equal(result.stderr, '');
+    }
+  }
+  for (const args of [['apply', '42', '--status'], ['apply', '--status'], ['apply', '42', '--resume-id', '7'], ['apply', 'abc']]) {
+    const { result, requests } = await runAgainstMock(t, args);
+    assert.notEqual(result.code, 0, args.join(' '));
+    assert.equal(requests.length, 0, `${args.join(' ')} must not reach the API`);
+    assert.match(result.stderr, /Unknown option --(status|resume-id) for 'trackly apply'|Usage: trackly apply <id>/);
+  }
+});
+
+test('apply with no job ID explains Trackly Apply (local), Trackly Apply (cloud) and mark applied without any request', async (t) => {
+  for (const env of [HUMAN_ENV, {}]) {
+    const { result, requests } = await runAgainstMock(t, ['apply'], undefined, env);
+    assert.equal(requests.length, 0);
+    // A terminal gets the guide; scripts and JSON callers still fail on a missing ID, as in 0.25.0.
+    assert.equal(result.code, env === HUMAN_ENV ? 0 : 1, result.stderr);
+    if (env !== HUMAN_ENV) {
+      const payload = JSON.parse(result.stdout);
+      assert.equal(payload.success, false);
+      assert.equal(payload.error, 'job_id_required');
+      assert.match(payload.message, /Usage: trackly apply <id>/);
+    }
+    const text = env === HUMAN_ENV ? result.stdout : Object.values(JSON.parse(result.stdout).ways).join('\n');
+    assert.match(text, /Trackly Apply \(local\).*your browser on your computer.*stops before Submit.*trackly agent setup/);
+    assert.match(text, /Trackly Apply \(cloud\): .*trackly auto-apply <jobId>.*Trackly applies for you.*nothing runs on your computer/);
+    assert.match(text, /Mark applied: .*trackly mark-applied <jobId>/);
+    assert.doesNotMatch(text, /cloud auto-apply/i, 'old wording is gone');
+    if (env !== HUMAN_ENV) {
+      // The 0.26.0 JSON keys stay, so existing scripts keep reading them.
+      assert.deepEqual(Object.keys(JSON.parse(result.stdout).ways), ['tracklyApply', 'cloudAutoApply', 'markApplied']);
+    }
+  }
+});
+
+test('help lists all three ways to apply, and auto-apply --help describes Trackly Apply (cloud)', async () => {
+  const help = await runCli(['--help']);
+  assert.match(help.stdout, /apply\s+How to apply with Trackly: Trackly Apply \(local\), Trackly Apply \(cloud\), mark applied/);
+  assert.match(help.stdout, /mark-applied <id>\s+Record a job you applied to yourself/);
+  assert.match(help.stdout, /apply <id>\s+Same as mark-applied/);
+  assert.match(help.stdout, /auto-apply <id>\s+Request Trackly Apply \(cloud\): Trackly applies for you/);
+  assert.match(help.stdout, /auto-apply --status\s+List your Trackly Apply \(cloud\) requests/);
+  assert.doesNotMatch(help.stdout, /cloud auto-apply/i);
+  for (const flag of ['--help', '-h']) {
+    const commandHelp = await runCli(['auto-apply', flag]);
+    assert.equal(commandHelp.code, 0, commandHelp.stderr);
+    assert.match(commandHelp.stdout, /^trackly auto-apply: Trackly Apply \(cloud\)/);
+    assert.match(commandHelp.stdout, /Trackly applies to the employer for you/);
+    assert.match(commandHelp.stdout, /Nothing runs on your computer/);
+    assert.match(commandHelp.stdout, /trackly auto-apply <jobId> \[--resume-id <id>\]/);
+    assert.match(commandHelp.stdout, /trackly auto-apply --status/);
+    assert.match(commandHelp.stdout, /Trackly Apply \(local\): .*stops\s+before Submit; you submit\. Set it up with `trackly agent setup`/);
+    assert.match(commandHelp.stdout, /Mark applied: .*trackly mark-applied <jobId>/);
+  }
+});
+
+test('invalid manual tracking commands recommend mark-applied without submitting', async (t) => {
+  for (const id of [undefined, 'abc', '0']) {
+    const { result, requests } = await runAgainstMock(t, ['mark-applied', ...(id ? [id] : [])]);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /Usage: trackly mark-applied <id>/);
+    assert.doesNotMatch(result.stderr, /Usage: trackly apply/);
+    assert.equal(requests.length, 0);
+  }
+});
+
+test('auto-apply validates IDs and status combinations before HTTP', async (t) => {
+  for (const args of [[], ['0'], ['-1'], ['1.5'], ['2147483648'], ['abc'], ['42', '43'],
+    ['42', '--resume-id'], ['42', '--resume-id', '0'], ['42', '--resume-id', '2147483648'],
+    ['42', '--status'], ['--status=true'], ['--status', '--resume-id', '21']]) {
+    const { result, requests } = await runAgainstMock(t, ['auto-apply', ...args]);
+    assert.equal(result.code, 1, args.join(' '));
+    assert.equal(requests.length, 0);
+  }
+});
+
+test('whoami shows only a returned plan and uses the me endpoint', async (t) => {
+  for (const tier of ['scout', 'apply', 'ultra', undefined]) {
+    const user = { id: 7, name: 'Test User', email: 'test@example.com', ...(tier ? { plan: {
+      tier, source: tier === 'scout' ? 'free' : 'paid', studentEligible: true, enforced: true, subscription: null,
+    } } : {}) };
+    for (const env of [HUMAN_ENV, {}]) {
+      const { result, requests } = await runAgainstMock(t, ['whoami'], () => ({ json: { success: true, user } }), env);
+      assert.equal(result.code, 0, result.stderr);
+      assert.equal(requests[0].url, '/api/jobscout/me');
+      if (env !== HUMAN_ENV) assert.deepEqual(JSON.parse(result.stdout), user);
+      else if (tier) assert.match(result.stdout, new RegExp(`Plan: ${tier}`));
+      else assert.doesNotMatch(result.stdout, /Plan:/);
+    }
+  }
+});
+
+test('CLI refusals show server plan fields or a temporary rate limit on every command', async (t) => {
+  for (const args of [['ask', 'PM jobs'], ['jobs'], ['auto-apply', '42']]) {
+    for (const error of ['limit_reached', 'assist_limit_reached', 'slow_down']) {
+      const body = error === 'slow_down' ? { error } : { success: false, error, feature: 'agent_fill',
+        used: 100, limit: 100, resetsAt: '2026-12-01T00:00:00Z', upgradeUrl: 'https://example.com/opaque-upgrade' };
+      for (const env of [HUMAN_ENV, {}]) {
+        const { result, requests } = await runAgainstMock(t, args, () => ({ status: 429, json: body }), env);
+        assert.equal(result.code, 1);
+        assert.equal(requests.length, 1, 'refusals must not retry');
+        const text = env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message;
+        if (env !== HUMAN_ENV) assert.equal(JSON.parse(result.stdout).retryable, error === 'slow_down' ? undefined : false);
+        assert.doesNotMatch(text, /20 natural|daily/i);
+        if (error === 'slow_down') assert.match(text, /Rate limited, try again shortly/);
+        else {
+          assert.match(text, /agent fills.*Used 100 of 100.*Resets on/);
+          assert.match(text, /https:\/\/example.com\/opaque-upgrade/);
+          if (env !== HUMAN_ENV) {
+            const payload = JSON.parse(result.stdout);
+            for (const key of ['error', 'feature', 'used', 'limit', 'resetsAt', 'upgradeUrl']) assert.deepEqual(payload[key], body[key]);
+          }
+        }
+      }
+    }
+  }
+});
+
+test('CLI structured refusals omit malformed server plan fields', async (t) => {
+  const { result } = await runAgainstMock(t, ['auto-apply', '42'], () => ({ status: 429, json: {
+    error: 'limit_reached', feature: 'constructor', used: 'untrusted-text', limit: -1,
+    resetsAt: {}, upgradeUrl: 'javascript:alert(1)',
+  } }));
+  const payload = JSON.parse(result.stdout);
+  assert.equal(result.code, 1);
+  assert.equal(payload.retryable, false);
+  for (const key of ['feature', 'used', 'limit', 'resetsAt', 'upgradeUrl']) assert.equal(Object.hasOwn(payload, key), false);
+  assert.doesNotMatch(result.stdout, /untrusted-text|javascript|constructor/);
+});
+
+test('uncertain auto-apply enqueues require status checks without retrying', async (t) => {
+  for (const response of [{ status: 500, json: { error: 'unavailable' } }, { disconnect: true }]) {
+    for (const env of [HUMAN_ENV, {}]) {
+      const { result, requests } = await runAgainstMock(t, ['auto-apply', '42'], () => response, env);
+      assert.equal(result.code, 1);
+      assert.equal(requests.length, 1);
+      const message = env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message;
+      assert.match(message, /Check your request status with trackly auto-apply --status before requesting again/);
+      assert.doesNotMatch(result.stdout + result.stderr, /Trackly will apply/);
+      if (env !== HUMAN_ENV) {
+        assert.equal(result.stderr, '');
+        assert.equal(JSON.parse(result.stdout).retryable, false);
+        assert.equal(JSON.parse(result.stdout).code, 'auto_apply_status_unknown');
+      }
+    }
+  }
+});
+
+test('auto-apply preserves recognized maintenance and controlled-access envelopes', async (t) => {
+  for (const code of ['maintenance_mode', 'ACCESS_CHECK_UNAVAILABLE']) {
+    const { result, requests } = await runAgainstMock(t, ['auto-apply', '42'],
+      () => ({ status: 503, json: { code, message: 'Temporarily unavailable' } }));
+    assert.equal(result.code, 1);
+    assert.equal(result.stderr, '');
+    assert.equal(JSON.parse(result.stdout).code, code);
+    assert.equal(requests.length, 1);
+  }
+});
+
+test('request-company uses generic throttling for 429 without plan fields', async (t) => {
+  for (const env of [HUMAN_ENV, {}]) {
+    const { result, requests } = await runAgainstMock(t, ['request-company', 'Example'],
+      () => ({ status: 429, json: { error: 'Maximum 5 pending requests allowed.' } }), env);
+    assert.equal(result.code, 1);
+    assert.equal(requests.length, 1);
+    assert.match(env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message, /Rate limited, try again shortly/);
+    if (env !== HUMAN_ENV) assert.equal(JSON.parse(result.stdout).error, 'Maximum 5 pending requests allowed.');
+  }
+});
+
+test('whoami tolerates every subscription status and never sends plan inputs', async (t) => {
+  for (const status of ['active', 'trialing', 'past_due', 'unpaid', 'incomplete', 'incomplete_expired', 'paused', 'canceled']) {
+    const user = { id: 7, name: 'Test User', email: 'test@example.com', plan: {
+      tier: 'apply', source: 'paid', studentEligible: false, enforced: true,
+      subscription: { status, renewsAt: null, cancelAtPeriodEnd: false }, futureField: 'ignored',
+    } };
+    const { result, requests } = await runAgainstMock(t, ['whoami'], () => ({ json: { success: true, user } }));
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), user);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].method, 'GET');
+    assert.equal(requests[0].body, '');
+  }
+});
+
+test('auto-apply preserves the backend missing-job refusal', async (t) => {
+  for (const env of [HUMAN_ENV, {}]) {
+    const { result, requests } = await runAgainstMock(t, ['auto-apply', '42'],
+      () => ({ status: 404, json: { error: 'job_not_found' } }), env);
+    assert.equal(result.code, 1);
+    assert.equal(requests.length, 1);
+    assert.match(env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message, /Job not found.*Check the Trackly job ID/);
+    assert.doesNotMatch(result.stdout + result.stderr, /not available for this account/);
+    if (env !== HUMAN_ENV) {
+      assert.equal(JSON.parse(result.stdout).error, 'job_not_found');
+      assert.equal(JSON.parse(result.stdout).retryable, false);
+    }
+  }
+});
+
+test('auto-apply 404 reports account availability for enqueue and status', async (t) => {
+  for (const args of [['auto-apply', '42'], ['auto-apply', '--status']]) {
+    for (const env of [HUMAN_ENV, {}]) {
+      const { result, requests } = await runAgainstMock(t, args, () => ({ status: 404, json: { error: 'feature_disabled' } }), env);
+      assert.equal(result.code, 1);
+      assert.match(env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message, /Trackly Apply \(cloud\) is not available for this account yet/);
+      assert.equal(requests.length, 1);
+    }
+  }
+});
+
+test('auto-apply preserves JSON and non-JSON 404 diagnostics without raw bodies', async (t) => {
+  for (const response of [
+    { status: 404, json: { error: 'Not found' } },
+    { status: 404, body: '<html>private-proxy-body</html>', headers: { 'Content-Type': 'text/html' } },
+  ]) {
+    for (const env of [HUMAN_ENV, {}]) {
+      const { result } = await runAgainstMock(t, ['auto-apply', '42'], () => response, env);
+      assert.equal(result.code, 1);
+      const text = env === HUMAN_ENV ? result.stderr : JSON.parse(result.stdout).message;
+      assert.match(text, /Trackly Apply \(cloud\) is not available for this account yet.*API diagnostic:/);
+      assert.match(text, response.json ? /Not found/ : /non-JSON response/);
+      assert.doesNotMatch(result.stdout + result.stderr, /private-proxy-body/);
+    }
+  }
+});
+
+test('auto-apply diagnostics strip terminal controls and cap server text', async (t) => {
+  for (const args of [['auto-apply', '42'], ['auto-apply', '--status']]) {
+    for (const env of [HUMAN_ENV, {}]) {
+      const { result } = await runAgainstMock(t, args,
+        () => ({ status: 404, json: { error: 'Not found\u001b[31m\u0007\r\n\u007f\u009b' } }), env);
+      assert.equal(result.code, 1);
+      const payload = env === HUMAN_ENV ? null : JSON.parse(result.stdout);
+      const text = payload ? payload.message : result.stderr.trim();
+      assert.match(text, /API diagnostic: Not found\[31m$/);
+      assert.doesNotMatch(text, /[\u0000-\u001f\u007f-\u009f]/);
+      if (payload) assert.equal(payload.diagnostic, 'Not found[31m');
+    }
+  }
+  for (const env of [HUMAN_ENV, {}]) {
+    const { result, requests } = await runAgainstMock(t, ['auto-apply', '42'],
+      () => ({ status: 500, json: { error: '\u001b\u0007\r\n\u007f\u009b' + 'x'.repeat(900) } }), env);
+    assert.equal(result.code, 1);
+    assert.equal(requests.length, 1);
+    const payload = env === HUMAN_ENV ? null : JSON.parse(result.stdout);
+    const text = payload ? payload.message : result.stderr.trim();
+    assert.doesNotMatch(text, /[\u0000-\u001f\u007f-\u009f]|x{501}/);
+    assert.match(text, /x{500}\. Check your request status with trackly auto-apply --status/);
+    if (payload) assert.equal(payload.retryable, false);
+  }
+});
+
 test('jobs maps every filter flag to the right query param', async (t) => {
   const { requests, result } = await runAgainstMock(
     t,
@@ -80,6 +439,20 @@ test('jobs maps every filter flag to the right query param', async (t) => {
   assert.equal(q.get('workArrangements'), 'hybrid,remote');
   assert.equal(q.get('companyId'), '243');
   assert.equal(q.get('search'), 'fintech');
+});
+
+test('jobs maps --role-types to the roleTypes query parameter', async (t) => {
+  const { requests, result } = await runAgainstMock(t, ['jobs', '--role-types', 'corporate,frontline,corporate'], () => ({ status: 200, json: { jobs: [] } }));
+  assert.equal(result.code, 0, result.stderr);
+  const url = new URL(requests[0].url, 'http://localhost');
+  assert.equal(url.searchParams.get('roleTypes'), 'corporate,frontline');
+});
+
+test('jobs rejects invalid role-types values before making a request', async (t) => {
+  const { requests, result } = await runAgainstMock(t, ['jobs', '--role-types', 'retail']);
+  assert.notEqual(result.code, 0);
+  assert.equal(requests.length, 0);
+  assert.match(result.stderr, /Invalid --role-types value "retail"/);
 });
 
 test('jobs rejects invalid work-arrangement values before making a request', async (t) => {
@@ -157,8 +530,8 @@ test('job --json passes a null sponsorship status through untouched', async (t) 
   assert.equal(JSON.parse(result.stdout).job.sponsorshipStatus, null);
 });
 
-test('apply/save/dismiss POST the correct tracker stage', async (t) => {
-  for (const [action, stage] of [['apply', 'applied'], ['save', 'backlog'], ['dismiss', 'discarded']]) {
+test('mark-applied/save/dismiss POST the correct tracker stage', async (t) => {
+  for (const [action, stage] of [['mark-applied', 'applied'], ['save', 'backlog'], ['dismiss', 'discarded']]) {
     const { requests, result } = await runAgainstMock(t, [action, '1234'], () => ({ status: 200, json: { ok: true } }));
     assert.equal(result.code, 0, `${action}: ${result.stderr}`);
     assert.equal(requests[0].method, 'POST');
@@ -485,8 +858,13 @@ test('--json emits structured rollout denials on stdout', async (t) => {
 });
 
 test('Apply maintenance emits resume guidance and never retries the mutation', async (t) => {
+  // Runs for the mark-applied path and for the Trackly Apply (cloud) path.
+  for (const [command, url] of [
+    ['apply', '/api/jobscout/tracker/jobs/1234/stage'],
+    ['auto-apply', '/api/jobscout/apply/assist-requests'],
+  ]) {
   let responseCount = 0;
-  const { requests, result } = await runAgainstMock(t, ['apply', '1234', '--json'], () => {
+  const { requests, result } = await runAgainstMock(t, [command, '1234', '--json'], () => {
     responseCount++;
     return {
       status: 503,
@@ -504,10 +882,12 @@ test('Apply maintenance emits resume guidance and never retries the mutation', a
   assert.equal(requests.length, 1, 'maintenance must not repeat the Apply mutation');
   assert.equal(responseCount, 1);
   assert.equal(requests[0].method, 'POST');
+  assert.equal(requests[0].url, url);
   const parsed = JSON.parse(result.stdout);
   assert.equal(parsed.code, 'maintenance_mode');
   assert.equal(parsed.retryable, false);
   assert.match(parsed.guidance, /Never create a duplicate run or click Submit/);
+  }
 });
 
 test('unknown flag is rejected with a did-you-mean suggestion', async (t) => {
@@ -681,7 +1061,7 @@ test('agent doctor explains that exact resume validation is deferred to a real A
   assert.ok(result.stdout.includes(
     `CLI: ${packageVersion}; MCP contract: 3.9.4`,
   ));
-  assert.match(result.stdout, /Skill: 4\.9\.4; digest: [a-f0-9]{64}/);
+  assert.match(result.stdout, /Skill: 4\.9\.6; digest: [a-f0-9]{64}/);
   assert.match(result.stdout, /Resume validation: available \(exact bytes are verified during an active Apply run\)/);
 });
 

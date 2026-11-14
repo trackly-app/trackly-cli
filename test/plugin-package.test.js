@@ -469,7 +469,7 @@ test('coordinated hosted provenance rejects a dirty reviewed-runtime checkout', 
   fs.writeFileSync(
     path.join(cliRoot, 'plugins', 'trackly', 'hosted-contract-fixture.json'),
     JSON.stringify({
-      sourceRuntime: { commit: sourceCommit, parent: '0'.repeat(40) },
+      sourceRuntime: { commit: sourceCommit, parents: ['0'.repeat(40)] },
       mergedRuntime: { commit: '1'.repeat(40), parents: [sourceCommit] },
       sourceSha256: {},
     }),
@@ -613,29 +613,32 @@ test('scope extraction ignores stale commented mappings and rejects dynamic obje
 });
 
 test('plugin tool scope map rejects mutation, reassignment, aliasing, and escape', () => {
+  // close-ai #3604: the OpenAI rows come from the directory registry, not the legacy map.
   const source = `
+    import { DIRECTORY_TOOLS, directoryToolEntry, type DirectoryToolEntry } from './directory-surface-registry.js';
     const TRACKLY_PLUGIN_TOOL_SCOPES = {
       trackly_active: ['jobs:read', 'tracking:read'],
     } as const satisfies Record<string, readonly string[]>;
     const TRACKLY_PLUGIN_TOOL_NAMES = Object.freeze(
       Object.keys(TRACKLY_PLUGIN_TOOL_SCOPES),
     );
-    const { trackly_report_apply_progress: _progress, trackly_get_apply_work: _work, ...sharedToolScopes } = TRACKLY_PLUGIN_TOOL_SCOPES;
-    export const TRACKLY_OPENAI_TOOL_SCOPES: Readonly<Record<string, readonly McpScope[]>> = Object.freeze({
-      ...sharedToolScopes,
-      ...Object.fromEntries(Object.values(OPENAI_PROGRESS_ACTIONS).map(({ name }) => [name, ['apply:write'] as const])),
-      trackly_get_apply_progress: TRACKLY_PLUGIN_TOOL_SCOPES.trackly_get_apply_work,
-      trackly_get_apply_snapshot: TRACKLY_PLUGIN_TOOL_SCOPES.trackly_get_apply_work,
-    });
+    export const TRACKLY_OPENAI_TOOL_SCOPES: Readonly<Record<string, readonly McpScope[]>> = Object.freeze(
+      Object.fromEntries(Object.entries(DIRECTORY_TOOLS as Record<string, DirectoryToolEntry>)
+        .filter(([, entry]) => entry.surfaces.includes('openai'))
+        .map(([name, entry]) => [name, entry.scopes])),
+    );
     function diagnosticToolName(value: unknown): string {
-      return typeof value === 'string' && (requiredScopesForPluginTool(value) !== null || requiredScopesForPluginTool(value, 'openai') !== null)
+      return typeof value === 'string' && (requiredScopesForPluginTool(value) !== null || directoryToolEntry(value) !== null)
         ? value
         : '[redacted]';
     }
     function requiredScopesForPluginTool(toolName: string, surface = 'legacy'): string[] | null {
-      const catalog = surface === 'legacy' ? TRACKLY_PLUGIN_TOOL_SCOPES : TRACKLY_OPENAI_TOOL_SCOPES;
-      if (!Object.hasOwn(catalog, toolName)) return null;
-      return [...catalog[toolName]];
+      if (surface === 'openai' || surface === 'claude') {
+        const entry = directoryToolEntry(toolName);
+        return entry?.surfaces.includes(surface) ? [...entry.scopes] : null;
+      }
+      if (!Object.hasOwn(TRACKLY_PLUGIN_TOOL_SCOPES, toolName)) return null;
+      return [...TRACKLY_PLUGIN_TOOL_SCOPES[toolName]];
     }
   `;
   assert.doesNotThrow(() => assertImmutablePluginToolScopesSemantics(source, 'scope-map fixture'));
@@ -645,30 +648,31 @@ test('plugin tool scope map rejects mutation, reassignment, aliasing, and escape
     'const aliasedScopes = TRACKLY_PLUGIN_TOOL_SCOPES;',
     'consumeScopes(TRACKLY_PLUGIN_TOOL_SCOPES);',
     'TRACKLY_PLUGIN_TOOL_SCOPES = {};',
+    'const { trackly_active: _active, ...sharedToolScopes } = TRACKLY_PLUGIN_TOOL_SCOPES;',
   ]) {
     assert.throws(
       () => assertImmutablePluginToolScopesSemantics(`${source}\n${mutation}`, 'mutated scope-map fixture'),
-      /must (?:not be reassigned, mutated, aliased, escaped, or referenced outside its locked names catalog, OpenAI catalog derivation, and requiredScopesForPluginTool|never be assigned or updated after declaration)/,
+      /must (?:not be reassigned, mutated, aliased, escaped, or referenced outside its locked names catalog and requiredScopesForPluginTool|never be assigned or updated after declaration|not alias or destructure)/,
     );
   }
   assert.throws(
     () => assertImmutablePluginToolScopesSemantics(
-      source.replace("requiredScopesForPluginTool(value, 'openai') !== null", 'true'),
+      source.replace('directoryToolEntry(value) !== null', 'true'),
       'widened diagnostic fixture',
     ),
     /diagnosticToolName.*locked executable branch semantics/,
   );
   for (const [label, widened] of [
-    ['shared rows keep apply work', source.replace('trackly_get_apply_work: _work, ', '')],
-    ['progress action without apply:write', source.replace("['apply:write'] as const", "['jobs:read'] as const")],
-    ['snapshot borrows another row', source.replace(
-      'trackly_get_apply_snapshot: TRACKLY_PLUGIN_TOOL_SCOPES.trackly_get_apply_work',
-      'trackly_get_apply_snapshot: TRACKLY_PLUGIN_TOOL_SCOPES.trackly_active',
+    ['OpenAI rows include Claude-only entries', source.replace(".filter(([, entry]) => entry.surfaces.includes('openai'))", '')],
+    ['OpenAI rows read the legacy map', source.replace(
+      'Object.entries(DIRECTORY_TOOLS as Record<string, DirectoryToolEntry>)',
+      'Object.entries(TRACKLY_PLUGIN_TOOL_SCOPES as Record<string, DirectoryToolEntry>)',
     )],
+    ['registry imported from an unreviewed module', source.replace("from './directory-surface-registry.js'", "from './unreviewed-registry.js'")],
   ]) {
     assert.throws(
       () => assertImmutablePluginToolScopesSemantics(widened, `${label} fixture`),
-      /two legacy apply work tools|TRACKLY_OPENAI_TOOL_SCOPES/,
+      /TRACKLY_OPENAI_TOOL_SCOPES|must import|DIRECTORY_TOOLS|not be reassigned/,
       label,
     );
   }
@@ -872,6 +876,11 @@ test('the exported plugin router must be mounted on the exact production applica
     }
     function startServer() {
       installProcessGuards();
+      try { startOutreachWorker(getOutreachData()); }
+      catch (error) {
+        logger.error('outreach-agent','Worker configuration rejected at API startup');
+        throw error;
+      }
       if (shouldRunStartupDbWrites()) {
         startRefreshGraceSweep();
         startMuseTraceRetention(pool, (postgresCode) => {
@@ -879,7 +888,10 @@ test('the exported plugin router must be mounted on the exact production applica
         });
       }
       const app = createApp();
-      app.listen(PORT);
+      const server = app.listen(PORT);
+      const stopVoiceRelay = attachVoiceRelay(server, voiceRelayDependencies(requireAuth, isVoiceV3Enabled, isVoiceV3Pilot));
+      installApiShutdown({ server, stopVoice: stopVoiceRelay, stopSummaries: stopVoiceRelaySummaries,
+        closeDatabase: () => pool.end(), exit: code => process.exit(code) });
     }
     if (require.main === module) {
       startServer();
@@ -1235,6 +1247,29 @@ test('the exported plugin router must be mounted on the exact production applica
     ),
     /must execute only installProcessGuards and its locked maintenance prelude before creating the live application/,
   );
+  // close-ai #3552: the outreach worker start is part of the locked prelude.
+  assert.throws(
+    () => assertLivePluginRouterMount(
+      source.replace("throw error;\n", 'return;\n'),
+      'tracklyPluginMcpRoutes',
+      './mcp/plugin-router',
+      '/api/plugin/trackly/mcp',
+      'swallowed outreach worker failure fixture',
+    ),
+    /must execute only installProcessGuards and its locked maintenance prelude before creating the live application/,
+  );
+  // close-ai #3460: the bound listener may reach only the reviewed voice relay and shutdown.
+  for (const [from, to, label] of [
+    ['const stopVoiceRelay = attachVoiceRelay(server,', 'const stopVoiceRelay = attachOtherRelay(server,', 'swapped relay fixture'],
+    ['closeDatabase: () => pool.end(), exit: code => process.exit(code) });', "closeDatabase: () => pool.end(), exit: code => process.exit(code) });\n      server.on('request', otherApp);", 'second request handler fixture'],
+  ]) {
+    const changed = source.replace(from, to);
+    assert.notEqual(changed, source);
+    assert.throws(
+      () => assertLivePluginRouterMount(changed, 'tracklyPluginMcpRoutes', './mcp/plugin-router', '/api/plugin/trackly/mcp', label),
+      /must attach only the reviewed voice relay and shutdown|must not reference the listening server outside its reviewed attachments/,
+    );
+  }
   assert.throws(
     () => assertLivePluginRouterMount(
       source.replace('if (shouldRunStartupDbWrites()) {', 'if (true) {'),
@@ -2194,7 +2229,9 @@ export function createTracklyPluginRouter(surface: CuratedMcpSurface = MCP_PLUGI
       const server = surface === MCP_MUSE_SURFACE
         ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'muse' })
         : claude
-        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'claude' })
+        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, {
+          surface: 'claude', userId: authInfo.extra.userId, grantedScopes: authInfo.scopes,
+        })
         : createTracklyPluginMcpServer(authToken, apiRequest, async () => {
           const { capability, filenameSha256: _filenameHash, ...document } = await pluginResumeDocuments(surface.resource).prepare({
             userId: authInfo.extra.userId, authEpoch: authInfo.extra.authEpoch,
@@ -2203,6 +2240,8 @@ export function createTracklyPluginRouter(surface: CuratedMcpSurface = MCP_PLUGI
           return { ...document, openUrl: \`\${surface.resource}/resume#\${capability}\` };
         }, surface === MCP_OPENAI_SURFACE ? MCP_OPENAI_SURFACE.resumePath : MCP_PLUGIN_SURFACE.resumePath, {
           surface: surface === MCP_OPENAI_SURFACE ? 'openai' : 'legacy',
+          userId: authInfo.extra.userId,
+          grantedScopes: authInfo.scopes,
         });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       const analyticsContext = buildHostedMcpAnalyticsContext({
@@ -3958,12 +3997,12 @@ test('brand validation accepts the exact approved PNG replacement state', () => 
   }, png);
 });
 
-test('public skills reference only the locked 21-tool facade', () => {
+test('public skills reference only the locked 23-tool facade', () => {
   const lock = json('plugins/trackly/skill-lock.json');
   const actual = referencedTools(path.join(PLUGIN, 'skills'));
-  assert.equal(lock.publicToolAllowlist.length, 21);
-  assert.equal(lock.hostedMcpToolAllowlist.length, 57);
-  assert.equal(new Set(lock.hostedMcpToolAllowlist).size, 57);
+  assert.equal(lock.publicToolAllowlist.length, 23);
+  assert.equal(lock.hostedMcpToolAllowlist.length, 64);
+  assert.equal(new Set(lock.hostedMcpToolAllowlist).size, 64);
   assert.deepEqual(actual, [...lock.publicToolAllowlist].sort());
   assert.ok(!actual.some((name) => name.includes('referral')));
   assert.deepEqual(lock.publicLifecycleContract, {
@@ -3993,7 +4032,10 @@ test('public skills reference only the locked 21-tool facade', () => {
     resumeHandling: 'private_original_preview_exact_approval_verified_attachment_or_manual_unbound',
     certifyReviewReady: 'atomic_checkpoint_truth_outcome_verified_original_or_manual_unbound',
     reconcileManualSubmission: 'atomic_current_epoch_evidence_outcome',
-    submissionBoundary: 'manual_only_no_submit_tool',
+    // close-ai contract 1.1.0 (#3536): Trackly Apply (cloud) is the one path where Trackly submits.
+    submissionBoundary: 'browser_apply_stops_before_submit; only cloudAutoApply submits, and only on an explicit user request',
+    cloudAutoApply: 'explicit_user_request_queues_trackly_submitted_assist_request',
+    cloudAutoApplyLimitRefusal: 'openai_and_classic_never_carry_upgrade_url; claude_and_muse_have_no_auto_apply_tool',
   });
   assert.deepEqual(Object.keys(lock.publicScopeContract).sort(), [...lock.publicToolAllowlist].sort());
   assert.deepEqual(
@@ -4110,7 +4152,7 @@ test('adapted trackly Apply skill is traceable to its source and safety invarian
   const discoverySkill = read('plugins/trackly/skills/trackly/SKILL.md');
   assert.match(discoverySkill, /validated posting-date signals only/);
   assert.match(discoverySkill, /never substitute first-seen time for a posting date/);
-  assert.match(discoverySkill, /Marking a job `applied` additionally requires Apply write permission/);
+  assert.match(discoverySkill, /Marking a job `applied` is for an application the user submitted themselves. It additionally requires Apply write permission/);
   assert.match(discoverySkill, /never use it to infer or claim submission/);
 
   const browserSafety = read('plugins/trackly/skills/trackly-apply/references/browser-safety.md');
@@ -4419,6 +4461,17 @@ export function createTracklyPluginMcpServer() {
     annotations: readOnlyAnnotations,
   }, async ({ operation }) => {
     try {
+      if (operation === 'preview' && options.surface === 'claude') {
+        return resultContent({
+          view: 'resume' as const,
+          success: true,
+          requiresLocalAgentOrManualUpload: true as const,
+          automaticEmployerAttachment: false as const,
+          noSubmit: true as const,
+          nextAction: 'review_in_trackly_web',
+          privacy: 'No resume bytes, file identifiers, filenames, download URLs, tokens, or local paths were returned.',
+        }, true);
+      }
       if (operation === 'preview') {
         if (!prepareResume) throw new Error('Resume preview is unavailable on this host');
         const { openUrl, ...document } = await prepareResume();
@@ -4442,7 +4495,10 @@ export function createTracklyPluginMcpServer() {
 
 }`;
  assert.doesNotThrow(() => verifyHostedResumeToolContract(source, 'private preview fixture'));
- for (const [original, changed] of [["document,\n", "document: { ...document, openUrl },\n"], ["_meta: { 'trackly/resumeOpenUrl': openUrl }", "structuredContent: { openUrl }"], ["const { openUrl, ...document } = await prepareResume();", "const document = await prepareResume(); const openUrl = document.openUrl;"]]) {
+ for (const [original, changed] of [["document,\n", "document: { ...document, openUrl },\n"], ["_meta: { 'trackly/resumeOpenUrl': openUrl }", "structuredContent: { openUrl }"], ["const { openUrl, ...document } = await prepareResume();", "const document = await prepareResume(); const openUrl = document.openUrl;"],
+   // close-ai #3604: the Claude preview never reaches the private document or its capability.
+   ["nextAction: 'review_in_trackly_web',", "nextAction: 'review_in_trackly_web', document: await prepareResume(),"],
+   ["operation === 'preview' && options.surface === 'claude'", "operation === 'preview' && options.surface === 'muse'"]]) {
  assert.ok(source.includes(original));
  assert.throws(() => verifyHostedResumeToolContract(source.replace(original, changed), 'leaked capability'), /component-only capability semantics/);
  }

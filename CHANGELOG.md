@@ -1,15 +1,74 @@
 # Changelog
 
-## [0.20.1] - 2026-10-10
-
-- Ship Trackly Apply 4.9.1 and plugin 1.1.1: resolve profile-lookup validators from the loaded skill directory, require explicit work mode with revision-zero support only for fixed inspection, and reject empty fixed-inspection selections. Behavioral regressions cover both native and plugin lookup gates and preserve the exhausted accessible-execution exception.
-
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.28.0] - 2026-11-11
+
+### Changed
+- MCP tool families (close-ai #3619). Every local MCP tool now has a family title, `<Family> · <Action>` (for example "Tracker · Move stage"), as both `title` and `annotations.title`, and its description starts with the family tag, for example `[Tracker]`. Families, in catalog order: Jobs, Companies, Network, Preferences, Profile, Job status, Tracker, Trackly Apply (local), Apply step, Trackly Apply (cloud), Chat, Feedback. Internal steps of a Trackly Apply (local) run are titled "Apply step · <Action>", tagged `[Trackly Apply · protocol step]` and say they are called by the Trackly Apply skill during a run. `mcp/tool-families.js` mirrors close-ai's registry plus the four local-only tools, and applies the labels once at registration. No tool name, input schema, scope or output shape changed; refresh your client's tool discovery to see the new titles.
+- One status story. `trackly_update_status` with `applied` is for an application you submitted yourself, and it now also records the job on your Tracker board (the backend creates the job's one entry or moves a saved or contacted entry to applied, and returns `trackerEntry`). Saved and dismissed change only the job list. `trackly_record_application_outcome(s)` are described as Trackly Apply run receipts; a submitted receipt also reaches the Tracker. The Tracker tool descriptions no longer say `trackly_update_status` only sets the job-list status.
+- `trackly mark-applied <id>` (and `trackly apply <id>`) now says what happened on your Tracker board when the backend reports it: added, linked to the matching card or moved to applied, or a warning when the board was not updated (switched off, more than one matching card, or a failed step that is safe to repeat, worded from the backend's reason code). `--json` output is unchanged and carries the backend's `trackerEntry` as returned.
+- The approved names everywhere: "Trackly Apply (local)" (your own AI agent fills the form in your browser and stops before Submit; you submit) and "Trackly Apply (cloud)" (Trackly applies for you; nothing runs on your computer; the command stays `trackly auto-apply` and the tools `trackly_auto_apply` and `trackly_auto_apply_status`). CLI help, `trackly apply`, plan-limit messages, the README "MCP Tools Reference" and `docs/trackly-tools.md` use them, and both references are now grouped under family headings with titles.
+- Skills: npm Trackly Apply (local) skill 4.9.6, Claude skill and plugin 1.0.2, classic Codex plugin 1.1.6. They explain the "Apply step" titles, say that recording applied also records the Tracker, and the Claude skill no longer asks to add a Tracker entry after a reconciled submission, because applied records it on its own.
+- Listing kits: the ChatGPT 1.0.9 and Claude v2 catalogs and READMEs carry the family titles, and `npm run test:plugin-submission` fails when a kit title differs from the registry.
+
+### Added
+- `test/skill-tool-references.test.js`: every `trackly_*` name in each shipped skill must exist on its surface's catalog (npm skill against the local MCP, Claude skill against the captured Claude catalog, classic skills against the captured classic catalog). `test/tool-families.test.js` checks titles, tags, the registry order and the family grouping of the README and tool docs.
+
+### Maintenance
+- Recapture the coordinated hosted-contract gate against the deployed close-ai `8f7ba68e` (deploy run 43001328904, 2026-11-11 3:03 AM PST, with #3635 tool families and #3631 one status story). All 51 deployable paths preserve the reviewed #3635 head `9d495993`, so no inherited exception applies. The classic facade keeps its 23 names, schemas, annotations and scopes; only the `trackly_update_status` descriptor and handler (status story, `trackerSync: false` where a directory's Tracker tools are off) and the plugin-server bytes move. The gate now also byte-locks close-ai `src/mcp/status-story.ts` and `src/mcp/tool-families.ts` and locks how they compose family titles and description tags, and `scripts/verify-tool-families.js` compares the npm registry with close-ai's. The hosted Tracker `tools/list` fixture is recaptured at `8f7ba68e`, and the listing-kit catalogs and 1.0.9 package manifest digest point at the same commit.
+
+## [0.27.0] - 2026-11-11
+
+Trackly Apply (cloud) is available in the CLI and the npm MCP server, now that the hosted MCP serves the same tools (close-ai #3536, in production since 2026-11-10 10:18 PM PST). Trackly offers three different ways to apply, and this release names them the same way everywhere:
+
+- **Trackly Apply (local):** your own AI agent (Claude in Chrome, Codex or computer use) fills the application in your browser and stops before Submit; you submit. Set it up with `trackly agent setup`.
+- **Trackly Apply (cloud):** you only request it and Trackly applies to the employer for you; nothing runs on your computer.
+- **Mark applied:** you applied on your own and record it.
+
+### Added
+- `trackly auto-apply <jobId>` requests Trackly Apply (cloud) for one job, with your default resume or `--resume-id <id>`. `trackly auto-apply --status` lists your requests and `trackly auto-apply --help` explains Trackly Apply (cloud) next to the other two ways. Every request sends `acknowledged: true`: asking Trackly to apply is your consent for Trackly staff to use every saved profile answer, sensitive ones included, to complete the application.
+- Two MCP tools, mirrored from the hosted MCP: `trackly_auto_apply` (Trackly Apply (cloud) for one job the user explicitly asked for; strict `jobId` input) and `trackly_auto_apply_status` (read-only request list, optionally for up to 200 `jobIds`, at most 50 results plus `hasMore`). The local MCP now registers 65 tools; the hosted MCP has 62.
+- `trackly_search_jobs` sets `autoApplySupported: true` on jobs Trackly Apply (cloud) can apply to (active US Greenhouse, Lever and Ashby postings) instead of passing through the server's retired constant, and adds a `nextSteps` line when some of them are still open to you, as the hosted search does. `trackly jobs` marks those jobs with the `trackly auto-apply <id>` command.
+
+### Changed
+- `trackly apply` with no job ID names Trackly Apply (local), Trackly Apply (cloud) (`trackly auto-apply <jobId>`) and mark applied (`trackly mark-applied <jobId>`). `trackly apply <jobId>` still marks the job applied, as in 0.25.0 and 0.26.0, with a hint to use `trackly mark-applied`. The JSON keys of the no-ID guide are unchanged.
+- Help, README, `docs/trackly-tools.md` and refusal messages use "Trackly Apply (local)" and "Trackly Apply (cloud)". Tool names, input schemas, scopes and the `trackly auto-apply` command name are unchanged.
+- Skills: the npm Trackly Apply (local) skill 4.9.5 and the Codex plugin 1.1.5 skills explain the three ways to apply side by side, so an agent calls `trackly_auto_apply` only when the user asks Trackly to apply for them. The Claude skill 1.0.1 and Claude plugin 1.0.1 say that Trackly Apply (cloud) is not offered on the Claude connector. Installed 4.9.4 skills keep working; `trackly agent setup` updates them.
+
+### Maintenance
+- Recapture the coordinated hosted-contract gate against the deployed close-ai `96781f59` (deploy run 42965813816, after the #3536 merge `3ea1ab64`). The classic facade is contract 1.1.0 with 23 tools: it adds `trackly_auto_apply` and `trackly_auto_apply_status`, and the `trackly_search_jobs` descriptor gains the `autoApplySupported` sentence. The gate now byte-locks close-ai `src/mcp/auto-apply.ts`, which supplies those descriptors, and pins the Trackly Apply (cloud) refusal branch and annotations. The ChatGPT kit catalog is 40 tools (thirteen new in the 1.0.9 Rescan); the Claude catalog is unchanged at 37.
+- Removes the 0.26.0 hold (`cloudAutoApply.released`) and its test preload instead of adding a second switch.
+
+## [0.26.0] - 2026-11-10
+
+### Changed
+- MCP search distinguishes pending prerequisites from jobs outside the scoring window and preserves explicit lower-bound counts. `trackly_ask` forwards documented count/recency metadata, preserves its interpretation and validated URL, omits unrelated page fields, and returns the `invalid_jobs_response` tool error for unreadable follow-on pages.
+- Clearer names for the three ways to apply. `trackly mark-applied <jobId>` records a job you applied to yourself. `trackly apply <jobId>` still does the same, as in 0.25.0, and suggests `mark-applied`. `trackly apply` with no job ID explains Trackly Apply (your own agent fills the form in your browser and you submit; set up with `trackly agent setup`), cloud auto-apply and mark applied.
+- `trackly whoami` reads the account identity and optional plan from `/api/jobscout/me`.
+- Limit messages display server-provided plan details; other 429 responses use temporary rate-limit guidance. JSON refusals include structured status, message and retry guidance on stdout with a nonzero exit code.
+
+### Added
+- Trackly Apply skill for Claude (close-ai #3601). Each GitHub release attaches `trackly-apply-claude-skill-<version>.zip` (claude.ai skill upload) and `trackly-claude-plugin-<version>.zip` (Claude Code plugin bundling the skill and the Claude connector `https://mcp.usetrackly.app/api/plugin/trackly/claude/mcp`). The skill is adapted from the ChatGPT 1.0.9 Apply skill to the Claude tool names, reads only typed `nextAction` values and error codes, uses only `browserSurface: claude_in_chrome`, and keeps the never-Submit, exact-file and navigation-origin rules. Archives are deterministic and listed in `SHA256SUMS`.
+- Directory listing kits: `plugins/trackly/listing/openai/` for the ChatGPT `trackly-openai` 1.0.9 update (38 tools, eleven new) and `plugins/trackly/listing/claude/` for the Claude v2 listing edit (21 tools, plus 16 Apply tools for allowlisted accounts). `npm run test:plugin-submission` now checks both kits, the Claude plugin manifest and connector, and that every tool the Claude skill names exists in the Claude catalog.
+- Five Tracker MCP tools, mirrored from the hosted MCP (close-ai #3603): `trackly_list_tracker_applications`, `trackly_create_tracker_application`, `trackly_update_tracker_stage`, `trackly_add_tracker_note` and `trackly_retract_tracker_event`. Agents can list `/tracker` board entries, add a job the user confirms applying to, move an entry to any of the 12 stages (for example rejected or interview) with a dated note, add notes, and undo one named event. They call the board's own routes with the user's credentials, read before every write, retry once on a version conflict, use deterministic idempotency keys, and never return contact email addresses. The local MCP now registers 63 tools; the hosted MCP has 60.
+- Cloud auto-apply (`trackly auto-apply <jobId>` with `--status` and `--resume-id`, and the local MCP `trackly_auto_apply`) is implemented but held out of this release until the hosted MCP ships the same tool. When released, a request sends `acknowledged: true`: asking Trackly to auto-apply is consent for staff to use every profile answer, sensitive ones included, to complete the application.
+- Search output shows `autoApplySupported` when returned by the server.
+
+### Maintenance
+
+- Recapture the coordinated hosted-contract gate against the deployed close-ai `5d443853` (close-ai #3544, after the #3604 directory-parity merge). The classic 21-tool facade keeps every schema and annotation, and only the `trackly_search_jobs` and `trackly_get_job` descriptions gained the match-score status sentence, now locked with its source constant; the gate now pins the eleven directory-only registrations, the classic-surface name guard, the Claude resume-preview branch and the byte-locked directory surface registry that supplies the ChatGPT and Claude scope rows.
+
+## [0.25.0] - 2026-11-04
+
+### Added
+
+- Add the role type filter to job search: `trackly_search_jobs` accepts `roleTypes` (`corporate`, `frontline`, or both) and `trackly jobs` accepts `--role-types`. Omitted uses the student's saved preference (corporate by default). It applies to status `new` and `all`; pipeline views are never filtered by role type. The hosted MCP carries the identical parameter.
 
 ## [0.24.0] - 2026-11-02
 
@@ -90,6 +149,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make the advertised 20-result MCP default explicit, allow the API's full 100-result page, and validate integer pagination. Protocol telemetry is covered through real initialization; no client model identifier is inferred.
 
 The industry/literal-discovery candidate remains unreleased until its backend capability is available. Hosted MCP and client installations follow separate update and verification lifecycles.
+
+## [0.20.1] - 2026-10-10
+
+- Ship Trackly Apply 4.9.1 and plugin 1.1.1: resolve profile-lookup validators from the loaded skill directory, require explicit work mode with revision-zero support only for fixed inspection, and reject empty fixed-inspection selections. Behavioral regressions cover both native and plugin lookup gates and preserve the exhausted accessible-execution exception.
 
 ## [0.20.0] - 2026-10-10
 

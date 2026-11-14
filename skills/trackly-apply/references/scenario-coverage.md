@@ -6,7 +6,7 @@ Record only the mechanics exercised on the current application run. Coverage is 
 
 For each exercised scenario, call `trackly_report_apply_observation` with:
 
-- `runId`: the exact Trackly Apply run.
+- `runId`: the exact Trackly Apply (local) run.
 - `provider`: the normalized ATS.
 - `fieldLabel`: a generic mechanics label such as `Run scenario coverage`; never copy private page text.
 - `observationType`: `scenario_coverage`.

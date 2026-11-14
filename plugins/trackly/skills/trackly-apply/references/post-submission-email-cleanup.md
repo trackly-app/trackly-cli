@@ -41,7 +41,7 @@ connector availability alone is not consent.
 A read-only preflight consent does not grant write access.
 Never add mailbox access or switch accounts silently. Ask only for genuinely
 missing account/scope authorization, preserving all completed work. Other users
-need neither Superhuman nor a particular email address to use Trackly Apply.
+need neither Superhuman nor a particular email address to use Trackly Apply (local).
 
 Consistency conflicts, ambiguous mutation results, and failed readbacks are
 not capability unavailability. Never use Gmail to retry a thread already

@@ -1,14 +1,14 @@
 {
   "formatVersion": 1,
-  "adaptationVersion": "1.1.4",
+  "adaptationVersion": "1.1.6",
   "source": {
     "path": "skills/trackly-apply",
-    "skillVersion": "4.9.4",
-    "treeSha256": "e41736bf83e4b7b00783fe335a7b145c064a709336aaae54c0ddd6b667686b33"
+    "skillVersion": "4.9.6",
+    "treeSha256": "ba15817084e15e111c8aa9e18e29c5671cc8c92f7ef8cc23a2ce4f41ada1277b"
   },
   "adapted": {
     "path": "plugins/trackly/skills/trackly-apply",
-    "treeSha256": "dfde766e09e21942bbf4efaf8f3d74517763c949f41e07841e2fe9a92750a171"
+    "treeSha256": "0864a0dbdab796d634e145f2039583f5f229924a56fcd20349179eb035924e5c"
   },
   "adaptation": {
     "reason": "The public plugin facade intentionally exposes a smaller stable tool vocabulary than the full local trackly Apply MCP contract.",
@@ -49,7 +49,9 @@
     "resumeHandling": "private_original_preview_exact_approval_verified_attachment_or_manual_unbound",
     "certifyReviewReady": "atomic_checkpoint_truth_outcome_verified_original_or_manual_unbound",
     "reconcileManualSubmission": "atomic_current_epoch_evidence_outcome",
-    "submissionBoundary": "manual_only_no_submit_tool"
+    "submissionBoundary": "browser_apply_stops_before_submit; only cloudAutoApply submits, and only on an explicit user request",
+    "cloudAutoApply": "explicit_user_request_queues_trackly_submitted_assist_request",
+    "cloudAutoApplyLimitRefusal": "openai_and_classic_never_carry_upgrade_url; claude_and_muse_have_no_auto_apply_tool"
   },
   "publicScopeContract": {
     "trackly_search_jobs": [
@@ -79,6 +81,12 @@
     ],
     "trackly_update_status": [
       "tracking:write"
+    ],
+    "trackly_auto_apply": [
+      "apply:write"
+    ],
+    "trackly_auto_apply_status": [
+      "apply:read"
     ],
     "trackly_save_application_answers": [
       "profile:write"
@@ -127,14 +135,16 @@
   },
   "publicExecutableContract": {
     "descriptorSha256": {
-      "trackly_search_jobs": "4716982f88e7db329081cc91fab700809d6fefca3c4448e7d9a577bbb7b31a71",
-      "trackly_get_job": "df2fc206605d659acf306a4afb3fa60626b0424b4862b2c8003ee2b62438414d",
+      "trackly_search_jobs": "d68920210e7ce2f2547579a580039311a3fa18e5aed191724a8cbcccfe1c854c",
+      "trackly_get_job": "7c43dd671da80356388eefbea5e4f5521312f630547236899c6703ee0db04247",
       "trackly_search_companies": "fb72369ef77512c279a4544c0978fe10a592fbcf7032be872e10a9364a02a8de",
       "trackly_get_job_brief": "21ca99a8797faaab41d052ac18c55c530c2897450ab9fa47c45f06903c2b99b8",
       "trackly_get_preferences": "3a848d9864eaa749a6964ae05a3520ccfb755d93cad85540ec16c7f3761935b4",
-      "trackly_get_apply_readiness": "9d89426e73489113a193c007dcc5fd5d24b267e43a8e10daa461bb4d5312a470",
+      "trackly_get_apply_readiness": "119066006cce3e24e49713e61a41cf2c829343d52b2bc32e52a86f92dfbf8f53",
       "trackly_lint_application_text": "4291951a0bccc03706083872c1b8fb3d62e4241a18f63f1f5d6dd14963bfe955",
-      "trackly_update_status": "c9725177eda04b00aa6ab944086f96dbef62f27b0f20fb5658b391fa0c4d9c8b",
+      "trackly_update_status": "46dbcb4449539df3f9a0ce5e9583e93799a51286386cf3cccc9539de3c5060e2",
+      "trackly_auto_apply": "ebd60acdc279039c05a9f61e758a7f9364ad61e42c92b0b04fe6789b8af02323",
+      "trackly_auto_apply_status": "ee7eccbe9c3638c3f04ff0b7d3c53a86e98d879c967e12147074df45510811e1",
       "trackly_save_application_answers": "93c7cbb504621e317c8c81ee2ceb1ee276acf563a74ac0b08eada2479d5da0ab",
       "trackly_grant_sensitive_storage_consent": "f5d873f8f2a7c36e3e1bcc2ce15cd8534d77a60f287fa7cef2cfde4788fc980f",
       "trackly_revoke_sensitive_storage_consent": "a5eea25127a2f2fb8441c5557e9ae43efc8d0f34e19028d5b31b7364994cf861",
@@ -155,25 +165,27 @@
       "trackly_search_companies": "79b0e1b919cf9baa22fb6e091c8ae37064a2edf9c2a7f8198f22c76ba67d87f6",
       "trackly_get_job_brief": "3028af8f908d879b8cc7cb1a53720be9f69e83ad677a165045e777b58169c2e8",
       "trackly_get_preferences": "359dae5b5485dee12788f054413d1690f2527dfc6472202f9e75682c1dbdf8ac",
-      "trackly_get_apply_readiness": "a011f9a2a0498a3cc18202739fda987fea113d6bff3290ecf2ec7f7d0ee4c1a5",
+      "trackly_get_apply_readiness": "2b9157f4ce1bf53f610f21637e615531327195dbe9516bb6c8ff2d9f1f58ebf3",
       "trackly_lint_application_text": "d5b72e6d57bd43e291c8d1495a0eba06f08b09d2eb65059e289b08246fb4b3ad",
-      "trackly_update_status": "10538a74b15f1fbc60a2152dfea3e5822ccd6d26225b555bc9e379ea559dcc74",
+      "trackly_update_status": "902e50171bf50e9bc5597dd6777ea1a7e95b69df24767ea5df122ccdb190861d",
+      "trackly_auto_apply": "191952c8005ec283338dfcd5ecd9bef87b513cdb2bd9d0b2c40c498658cc0621",
+      "trackly_auto_apply_status": "aeaf404dafbf95820de7b804e7aae6667f5c384743db139ada6c609cfbedc15f",
       "trackly_save_application_answers": "441c563c75a323165cf87a323134ff210314dd91d5c392047dfaba1cca756df2",
       "trackly_grant_sensitive_storage_consent": "77c53b12516d4b05f7853ba7a326c667e95be8a718dcebb77fc54f806dec4f84",
       "trackly_revoke_sensitive_storage_consent": "223aa22074b9f857177c3b0f45a5d1d8f262bcdee3afb7c0478d222232b893cf",
       "trackly_list_apply_access_deferments": "11a3a58d1a775f830cc64ff17d591f7c3b7c6d67329f66c376697051a32f08a1",
       "trackly_defer_apply_access": "1389d30551a8536f09592c14184d4e156c91cef11895abe3eee508ed55ea932e",
       "trackly_clear_apply_access_deferment": "de6b29b8469b758f5252edc565cc33d6e5a07c43a97cc2f7e8ebf3f0e3342e0b",
-      "trackly_start_or_resume_apply": "4f4cbed87b23025c19a062bfd9de4d98eeae28e8198ee7642f7f049c5483f491",
+      "trackly_start_or_resume_apply": "615bbfbf641e33dcdd0fe166c583da4d9ebcdb4447ed8b134909686857d47e24",
       "trackly_get_apply_work": "f04236fa329f2a3acb2fd71486dc26fe2d8d762f90be17d903c0539aecf6535d",
-      "trackly_report_apply_progress": "61418579d192bcc44a273b4480fadd09ebec292f4a6ea1145ef0ac6da316c4c2",
-      "trackly_prepare_resume_artifact": "a83b1f55b59755d302c82d26dc0e3883b4aa6728463fb18a9609e4fdb333101b",
+      "trackly_report_apply_progress": "355d99fe607c0588ed3abc9214af9c566a5dd741cf2d0705fe4058db86bdf648",
+      "trackly_prepare_resume_artifact": "698f5eb8a52436b7afe0d258d844a28b447c65115c54c118b01b8db95ed7ac88",
       "trackly_certify_review_ready": "1d2aad91eccd40d9f8cb9ead56275ba61d2981bc928d342171ac63adf5c911bb",
       "trackly_reconcile_manual_submission": "32be19dadef3c8e3a1d9f320d3c1a9a0cde3845f930dac85641409f25a722b0a",
       "trackly_stop_apply": "8363bfe5eb7fb8ed4093b1f01bdaa9ebcb599ac35004fd13bab0ae6a2ab4f1ce"
     },
-    "pluginServerSha256": "a9adfbf263dbc76ed937e9c7aa11be59e76e06f6cd90d6f1323704f4951fa9c4",
-    "pluginScopesSha256": "7af7450c08a4b1944fb4f5dd0cf97a2f1247693326ba1af4e866b5fe4fa5d040",
+    "pluginServerSha256": "83da0d920f21ff4d24282c61760254f0ce5b197bd4bc02e32bcd7c93e099584b",
+    "pluginScopesSha256": "ae9a12656b30a568451892818b10224395cd7f03e13967fd689e770f207d01bf",
     "jobBriefServiceSha256": "fee263be5b7b05da8db6b9b9e2cb7559a50abeeeab447166f5fe7a889892bc7b",
     "backendUiRedirectSha256": "3d1018e472992626d39299be89ee8e996930fb76ce0f69155f2f63bb6f34d55e",
     "maintenanceModeSha256": "0409b32355a014ecc4d64056bf251fcde5f377400fe4f7485e70795420b25afe",
@@ -182,7 +194,10 @@
     "reviewIdentitySha256": "d03432434c10bbfd0e53f51b2d475f0adf3ada88ac85c2c0534791be0bf03c10",
     "azureRateLimitOptionsSha256": "f3e081d25fd066e76c5c622873622909bd6121e86845e09dd99d4cdf0b47778a",
     "authRateLimitSha256": "ce3e53c0c7b0e9df804fb027c061e27948aff5c5b9a1d022064ed7d0a92c11a5",
-    "applicationProfileServiceSha256": "1fa343df32f36c269e4f60c0dde1b50ddfa301185c0b3ff20caf7fa67b423531",
+    "applicationProfileServiceSha256": "934ab798cf28efc63257bdd82a9f6719c83f5beb9731e8b521f072d98b751c49",
+    "autoApplySha256": "70ddc98d755977267e9fc1c56380b0d518b5b03d77373c5f3cb55f4c2a527e03",
+    "statusStorySha256": "13aff693ef1baf65b3f7d3c5b9e71daaab3609119f1e9ca14bae496fb086b898",
+    "toolFamiliesSha256": "35f0513383bbbd8f4b6ce6cb9fd6d72afba35935b2b124e2dddb2597c58f41e0",
     "schemaSha256": {
       "SAFE_IDEMPOTENCY_KEY": "046859665306e5aeaf57032c76268934e1b98c95d4c17a88434062c9b6a4547a",
       "SAFE_CODE": "a35176c6c3f6ee563d4b6f6f68e4c546d8b03b03915d37bf55dd5a7011927574",
@@ -192,9 +207,9 @@
       "APPLY_REVIEW_STATUS_VALUES": "d7cfac8faae7ef866e573444d65feac41bf4cfe25043a058a2e2ed6d37d70181",
       "nullableCountSchema": "5ab8b408c3388ddab2fffb55c82c85a963553e6da82201f61e5fe4aa9d1f04a0",
       "profileFieldReferenceSchema": "f9784ffa6175af0782a4e5479c8ffd59ed1f0767e7104295755bd1e4e00c35cf",
-      "readinessOutputSchema": "bd66abb548d33a18383584160ebc2f68dee0bc496bf02ebe0bdd56a5e43a6432",
-      "applyOutputSchema": "f97c1ac864ee82818b29851c8a3a45dacbf1c6eb34b4947c478b9ea212ce57ed",
-      "progressOutputSchema": "f2e5d9609a1975418cbf31c00c0520646ab292c263c8c9e52bf1ce1b577042c5",
+      "readinessOutputSchema": "f983bb544ac7b33de8225337d6d9a96c56fa38dd14dfa4d790f54da28f926d9b",
+      "applyOutputSchema": "9b0ad6cad6e6c225a9ecab384491e6e265c1001b626a4766792577fa13bfcf9c",
+      "progressOutputSchema": "34886deb576b16c7943a122fd34df4830fcec78468713cb7cdcdac9e08b99947",
       "reviewOutputSchema": "a6e1fbdb32df0f8f72ddbc1c7f93f78ffce9b31580222f6a1efa74fc62fcead8",
       "resumeOutputSchema": "0431427fc9b818c540b52085dbecfbeba716d1fb373096fd3054e5093b86a4bb"
     },
@@ -249,6 +264,11 @@
     "trackly_get_preferences",
     "trackly_update_experience_limits",
     "trackly_update_status",
+    "trackly_list_tracker_applications",
+    "trackly_create_tracker_application",
+    "trackly_update_tracker_stage",
+    "trackly_add_tracker_note",
+    "trackly_retract_tracker_event",
     "trackly_ask",
     "trackly_get_job_brief",
     "trackly_contacts_at_company",
@@ -256,6 +276,8 @@
     "trackly_request_company",
     "trackly_favorite_companies",
     "trackly_unfavorite_companies",
+    "trackly_auto_apply",
+    "trackly_auto_apply_status",
     "trackly_get_apply_queue",
     "trackly_get_application_profile",
     "trackly_get_profile_onboarding",
@@ -308,6 +330,8 @@
     "trackly_get_apply_readiness",
     "trackly_lint_application_text",
     "trackly_update_status",
+    "trackly_auto_apply",
+    "trackly_auto_apply_status",
     "trackly_save_application_answers",
     "trackly_grant_sensitive_storage_consent",
     "trackly_revoke_sensitive_storage_consent",

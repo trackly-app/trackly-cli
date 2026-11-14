@@ -1218,7 +1218,7 @@ test('documented local MCP tool count matches every registered tool', () => {
     /server\.(?:tool|registerTool)\(\s*['"]([^'"]+)['"]/g
   )].map((match) => match[1]);
 
-  assert.equal(registeredTools.length, 60);
+  assert.equal(registeredTools.length, 67);
   assert.equal(new Set(registeredTools).size, registeredTools.length);
 });
 
@@ -1747,6 +1747,33 @@ test('hosted listener locks active PORT binding and exact listen callback semant
   }
 });
 
+test('hosted listener accepts only the reviewed const server binding (close-ai #3460)', () => {
+  const source = `
+    const PORT = process.env.PORT || 3000;
+    function startServer() {
+      const app = createApp();
+      const server = app.listen(PORT, () => {
+        logger.info('startup', 'Server started successfully', { port: PORT });
+      });
+    }
+  `;
+  const startServer = activeNamedDefinitionAst(source, 'startServer', 'bound listener fixture');
+  const options = {
+    listenAstSha256: sha256ExactBytes(JSON.stringify(canonicalSchemaAst(startServer.body.body[1]))),
+  };
+  assert.doesNotThrow(() => assertServerListenSemantics(source, 'bound listener fixture', options));
+  for (const [from, to] of [
+    ['const server = app.listen(', 'let server = app.listen('],
+    ['const server = app.listen(', 'const alternate = app.listen('],
+    ['const server = app.listen(', 'const unused = 1, server = app.listen('],
+  ]) {
+    assert.throws(
+      () => assertServerListenSemantics(source.replace(from, to), 'drifted bound listener fixture', options),
+      /must have exactly one direct app\.listen statement/,
+    );
+  }
+});
+
 test('hosted Git provenance reads outputs larger than the synchronous default buffer', () => {
   const repository = path.join(__dirname, '..');
   const packageLockBytes = gitOutput(repository, ['show', 'HEAD:package-lock.json'], null);
@@ -1821,6 +1848,7 @@ test('hosted application sensitivity map rejects mutation, reassignment, and ref
 test('hosted UI semantic lock rejects MIME, metadata, tool-output, and HTML drift', () => {
   const uiSource = `
     import { MCP_ISSUER } from './mcp-config.js';
+    import { TRACKLY_PLUGIN_VERSION } from './plugin-version.js';
     export const TRACKLY_PLUGIN_UI_MIME_TYPE = 'text/html;profile=mcp-app';
     export const TRACKLY_PLUGIN_UI = Object.freeze({
       readiness: 'ui://trackly/apply-readiness-v2.html',
@@ -1895,6 +1923,8 @@ test('hosted UI semantic lock rejects MIME, metadata, tool-output, and HTML drif
     ['connectDomains: []', "connectDomains: ['https://untrusted.invalid']"],
     ['resource_domains: []', "resource_domains: ['https://untrusted.invalid']"],
     ['const resourceUri = TRACKLY_PLUGIN_UI[view];', "const resourceUri = 'ui://untrusted/card.html';"],
+    // close-ai #3462: the reported app version must come from the shared plugin-version module.
+    ["import { TRACKLY_PLUGIN_VERSION } from './plugin-version.js';", "import { TRACKLY_PLUGIN_VERSION } from './untrusted-version.js';"],
   ]) {
     const changed = uiSource.replace(from, to);
     assert.notEqual(changed, uiSource);
@@ -2790,6 +2820,16 @@ test('standalone hosted verifier executes tool, schema, and handler snapshot wir
   ]) {
     fs.copyFileSync(path.join(__dirname, '..', ...relativePath), path.join(temporaryRoot, ...relativePath));
   }
+  // The verifier also builds the real local catalog at runtime, so the copy needs every MCP
+  // module and the runtime dependencies the server loads.
+  for (const name of fs.readdirSync(path.join(__dirname, '..', 'mcp'))) {
+    if (!fs.existsSync(path.join(temporaryRoot, 'mcp', name))) {
+      fs.cpSync(path.join(__dirname, '..', 'mcp', name), path.join(temporaryRoot, 'mcp', name), { recursive: true });
+    }
+  }
+  for (const name of ['lib', 'node_modules', 'package.json']) {
+    fs.symlinkSync(path.join(__dirname, '..', name), path.join(temporaryRoot, name));
+  }
   const fixturePath = path.join(temporaryRoot, 'plugins', 'trackly', 'hosted-contract-fixture.json');
   const originalFixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
   const verifyFixture = (fixture) => {
@@ -2881,6 +2921,16 @@ test('standalone hosted verifier executes tool, schema, and handler snapshot wir
   assert.notEqual(sourceParentIndex, -1);
   ancestryDrift.mergedRuntime.parents[sourceParentIndex] = 'a'.repeat(40);
   assert.throws(verifyFixture(ancestryDrift), /must prove the reviewed runtime commit is a direct parent/);
+  for (const [parents, message] of [
+    [undefined, /must record the reviewed runtime commit's one or two parents/],
+    [[], /must record the reviewed runtime commit's one or two parents/],
+    [['a'.repeat(40), 'b'.repeat(40), 'c'.repeat(40)], /must record the reviewed runtime commit's one or two parents/],
+    [['not-a-commit'], /did not match the regular expression/],
+  ]) {
+    const parentDrift = structuredClone(originalFixture);
+    parentDrift.sourceRuntime.parents = parents;
+    assert.throws(verifyFixture(parentDrift), message);
+  }
   const staleCapture = structuredClone(originalFixture);
   staleCapture.capturedAt = new Date(
     Date.parse(staleCapture.mergedRuntime.committedAt) + (25 * 60 * 60 * 1000),
@@ -2988,13 +3038,13 @@ test('Apply MCP evidence preserves custom bounds and prompt gates new executions
   assert.match(promptRegion, /keep the confirmation tab open until a refetch proves member lifecycle submitted and Trackly job state applied_confirmed/);
 });
 
-test('Apply skill 4.9.4 requires protocol 3.7.0 for new work and preserves active legacy recovery', () => {
+test('Apply skill 4.9.6 requires protocol 3.7.0 for new work and preserves active legacy recovery', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
-  assert.match(skill, /Skill 4\.9\.4 requires protocol 3\.7\.0 or newer/);
+  assert.match(skill, /Skill 4\.9\.6 requires protocol 3\.7\.0 or newer/);
   assert.match(skill, /protocol 3\.2 remains valid only for an already-active explicit legacy single run/i);
   assert.match(skill, /an already-active explicit 3\.2 single run may finish through its legacy path/i);
   assert.match(skill, /`compatibleSkillMajor: 4`/);
-  assert.match(skill, /Never continue a pre-evidence 3\.0\.x run under skill 4\.9\.4/);
+  assert.match(skill, /Never continue a pre-evidence 3\.0\.x run under skill 4\.9\.6/);
   assert.match(skill, /Preserve that run instead of starting a replacement/);
   assert.match(skill, /already-active protocol 3\.4 execution is read-only legacy recovery/i);
   assert.match(skill, /never call the 3\.5-only snapshot/i);
@@ -3410,12 +3460,12 @@ test('Apply skill runs Humanizer when available and retains a self-contained fal
   assert.match(writing, /use the saved style instructions or plain default instead/);
 });
 
-test('Apply skill 4.9.4 uses compact snapshots, parked-member controls, local lint, and upload proofs', () => {
+test('Apply skill 4.9.6 uses compact snapshots, parked-member controls, local lint, and upload proofs', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'SKILL.md'), 'utf8');
   const writing = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'application-writing.md'), 'utf8');
   const review = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'review-handoff.md'), 'utf8');
   const upload = fs.readFileSync(path.join(__dirname, '..', 'skills', 'trackly-apply', 'references', 'browser-upload.md'), 'utf8');
-  assert.match(skill, /Skill 4\.9\.4/);
+  assert.match(skill, /Skill 4\.9\.6/);
   assert.match(skill, /trackly_get_apply_execution_snapshot/);
   assert.match(skill, /`mutable` and `allowedOperations`/);
   assert.match(skill, /trackly_resume_parked_apply_member/);
@@ -3763,7 +3813,9 @@ const CURRENT_ANALYTICS_ROUTER_FIXTURE = [
   "      const server = surface === MCP_MUSE_SURFACE",
   "        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'muse' })",
   "        : claude",
-  "        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, { surface: 'claude' })",
+  "        ? createTracklyPluginMcpServer(authToken, apiRequest, undefined, undefined, {",
+  "          surface: 'claude', userId: authInfo.extra.userId, grantedScopes: authInfo.scopes,",
+  "        })",
   "        : createTracklyPluginMcpServer(authToken, apiRequest, async () => {",
   "          const { capability, filenameSha256: _filenameHash, ...document } = await pluginResumeDocuments(surface.resource).prepare({",
   "            userId: authInfo.extra.userId, authEpoch: authInfo.extra.authEpoch,",
@@ -3772,6 +3824,8 @@ const CURRENT_ANALYTICS_ROUTER_FIXTURE = [
   "          return { ...document, openUrl: `${surface.resource}/resume#${capability}` };",
   "        }, surface === MCP_OPENAI_SURFACE ? MCP_OPENAI_SURFACE.resumePath : MCP_PLUGIN_SURFACE.resumePath, {",
   "          surface: surface === MCP_OPENAI_SURFACE ? 'openai' : 'legacy',",
+  "          userId: authInfo.extra.userId,",
+  "          grantedScopes: authInfo.scopes,",
   "        });",
   "      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });",
   "      const analyticsContext = buildHostedMcpAnalyticsContext({",
@@ -4151,6 +4205,53 @@ function checkCurrentAnalyticsFactory(source, tail = CURRENT_PLUGIN_RESOURCE_TAI
 }
 test('current hosted analytics factory accepts the reviewed wrapper and exact readiness alias tail', () => {
   assert.deepEqual(checkCurrentAnalyticsFactory(currentAnalyticsFactory()).map(item => item.name), ['trackly_one']);
+});
+// close-ai #3604: the factory may hold exact reviewed statements between registrations
+// (the Tracker handler binding) and one exact statement after the UI loop (hideToolsFromList).
+const REVIEWED_INTER_REGISTRATION = 'const tracker = createTrackerToolHandlers(requestApi, authToken);';
+const REVIEWED_TAIL_SUFFIX = 'if (hiddenToolNames.size > 0) hideToolsFromList(server, hiddenToolNames);';
+function interleavedAnalyticsFactory(inter = REVIEWED_INTER_REGISTRATION, suffix = REVIEWED_TAIL_SUFFIX) {
+  return currentAnalyticsFactory().replace(
+    "registerPluginTool('trackly_one', { inputSchema: z.object({}) }, async params => params);",
+    `registerPluginTool('trackly_one', { inputSchema: z.object({}) }, async params => params);
+      ${inter}
+      registerPluginTool('trackly_two', { inputSchema: z.object({}) }, async params => tracker.list(params));`,
+  ).replace('      return server;', `      ${suffix}\n      return server;`);
+}
+function checkInterleavedAnalyticsFactory(source, options = {}) {
+  return directToolRegistrationsInExportedFunction(source, 'createTracklyPluginMcpServer', 'registerPluginTool', 'interleaved factory fixture', {
+    requireUiResourceLoop: true,
+    lockedPrefixSource: CURRENT_PLUGIN_PREFIX_FIXTURE,
+    expectedPrefixDeclarators: ['server', 'searchJobsRequest', 'claudeSearchJobs', 'registerPluginTool'],
+    uiResourceLoopSource: CURRENT_PLUGIN_RESOURCE_TAIL_FIXTURE,
+    lockedInterRegistrationSource: REVIEWED_INTER_REGISTRATION,
+    lockedTailSuffixSource: REVIEWED_TAIL_SUFFIX,
+    ...options,
+  });
+}
+test('hosted factory proof accepts only the exact reviewed inter-registration and tail statements', () => {
+  assert.deepEqual(
+    checkInterleavedAnalyticsFactory(interleavedAnalyticsFactory()).map(({ name }) => name),
+    ['trackly_one', 'trackly_two'],
+  );
+  for (const changed of [
+    interleavedAnalyticsFactory('const tracker = createTrackerToolHandlers(requestApi, otherToken);'),
+    interleavedAnalyticsFactory(`${REVIEWED_INTER_REGISTRATION} unreviewedOperation();`),
+    interleavedAnalyticsFactory('if (flag) { const tracker = createTrackerToolHandlers(requestApi, authToken); }'),
+  ]) {
+    assert.throws(() => checkInterleavedAnalyticsFactory(changed), /one unconditional contiguous block/);
+  }
+  assert.throws(
+    () => checkInterleavedAnalyticsFactory(interleavedAnalyticsFactory(), { lockedInterRegistrationSource: null }),
+    /one unconditional contiguous block/,
+  );
+  for (const changed of [
+    interleavedAnalyticsFactory(REVIEWED_INTER_REGISTRATION, 'hideToolsFromList(server, hiddenToolNames);'),
+    interleavedAnalyticsFactory(REVIEWED_INTER_REGISTRATION, 'if (hiddenToolNames.size > 0) exposeServer(server);'),
+    interleavedAnalyticsFactory(REVIEWED_INTER_REGISTRATION, `${REVIEWED_TAIL_SUFFIX} const escaped = server;`),
+  ]) {
+    assert.throws(() => checkInterleavedAnalyticsFactory(changed), /exact reviewed tail|resource registration tail|outside the verified registration helper/);
+  }
 });
 test('current hosted analytics factory rejects name params invocation result and error drift', () => {
   const source = currentAnalyticsFactory();

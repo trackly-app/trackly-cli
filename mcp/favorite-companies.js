@@ -4,6 +4,8 @@
 // same descriptions, limits and request body. Both servers call the same REST endpoints, so company
 // matching, the request quota and the 100-company cap are enforced server-side.
 
+const { z } = require('zod');
+
 const FAVORITE_COMPANIES_MAX = 100;
 
 const FAVORITE_COMPANIES_DESCRIPTION = 'Favorite a list of companies in one call: up to 100 in total across '
@@ -22,6 +24,19 @@ const UNFAVORITE_COMPANIES_DESCRIPTION = 'Remove up to 100 companies from the us
   + 'for example to undo trackly_favorite_companies. The result lists unfavorited, notFavorite (was not a favorite) '
   + 'and failed (company_not_found). Safe to repeat.';
 
+const companyIdList = z.array(z.number().int().positive()).max(FAVORITE_COMPANIES_MAX);
+const nameList = z.array(z.string().min(1).max(2048)).max(FAVORITE_COMPANIES_MAX);
+
+const favoriteCompaniesInputShape = {
+  companyIds: companyIdList.optional().describe('Trackly company IDs to favorite, e.g. from trackly_search_companies.'),
+  names: nameList.optional().describe('Company names or website/careers URLs to match and favorite, e.g. ["Stripe", "https://ramp.com"].'),
+  requestNames: nameList.optional().describe('Company names to request without matching, favorited automatically once Trackly adds them. Use for a needsChoice item the user wants requested separately.'),
+};
+
+const unfavoriteCompaniesInputShape = {
+  companyIds: companyIdList.min(1).describe('Trackly company IDs to remove from favorites.'),
+};
+
 function favoriteCompaniesRequestBody({ companyIds, names, requestNames } = {}) {
   const total = (companyIds ? companyIds.length : 0) + (names ? names.length : 0) + (requestNames ? requestNames.length : 0);
   if (total > FAVORITE_COMPANIES_MAX) {
@@ -39,6 +54,8 @@ function favoriteCompaniesRequestBody({ companyIds, names, requestNames } = {}) 
 
 module.exports = {
   FAVORITE_COMPANIES_MAX,
+  favoriteCompaniesInputShape,
+  unfavoriteCompaniesInputShape,
   FAVORITE_COMPANIES_DESCRIPTION,
   UNFAVORITE_COMPANIES_DESCRIPTION,
   favoriteCompaniesRequestBody,

@@ -1,30 +1,32 @@
 {
   "formatVersion": 3,
-  "capturedAt": "2026-10-29T04:25:58-07:00",
+  "capturedAt": "2026-11-11T03:16:39-08:00",
   "sourceRuntime": {
-    "commit": "3d479b941dcd6cf703d5ad8bab1ae7f45a39f832",
-    "parent": "9a54c2235e28a78451721602c2d5d11fcc750af1",
-    "committedAt": "2026-10-29T03:32:32-07:00"
+    "commit": "9d495993ddfbd1c4b0ed1b5f91f36762606a324d",
+    "parents": [
+      "48f98236088c4b91a3102569d89121a9d36175e5"
+    ],
+    "committedAt": "2026-11-11T09:24:07Z"
   },
   "mergedRuntime": {
-    "commit": "71e7f9bfa73df85bbd483ee07712a38d386b79a1",
+    "commit": "8f7ba68e73280afec40fd5d674a6f2bb774bfa06",
     "parents": [
-      "52efd2f8bd5224d35343a5ccee1e3bd0333e2286",
-      "3d479b941dcd6cf703d5ad8bab1ae7f45a39f832"
+      "92c6e576a37a7faf5a145d57df242227e0419bb3",
+      "9d495993ddfbd1c4b0ed1b5f91f36762606a324d"
     ],
-    "committedAt": "2026-10-29T03:54:22-07:00"
+    "committedAt": "2026-11-11T01:56:11-08:00"
   },
   "applyContractVersion": "3.9.3",
-  "pluginContractVersion": "1.0.0",
+  "pluginContractVersion": "1.1.0",
   "publicTools": [
     [
       "trackly_search_jobs",
-      "4716982f88e7db329081cc91fab700809d6fefca3c4448e7d9a577bbb7b31a71",
+      "d68920210e7ce2f2547579a580039311a3fa18e5aed191724a8cbcccfe1c854c",
       "226e2a344955b4f5e0d0ffdb5bd1fa00baa86bae94f138c5f61ce335544c68d7"
     ],
     [
       "trackly_get_job",
-      "df2fc206605d659acf306a4afb3fa60626b0424b4862b2c8003ee2b62438414d",
+      "7c43dd671da80356388eefbea5e4f5521312f630547236899c6703ee0db04247",
       "116b48cceaac698c00c87f33d01496f449aef6ffcc03d49c00f4a35beaa4bd01"
     ],
     [
@@ -44,8 +46,8 @@
     ],
     [
       "trackly_get_apply_readiness",
-      "9d89426e73489113a193c007dcc5fd5d24b267e43a8e10daa461bb4d5312a470",
-      "a011f9a2a0498a3cc18202739fda987fea113d6bff3290ecf2ec7f7d0ee4c1a5"
+      "119066006cce3e24e49713e61a41cf2c829343d52b2bc32e52a86f92dfbf8f53",
+      "2b9157f4ce1bf53f610f21637e615531327195dbe9516bb6c8ff2d9f1f58ebf3"
     ],
     [
       "trackly_lint_application_text",
@@ -54,8 +56,18 @@
     ],
     [
       "trackly_update_status",
-      "c9725177eda04b00aa6ab944086f96dbef62f27b0f20fb5658b391fa0c4d9c8b",
-      "10538a74b15f1fbc60a2152dfea3e5822ccd6d26225b555bc9e379ea559dcc74"
+      "46dbcb4449539df3f9a0ce5e9583e93799a51286386cf3cccc9539de3c5060e2",
+      "902e50171bf50e9bc5597dd6777ea1a7e95b69df24767ea5df122ccdb190861d"
+    ],
+    [
+      "trackly_auto_apply",
+      "ebd60acdc279039c05a9f61e758a7f9364ad61e42c92b0b04fe6789b8af02323",
+      "191952c8005ec283338dfcd5ecd9bef87b513cdb2bd9d0b2c40c498658cc0621"
+    ],
+    [
+      "trackly_auto_apply_status",
+      "ee7eccbe9c3638c3f04ff0b7d3c53a86e98d879c967e12147074df45510811e1",
+      "aeaf404dafbf95820de7b804e7aae6667f5c384743db139ada6c609cfbedc15f"
     ],
     [
       "trackly_save_application_answers",
@@ -90,7 +102,7 @@
     [
       "trackly_start_or_resume_apply",
       "96e7a96129ee04ed11a80e562aeef551fc0649905336261725f5a0c157eaae28",
-      "4f4cbed87b23025c19a062bfd9de4d98eeae28e8198ee7642f7f049c5483f491"
+      "615bbfbf641e33dcdd0fe166c583da4d9ebcdb4447ed8b134909686857d47e24"
     ],
     [
       "trackly_get_apply_work",
@@ -100,12 +112,12 @@
     [
       "trackly_report_apply_progress",
       "052e539891de1df18ecc96b7a3615d44b99a3c3dcd253a327b0d55645478a818",
-      "61418579d192bcc44a273b4480fadd09ebec292f4a6ea1145ef0ac6da316c4c2"
+      "355d99fe607c0588ed3abc9214af9c566a5dd741cf2d0705fe4058db86bdf648"
     ],
     [
       "trackly_prepare_resume_artifact",
       "cd5173c44d6d2670cae41cc08dcf547eacbf574d850c62cb1467877cde9d7af2",
-      "a83b1f55b59755d302c82d26dc0e3883b4aa6728463fb18a9609e4fdb333101b"
+      "698f5eb8a52436b7afe0d258d844a28b447c65115c54c118b01b8db95ed7ac88"
     ],
     [
       "trackly_certify_review_ready",
@@ -132,6 +144,11 @@
     "trackly_get_preferences",
     "trackly_update_experience_limits",
     "trackly_update_status",
+    "trackly_list_tracker_applications",
+    "trackly_create_tracker_application",
+    "trackly_update_tracker_stage",
+    "trackly_add_tracker_note",
+    "trackly_retract_tracker_event",
     "trackly_ask",
     "trackly_get_job_brief",
     "trackly_contacts_at_company",
@@ -139,6 +156,8 @@
     "trackly_request_company",
     "trackly_favorite_companies",
     "trackly_unfavorite_companies",
+    "trackly_auto_apply",
+    "trackly_auto_apply_status",
     "trackly_get_apply_queue",
     "trackly_get_application_profile",
     "trackly_get_profile_onboarding",
@@ -183,8 +202,8 @@
     "get_more_tools"
   ],
   "sourceSha256": {
-    "pluginServer": "a9adfbf263dbc76ed937e9c7aa11be59e76e06f6cd90d6f1323704f4951fa9c4",
-    "pluginScopes": "7af7450c08a4b1944fb4f5dd0cf97a2f1247693326ba1af4e866b5fe4fa5d040",
+    "pluginServer": "83da0d920f21ff4d24282c61760254f0ce5b197bd4bc02e32bcd7c93e099584b",
+    "pluginScopes": "ae9a12656b30a568451892818b10224395cd7f03e13967fd689e770f207d01bf",
     "jobBriefService": "fee263be5b7b05da8db6b9b9e2cb7559a50abeeeab447166f5fe7a889892bc7b",
     "backendUiRedirect": "3d1018e472992626d39299be89ee8e996930fb76ce0f69155f2f63bb6f34d55e",
     "maintenanceMode": "0409b32355a014ecc4d64056bf251fcde5f377400fe4f7485e70795420b25afe",
@@ -193,7 +212,10 @@
     "reviewIdentity": "d03432434c10bbfd0e53f51b2d475f0adf3ada88ac85c2c0534791be0bf03c10",
     "azureRateLimitOptions": "f3e081d25fd066e76c5c622873622909bd6121e86845e09dd99d4cdf0b47778a",
     "authRateLimit": "ce3e53c0c7b0e9df804fb027c061e27948aff5c5b9a1d022064ed7d0a92c11a5",
-    "applicationProfileService": "1fa343df32f36c269e4f60c0dde1b50ddfa301185c0b3ff20caf7fa67b423531"
+    "applicationProfileService": "934ab798cf28efc63257bdd82a9f6719c83f5beb9731e8b521f072d98b751c49",
+    "autoApply": "70ddc98d755977267e9fc1c56380b0d518b5b03d77373c5f3cb55f4c2a527e03",
+    "statusStory": "13aff693ef1baf65b3f7d3c5b9e71daaab3609119f1e9ca14bae496fb086b898",
+    "toolFamilies": "35f0513383bbbd8f4b6ce6cb9fd6d72afba35935b2b124e2dddb2597c58f41e0"
   },
   "hostedPluginLifecycle": {
     "readinessMissingProfileFields": "canonical_key_and_public_label_only",
@@ -222,6 +244,8 @@
     "resumeHandling": "private_original_preview_exact_approval_verified_attachment_or_manual_unbound",
     "certifyReviewReady": "atomic_checkpoint_truth_outcome_verified_original_or_manual_unbound",
     "reconcileManualSubmission": "atomic_current_epoch_evidence_outcome",
-    "submissionBoundary": "manual_only_no_submit_tool"
+    "submissionBoundary": "browser_apply_stops_before_submit; only cloudAutoApply submits, and only on an explicit user request",
+    "cloudAutoApply": "explicit_user_request_queues_trackly_submitted_assist_request",
+    "cloudAutoApplyLimitRefusal": "openai_and_classic_never_carry_upgrade_url; claude_and_muse_have_no_auto_apply_tool"
   }
 }
