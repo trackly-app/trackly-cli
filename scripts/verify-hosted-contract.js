@@ -13,7 +13,9 @@ const { HOSTED_RESUME_SECURITY_SOURCE_SHA256, assertHostedResumeSecuritySourceSn
 const assertResumeGlobalParserCarveout = createResumeParserVerifier({ activeNamedDefinitionAst, staticMemberName, parseFullSource, canonicalSchemaAst });
 
 const sha256ExactBytes = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
-const CHECKED_IN_HOSTED_FIXTURE_SHA256 = 'ad0121aed5f6e9c3cf719b22873793596d976f826a4c3db26c94bac6c64b7756';
+// close-ai #3867 adds exactly trackly_favorite_companies and trackly_unfavorite_companies to
+// hostedMcpToolNames (after trackly_request_company); every other fixture byte is unchanged.
+const CHECKED_IN_HOSTED_FIXTURE_SHA256 = '3698945f38df401e77d63485d3e83b4ca14233f26ecb811f853ad15c67ac12f9';
 const HOSTED_APPLY_CHECKPOINT_HELPER_AST_SHA256 = Object.freeze({
   applyCheckpointActionVariant: '6d83fd691e69b578f683c5e367cc1706a8f74b336e0ff435195f580c2350587c',
   applyCheckpointActionSchema: '6f0b0698b13997eda7100ec00720fff199d936270d232c7de5f55a8fcef2c2ab',

@@ -9,6 +9,7 @@ const { apiRequest, createTracklyAccessError, hasAuth, maintenanceOutput } = req
 const { version: PACKAGE_VERSION } = require('../package.json');
 const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 const { registerApplyTools } = require('./apply-tools');
+const { FAVORITE_COMPANIES_DESCRIPTION, UNFAVORITE_COMPANIES_DESCRIPTION, favoriteCompaniesInputShape, unfavoriteCompaniesInputShape, favoriteCompaniesRequestBody } = require('./favorite-companies');
 const { configureMcpAnalytics, shutdownMcpAnalytics } = require('./analytics');
 const { normalizeJobResult, unavailableJobFromError, jobFailureGuidance } = require('../lib/job-result');
 const { planRefusalMessage, planRefusalFields } = require('../lib/formatters');
@@ -757,6 +758,14 @@ function createServer() {
       }, false, false, MCP_USER_AGENT);
     }, 'Failed to request company')
   );
+
+  // "Favorite a list" (close-ai #3867): mirrors close-ai src/mcp/favorite-companies-tool.ts.
+  server.tool('trackly_favorite_companies', FAVORITE_COMPANIES_DESCRIPTION, favoriteCompaniesInputShape,
+    wrapTool(async (args) => apiRequest('POST', '/api/jobscout/companies/favorites/bulk',
+      favoriteCompaniesRequestBody(args), false, false, MCP_USER_AGENT), 'Failed to favorite companies'));
+  server.tool('trackly_unfavorite_companies', UNFAVORITE_COMPANIES_DESCRIPTION, unfavoriteCompaniesInputShape,
+    wrapTool(async ({ companyIds }) => apiRequest('POST', '/api/jobscout/companies/favorites/bulk-remove',
+      { companyIds }, false, false, MCP_USER_AGENT), 'Failed to unfavorite companies'));
 
   // Trackly Apply (cloud), mirrored from the hosted MCP (close-ai #3536). Trackly applies for the
   // user; nothing runs on the user's computer. Requests always send acknowledged: true.

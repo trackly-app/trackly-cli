@@ -141,6 +141,8 @@ The backend owns when a score is produced. These values are the stable part of t
 - **trackly_search_companies** — Semantic company search
 - **trackly_list_companies** — List all tracked companies with job counts
 - **trackly_request_company** — Request that a company be added to Trackly's tracked companies. Rate-limited to 5 pending requests per user. Parameters: `companyName` (required), `companyUrl` (optional), `notes` (optional).
+- **trackly_favorite_companies** — Favorite a list of companies in one call: up to 100 in total across `companyIds` (Trackly IDs), `names` (company names or website/careers URLs, matched by Trackly) and `requestNames` (requested without matching). Returns `favorited`, `alreadyFavorite`, `needsChoice` (a name matched a differently named company, such as "Square" matching Block, several companies, or a likely misspelling; nothing is written), `requested`, `favoriteWhenAdded` (requested companies favorited automatically once Trackly adds them) and `failed` (`company_not_found`, `company_inactive`, `rate_limited` with `retryAfterSeconds`, `unidentified_url` for a job link that names no employer, `invalid_request`, and `favorite_when_added_unavailable` while the backend's favorite-when-added storage is not yet installed, in which case nothing is requested). Resolve a `needsChoice` by calling again with the chosen ID in `companyIds`, or the original name in `requestNames`. Safe to repeat. Company requests share the account limit of 20 per rolling 60 seconds.
+- **trackly_unfavorite_companies** — Remove up to 100 companies from favorites by `companyIds` (for example to undo `trackly_favorite_companies`). Returns `unfavorited`, `notFavorite` and `failed`. Safe to repeat.
 
 #### Network
 

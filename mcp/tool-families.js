@@ -69,6 +69,8 @@ const TOOL_ACTIONS = Object.freeze({
   trackly_search_companies: ['companies', 'Search'],
   trackly_list_companies: ['companies', 'List tracked'],
   trackly_request_company: ['companies', 'Request monitoring'],
+  trackly_favorite_companies: ['companies', 'Favorite a list'],
+  trackly_unfavorite_companies: ['companies', 'Unfavorite'],
   // Network
   trackly_get_job_brief: ['network', 'Get job brief'],
   trackly_contacts_at_company: ['network', 'Find contacts'],

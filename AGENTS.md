@@ -68,11 +68,11 @@ There is a small Node test suite (`npm test`), no linter, and no build step. The
 
 1. User runs `trackly mcp` (or AI agent spawns it via stdio)
 2. `bin/trackly` delegates to `mcp/server.js`
-3. `mcp/server.js` creates an `McpServer` with 65 tools, connects via `StdioServerTransport`
+3. `mcp/server.js` creates an `McpServer` with 67 tools, connects via `StdioServerTransport`
 4. Each tool calls `apiRequest()` from `lib/client.js` with a `trackly-mcp/<version>` User-Agent derived from `package.json`
 5. CLI commands use `trackly-cli/<version>` User-Agent derived from `package.json` (separate channel attribution)
 
-The 65 MCP tools include the complete search, network, profile, Tracker, Trackly
+The 67 MCP tools include the complete search, network, profile, Tracker, Trackly
 Apply (cloud) and Trackly Apply (local) set documented in `docs/trackly-tools.md` plus the analytics-owned
 `get_more_tools` missing-capability tool. Keep this count synchronized with
 `mcp/server.js`, `README.md`, and the docs-drift tests.
@@ -161,6 +161,8 @@ A candidate pass is not release approval or proof of production deployment.
 All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json`):
 
 - `GET /api/jobscout/jobs` -- List/filter jobs
+- `POST /api/jobscout/companies/favorites/bulk` -- Favorite a list of companies (MCP `trackly_favorite_companies`)
+- `POST /api/jobscout/companies/favorites/bulk-remove` -- Unfavorite companies by ID (MCP `trackly_unfavorite_companies`)
 - `GET /api/jobscout/jobs/:id` -- Job detail
 - `GET /api/jobscout/companies` -- List companies
 - `GET /api/jobscout/companies/search` -- Semantic company search
@@ -218,9 +220,9 @@ All requests hit `https://closeai.mba` (configurable via `~/.trackly/config.json
 - `GET /api/network/companies/:id/workspace` -- Get company workspace (jobs, contacts, campaigns)
 - `GET /auth/google/cli` -- OAuth login redirect
 
-The complete 65-tool inventory is in `docs/trackly-tools.md`. Helpers such as `trackly_verify_prepared_resume` and `trackly_validate_apply_resume_upload` intentionally have no CLI HTTP endpoint and therefore do not appear in the endpoint list above.
+The complete 67-tool inventory is in `docs/trackly-tools.md`. Helpers such as `trackly_verify_prepared_resume` and `trackly_validate_apply_resume_upload` intentionally have no CLI HTTP endpoint and therefore do not appear in the endpoint list above.
 
-Hosted `/api/mcp` tool count: the backend owns the hosted registry. It omits exactly four local-only tools (`trackly_diagnose_local_path`, `trackly_lint_application_text`, `trackly_validate_apply_resume_upload`, `trackly_validate_apply_tab_keep_set`) and adds `trackly_chat`. The deployed catalog is 62 hosted tools (close-ai 6cd11dfb added the five Tracker tools and close-ai #3536 the two Trackly Apply (cloud) tools, which both servers register). Use "Trackly Apply (local)", "Trackly Apply (cloud)" and "mark applied" in user-facing text; tool names and the `trackly auto-apply` command name stay as they are. `trackly apply <id>` always marks a job applied; `trackly apply` with no ID explains Trackly Apply (local) (`trackly agent setup`), Trackly Apply (cloud) (`trackly auto-apply <jobId>`) and mark applied side by side (Kevin, 2026-11-10). Never repurpose `trackly apply` for Trackly Apply (cloud). Trackly Apply (cloud) requests always send `acknowledged: true` (Kevin, 2026-11-10). `trackly_prepare_resume` and `trackly_verify_prepared_resume` are registered on both servers. When a tool is added to or removed from either server, recount the hosted names and update every "N hosted tools" claim in `README.md`; the docs-coverage test only checks that those README claims agree.
+Hosted `/api/mcp` tool count: the backend owns the hosted registry. It omits exactly four local-only tools (`trackly_diagnose_local_path`, `trackly_lint_application_text`, `trackly_validate_apply_resume_upload`, `trackly_validate_apply_tab_keep_set`) and adds `trackly_chat`. The deployed catalog is 64 hosted tools (close-ai 6cd11dfb added the five Tracker tools, close-ai #3536 the two Trackly Apply (cloud) tools, and close-ai #3870, deployed 2026-11-14, the two Favorite a list tools, which both servers register). Use "Trackly Apply (local)", "Trackly Apply (cloud)" and "mark applied" in user-facing text; tool names and the `trackly auto-apply` command name stay as they are. `trackly apply <id>` always marks a job applied; `trackly apply` with no ID explains Trackly Apply (local) (`trackly agent setup`), Trackly Apply (cloud) (`trackly auto-apply <jobId>`) and mark applied side by side (Kevin, 2026-11-10). Never repurpose `trackly apply` for Trackly Apply (cloud). Trackly Apply (cloud) requests always send `acknowledged: true` (Kevin, 2026-11-10). `trackly_prepare_resume` and `trackly_verify_prepared_resume` are registered on both servers. When a tool is added to or removed from either server, recount the hosted names and update every "N hosted tools" claim in `README.md`; the docs-coverage test only checks that those README claims agree.
 
 ## Common Pitfalls
 
