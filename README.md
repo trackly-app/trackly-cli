@@ -240,7 +240,7 @@ The local stdio server (`trackly mcp`) registers the 67 tools below. Four are
 local-only because they run their checks on your machine:
 `trackly_diagnose_local_path`, `trackly_lint_application_text`,
 `trackly_validate_apply_resume_upload`, and `trackly_validate_apply_tab_keep_set`.
-The hosted server has 64 hosted tools once close-ai #3870 deploys, including the five Tracker tools, the two Trackly Apply (cloud) tools and the two Favorite a list tools.
+The currently deployed hosted server has 64 hosted tools, including the five Tracker tools, the two Trackly Apply (cloud) tools and the two Favorite a list tools.
 
 Every tool has a family title (`<Family> · <Action>`), and its description starts with the family tag, for example `[Tracker]`. Tool names never change.
 

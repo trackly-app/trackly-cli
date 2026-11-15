@@ -18,6 +18,10 @@ const {
   favoriteCompaniesRequestBody,
 } = require('../mcp/favorite-companies');
 const { toolTitle } = require('../mcp/tool-families');
+const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
+const { createServer } = require('../mcp/server');
+const { createTempConfigDir, startMockServer, withEnv } = require('./helpers');
 
 const SERVER_SRC = fs.readFileSync(path.join(__dirname, '..', 'mcp', 'server.js'), 'utf8');
 
@@ -61,4 +65,54 @@ test('both tools are registered against the bulk favorites endpoints with the sh
 test('the tools carry the Companies family titles shared with the hosted server', () => {
   assert.equal(toolTitle('trackly_favorite_companies'), 'Companies · Favorite a list');
   assert.equal(toolTitle('trackly_unfavorite_companies'), 'Companies · Unfavorite');
+});
+
+test('both tools call the bulk endpoints end to end, authenticated, and pass the per-item report through', async (t) => {
+  const configDir = createTempConfigDir();
+  t.after(() => fs.rmSync(configDir, { recursive: true, force: true }));
+  const requests = [];
+  const report = { success: true, favorited: [{ companyId: 1, name: 'Stripe' }], alreadyFavorite: [], needsChoice: [],
+    requested: [{ query: 'Square', requestId: 7, reused: false, favoriteWhenAdded: true, input: 'Square' }],
+    favoriteWhenAdded: [{ query: 'Square', requestId: 7 }], failed: [] };
+  const { server: httpServer, port } = await startMockServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      requests.push({ method: req.method, url: req.url, body, auth: req.headers.authorization || req.headers['x-api-key'] || '' });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(req.url.endsWith('/bulk-remove')
+        ? { success: true, unfavorited: [{ companyId: 1, name: 'Stripe' }], notFavorite: [], failed: [] }
+        : report));
+    });
+  });
+  t.after(() => new Promise((resolve) => httpServer.close(resolve)));
+  await withEnv({ TRACKLY_API_KEY: 'trk_test_fixture', TRACKLY_CONFIG_DIR: configDir, TRACKLY_BASE_URL: `http://127.0.0.1:${port}` }, async () => {
+    const server = createServer();
+    const client = new Client({ name: 'favorite-companies-test', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const favorite = await client.callTool({ name: 'trackly_favorite_companies', arguments: { companyIds: [1], requestNames: ['Square'] } });
+      assert.equal(favorite.isError, undefined);
+      assert.deepEqual(JSON.parse(favorite.content[0].text), report);
+      assert.equal(requests[0].method, 'POST');
+      assert.equal(requests[0].url, '/api/jobscout/companies/favorites/bulk');
+      assert.deepEqual(JSON.parse(requests[0].body), { companyIds: [1], requests: [{ query: 'Square', favoriteWhenAdded: true }], source: 'mcp' });
+      assert.ok(requests[0].auth.length > 0, 'the call must carry the user credential');
+
+      const unfavorite = await client.callTool({ name: 'trackly_unfavorite_companies', arguments: { companyIds: [1] } });
+      assert.equal(unfavorite.isError, undefined);
+      assert.equal(requests[1].url, '/api/jobscout/companies/favorites/bulk-remove');
+      assert.deepEqual(JSON.parse(requests[1].body), { companyIds: [1] });
+
+      const over = await client.callTool({ name: 'trackly_favorite_companies', arguments: {
+        companyIds: Array.from({ length: 60 }, (_, i) => i + 1), names: Array.from({ length: 41 }, (_, i) => `Co ${i}`) } });
+      assert.equal(over.isError, true);
+      assert.equal(requests.length, 2, 'an over-cap call makes no API request');
+    } finally {
+      await client.close().catch(() => {});
+      await server.close().catch(() => {});
+    }
+  });
 });
