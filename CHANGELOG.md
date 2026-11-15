@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-11-15
+
+### Added
+- Favorite a list (close-ai #3867). Two MCP tools, mirrored from the hosted server (close-ai #3870):
+  - `trackly_favorite_companies` favorites up to 100 companies in one call. It takes Trackly company IDs (`companyIds`), names or website/careers URLs that Trackly matches (`names`), and names to request without matching (`requestNames`). The result lists `favorited`, `alreadyFavorite`, `needsChoice`, `requested`, `favoriteWhenAdded` and `failed`:
+    - `needsChoice` covers a name that matched a differently named company, several companies, or a likely misspelling; nothing is written for it.
+    - `requested` covers companies Trackly doesn't monitor yet; they are requested and favorited automatically once added.
+    - `failed` carries per-item codes such as `rate_limited` or `unidentified_url`.
+  - `trackly_unfavorite_companies` removes up to 100 favorites by ID, for example to undo.
+  - Both tools are in the Companies family ("Companies · Favorite a list", "Companies · Unfavorite").
+  - Matching, the company-request limit (20 per rolling 60 seconds) and the 100-company total are enforced by Trackly. The tools refuse more than 100 entries before calling the API.
+
+### Security
+- `hono` 4.13.18 and `@hono/node-server` 2.1.8 (patch releases) clear three moderate npm advisories in the published dependency graph (#209).
+
 ## [0.28.0] - 2026-11-11
 
 ### Changed
