@@ -9,6 +9,18 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fmt = require('../lib/formatters');
 
+test('a grant cap names its count and when more open, and never links to plans', () => {
+  assert.equal(fmt.planRefusalMessage({ status: 429, error: 'assist_limit_reached', feature: 'assist_request', source: 'grant',
+    used: 10, limit: 10, resetsAt: '2026-11-21T08:00:00.000Z', upgradeUrl: 'https://example.com/should-not-show' }),
+  "You've used all 10 Trackly Apply (cloud) applications included with your account for now. More open on Nov 21.");
+  assert.equal(fmt.planRefusalMessage({ status: 429, error: 'assist_limit_reached', feature: 'assist_request', source: 'grant',
+    used: 5, limit: 5, resetsAt: null, upgradeUrl: null }),
+  "You've used all 5 Trackly Apply (cloud) applications included with your account.");
+  assert.equal(fmt.planRefusalMessage({ status: 429, error: 'assist_limit_reached', source: 'grant' }),
+    "You've used all uses of this feature included with your account.");
+  assert.equal(fmt.planRefusalFields({ status: 429, source: 'grant', upgradeUrl: 'https://example.com/x' }).upgradeUrl, null);
+});
+
 test('plan refusals use only server feature, counts, reset and optional link', () => {
   for (const error of ['limit_reached', 'assist_limit_reached']) {
     const message = fmt.planRefusalMessage({ status: 429, error, feature: 'assist_request',
