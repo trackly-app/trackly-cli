@@ -380,11 +380,11 @@ trackly login
 
 Opens your browser for Google sign-in. Tokens are stored locally at `~/.trackly/config.json`.
 
-Trackly is currently opening new memberships through a limited, invite-based
-rollout. Existing members can keep using OAuth and API keys normally. If a new
-account is not yet eligible, the CLI returns an invitation-specific message
-instead of suggesting repeated login attempts; request a future seat at
-[usetrackly.app/early-access](https://usetrackly.app/early-access).
+Anyone can create a free Trackly account. Scout is free for everyone and no
+.edu email is needed; see [usetrackly.app/pricing](https://usetrackly.app/pricing).
+Existing members can keep using OAuth and API keys normally. If the server
+denies access, the CLI shows that access message instead of suggesting repeated
+login attempts.
 
 ### Option 2: API Key
 

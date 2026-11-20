@@ -65,10 +65,10 @@ trackly config --api-key trk_xxxxxxxxxxxxxxxxxxxx
 
 You can also pass `TRACKLY_API_KEY` as an environment variable for one-off runs.
 
-Existing memberships work across the CLI and local MCP server. New memberships
-are invite-only during the limited rollout; access errors link to
-https://usetrackly.app/early-access instead of recommending repeated OAuth or
-API-key creation attempts.
+Existing memberships work across the CLI and local MCP server. Anyone can
+create a free Trackly account (Scout is free for everyone; see
+https://usetrackly.app/pricing). Access errors return an access message instead
+of recommending repeated OAuth or API-key creation attempts.
 
 ### Applying: three different things
 
