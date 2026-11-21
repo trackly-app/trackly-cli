@@ -19,6 +19,12 @@ test('a grant cap says it is used and the Pacific day more open, with no count o
   assert.equal(fmt.planRefusalMessage({ status: 429, error: 'assist_limit_reached', source: 'grant' }),
     "You've used the Trackly Apply (cloud) applications included with your account.");
   assert.equal(fmt.planRefusalFields({ status: 429, source: 'grant', upgradeUrl: 'https://example.com/x' }).upgradeUrl, null);
+  // A UTC-midnight reset is the previous Pacific day, also across the DST change.
+  assert.match(fmt.planRefusalMessage({ status: 429, error: 'assist_limit_reached', source: 'grant', resetsAt: '2026-11-22T00:00:00.000Z' }), /More open on Nov 21\.$/);
+  assert.match(fmt.planRefusalMessage({ status: 429, error: 'assist_limit_reached', source: 'grant', resetsAt: '2026-11-01T07:30:00.000Z' }), /More open on Nov 1\.$/);
+  // Another feature's label is used as is.
+  assert.equal(fmt.planRefusalMessage({ status: 429, error: 'limit_reached', feature: 'apply_fill', source: 'grant', resetsAt: null }),
+    "You've used the extension fills included with your account.");
 });
 
 test('plan refusals use only server feature, counts, reset and optional link', () => {
