@@ -11,6 +11,8 @@ Essential org rules, repeated here because the org file needs org access (it has
 
 CLI + MCP server for the Trackly job tracker. Lets users search 250K+ jobs across 5,400+ companies from the terminal or through AI agents (Claude Code, Cursor) via MCP.
 
+**Access control (TRA-938):** before adding or changing any access gate, including client-side hiding of a feature, read close-ai's registry [`docs/access-model.md`](https://github.com/trackly-app/close-ai/blob/main/docs/access-model.md). Reuse an existing role, grant, plan or feature catalog entry; never add a new allowlist; client gates only display what close-ai decides.
+
 ## Project Overview
 
 - **Product:** Trackly CLI + MCP Server — terminal access to 250K+ jobs across 5,400+ companies
