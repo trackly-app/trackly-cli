@@ -9,16 +9,22 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fmt = require('../lib/formatters');
 
-test('a grant cap stays count-free, promises a retry only with a reset, and never links to plans', () => {
+test('a grant cap says it is used and the Pacific day more open, with no count or plans link', () => {
   assert.equal(fmt.planRefusalMessage({ status: 429, error: 'assist_limit_reached', feature: 'assist_request', source: 'grant',
-    used: 10, limit: 10, resetsAt: '2026-11-21T08:00:00.000Z', upgradeUrl: 'https://example.com/should-not-show' }),
-  "You've reached the Trackly Apply (cloud) limit for your account for now. It resets on its own; try again later.");
+    used: 10, limit: 10, resetsAt: '2026-12-01T08:00:00.000Z', upgradeUrl: 'https://example.com/should-not-show' }),
+  "You've used the Trackly Apply (cloud) applications included with your account for now. More open on Dec 1.");
   assert.equal(fmt.planRefusalMessage({ status: 429, error: 'assist_limit_reached', feature: 'assist_request', source: 'grant',
     used: 5, limit: 5, resetsAt: null, upgradeUrl: null }),
-  "You've reached the Trackly Apply (cloud) limit included with your account.");
+  "You've used the Trackly Apply (cloud) applications included with your account.");
   assert.equal(fmt.planRefusalMessage({ status: 429, error: 'assist_limit_reached', source: 'grant' }),
-    "You've reached the Trackly Apply (cloud) limit included with your account.");
+    "You've used the Trackly Apply (cloud) applications included with your account.");
   assert.equal(fmt.planRefusalFields({ status: 429, source: 'grant', upgradeUrl: 'https://example.com/x' }).upgradeUrl, null);
+  // A UTC-midnight reset is the previous Pacific day, also across the DST change.
+  assert.match(fmt.planRefusalMessage({ status: 429, error: 'assist_limit_reached', source: 'grant', resetsAt: '2026-11-22T00:00:00.000Z' }), /More open on Nov 21\.$/);
+  assert.match(fmt.planRefusalMessage({ status: 429, error: 'assist_limit_reached', source: 'grant', resetsAt: '2026-11-01T07:30:00.000Z' }), /More open on Nov 1\.$/);
+  // Another feature's label is used as is.
+  assert.equal(fmt.planRefusalMessage({ status: 429, error: 'limit_reached', feature: 'apply_fill', source: 'grant', resetsAt: null }),
+    "You've used the extension fills included with your account.");
 });
 
 test('plan refusals use only server feature, counts, reset and optional link', () => {
