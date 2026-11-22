@@ -444,7 +444,7 @@ test('jobs maps every filter flag to the right query param', async (t) => {
 test('jobs sends the contract filters, lists joined and flags as true', async (t) => {
   const { requests, result } = await runAgainstMock(
     t,
-    ['jobs', '--sector', 'Fintech,Consulting', '--seniority', 'senior', '--favorite-companies-only', '--us-states', 'CA,NY', '--remote', '--min-match-score', '70', '--keywords', 'R&D "data"'],
+    ['jobs', '--sector', 'Fintech,Consulting', '--seniority', 'senior', '--favorite-companies-only', '--us-states', 'CA,NY,REMOTE', '--min-match-score', '70', '--keywords', 'R&D "data"'],
     () => ({ status: 200, json: { jobs: [] } })
   );
   assert.equal(result.code, 0, result.stderr);
@@ -456,6 +456,23 @@ test('jobs sends the contract filters, lists joined and flags as true', async (t
   assert.equal(q.get('minMatchScore'), '70');
   assert.equal(q.get('q'), 'R&D "data"', 'keyword text with a quote goes out as q');
   assert.equal(q.get('search'), null);
+});
+
+test('jobs rejects --remote combined with a state, province or region before making a request', async (t) => {
+  for (const extra of [['--us-states', 'CA'], ['--ca-provinces', 'ON'], ['--region', 'europe'], ['--region', 'us,europe']]) {
+    const { requests, result } = await runAgainstMock(t, ['jobs', '--remote', ...extra]);
+    assert.notEqual(result.code, 0, extra.join(' '));
+    assert.equal(requests.length, 0, `${extra.join(' ')} must fail before any API call`);
+    assert.match(result.stderr, /remote/i, extra.join(' '));
+  }
+  // The alternatives the message offers stay valid, and --remote alone still sends usStates=REMOTE.
+  const ok = await runAgainstMock(t, ['jobs', '--us-states', 'CA,REMOTE'], () => ({ status: 200, json: { jobs: [] } }));
+  assert.equal(ok.result.code, 0, ok.result.stderr);
+  assert.equal(query(ok.requests).get('usStates'), 'CA,REMOTE');
+  const alone = await runAgainstMock(t, ['jobs', '--remote'], () => ({ status: 200, json: { jobs: [] } }));
+  assert.equal(query(alone.requests).get('usStates'), 'REMOTE');
+  const parent = await runAgainstMock(t, ['jobs', '--region', 'europe', '--us-states', 'REMOTE']);
+  assert.notEqual(parent.result.code, 0, 'REMOTE-only children override the parent region');
 });
 
 test('jobs maps --role-types to the roleTypes query parameter', async (t) => {

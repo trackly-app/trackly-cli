@@ -11,7 +11,7 @@ const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 const { registerApplyTools } = require('./apply-tools');
 const { FAVORITE_COMPANIES_DESCRIPTION, UNFAVORITE_COMPANIES_DESCRIPTION, favoriteCompaniesInputShape, unfavoriteCompaniesInputShape, favoriteCompaniesRequestBody } = require('./favorite-companies');
 const { configureMcpAnalytics, shutdownMcpAnalytics } = require('./analytics');
-const { FEED_FILTER_PARAMS, buildFeedFilterQuery, mcpArg, registryValues } = require('../lib/jobs-feed-query');
+const { FEED_FILTER_PARAMS, buildFeedFilterQuery, mcpArg, registryValues, assertRemoteLocationRules } = require('../lib/jobs-feed-query');
 const { normalizeJobResult, unavailableJobFromError, jobFailureGuidance } = require('../lib/job-result');
 const { planRefusalMessage, planRefusalFields } = require('../lib/formatters');
 const {
@@ -434,15 +434,12 @@ function createServer() {
       if (params.region !== undefined && params.locationFilter !== undefined) {
         throw new Error('Use either region or locationFilter, not both.');
       }
-      if (params.remote === true && (params.usStates !== undefined || params.caProvinces !== undefined)) {
-        throw new Error('Use remote=true alone for remote-only jobs, or include REMOTE in the geographic arrays for alternatives.');
-      }
-      const hasParentLocation = params.region !== undefined || params.locationFilter !== undefined;
-      const childLocations = [...(params.usStates ?? []), ...(params.caProvinces ?? [])];
-      const remoteOnlyChildren = childLocations.length > 0 && childLocations.every((value) => value === 'REMOTE');
-      if (hasParentLocation && (params.remote === true || remoteOnlyChildren)) {
-        throw new Error('REMOTE-only location overrides the parent region. Use workArrangements=["remote"] with region or locationFilter for remote work within that geography.');
-      }
+      assertRemoteLocationRules({
+        remote: params.remote === true,
+        hasParent: params.region !== undefined || params.locationFilter !== undefined,
+        usStates: params.usStates,
+        caProvinces: params.caProvinces,
+      });
       // The feed filters go through the one registry-driven builder (lib/jobs-feed-query.js). When `function`
       // isn't specified, request ALL canonical functions so the backend takes the all-roles short-circuit
       // (isAllJobFunctionsSelection); otherwise its legacy fallback defaults to `is_pm_role = TRUE` and

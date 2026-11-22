@@ -22,7 +22,7 @@ const { spawnSync } = require('child_process');
 const { version: VERSION } = require('../package.json');
 const { doctorAgent, resumeValidationStatus, setupAgent } = require('../lib/agent');
 const { diagnoseLocalPath } = require('../lib/path-diagnostics');
-const { FEED_FILTER_PARAMS, buildFeedFilterQuery, cliFlag, selectionFromFlags } = require('../lib/jobs-feed-query');
+const { FEED_FILTER_PARAMS, assertRemoteLocationRules, buildFeedFilterQuery, cliFlag, selectionFromFlags } = require('../lib/jobs-feed-query');
 const { validateAssistResponse, autoApplyUnavailableError, autoApplyRequestError } = require('../lib/auto-apply');
 
 // Every feed filter of the registry is a `trackly jobs` flag (lib/jobs-feed-query.js names them).
@@ -614,19 +614,24 @@ async function cmdJobs(args) {
     if (args[flag] !== undefined) failNow(hint);
   }
 
-  // --remote is a shorthand that conflicts with --region (they both control location).
-  // Help text documents them as alternatives; enforce it explicitly here.
-  if (args.remote && args.region) {
-    failNow('--remote cannot be combined with --region. Use one or the other (e.g. --region remote).');
-  }
-
   let selection;
   try {
     selection = selectionFromFlags(args);
   } catch (e) {
     failNow(e.message);
   }
-  if (args.remote) selection.usStates = [...(selection.usStates || []), 'REMOTE'];
+  try {
+    // --remote is the remote-only shorthand (usStates=REMOTE): the MCP's rule, not a second copy.
+    assertRemoteLocationRules({
+      remote: Boolean(args.remote),
+      hasParent: selection.locationFilter !== undefined,
+      usStates: selection.usStates,
+      caProvinces: selection.caProvinces,
+    });
+  } catch (e) {
+    failNow(e.message);
+  }
+  if (args.remote) selection.usStates = ['REMOTE'];
 
   const params = buildFeedFilterQuery(selection);
   if (args.company) params.set('companyId', args.company);
