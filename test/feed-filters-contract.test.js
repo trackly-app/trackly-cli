@@ -87,6 +87,9 @@ test('CLI flags reject a missing or out-of-domain value before building a query'
   assert.throws(() => selectionFromFlags({ seniority: 'wizard' }), /Invalid --seniority value "wizard"/);
   assert.throws(() => selectionFromFlags({ 'min-match-score': 'high' }), /Invalid --min-match-score value "high"/);
   assert.throws(() => selectionFromFlags({ sector: true }), /--sector requires a value/);
+  // Integers are canonical decimals on the wire (no sign, no leading zeros): flag text is not normalised into one.
+  for (const bad of ['030', '+5', '-5']) assert.throws(() => selectionFromFlags({ 'min-match-score': bad }), /Invalid --min-match-score value/, bad);
+  assert.deepEqual(selectionFromFlags({ 'min-match-score': '0' }), { minMatchScore: 0 });
   assert.throws(() => selectionFromFlags({ 'favorite-companies-only': 'yes' }), /takes no value/);
 });
 
