@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Both build the query in one place (`lib/jobs-feed-query.js`), the way TracklyWeb sends it: keyword text that uses quotes, `-`, `OR`, brackets or `title:`/`company:`/`desc:` goes out as `q`, and `c++` or `R&D` arrive intact. A flag or argument that is off (`favoriteCompaniesOnly: false`) is no longer sent.
 - Removed "Never invent industry, specialization, exclusion or literal-search controls" from the `trackly_search_jobs` description.
 
+### Fixed
+- `trackly jobs` rejects integer flag text that is not a canonical decimal (`030`, `+5`, `-5`) instead of rewriting it, matching the shared feed-filter contract (close-ai 624b5c5ff).
+
 ## [0.29.0] - 2026-11-15
 
 ### Added

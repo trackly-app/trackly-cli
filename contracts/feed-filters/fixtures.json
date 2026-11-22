@@ -344,6 +344,180 @@
           "café -intern"
         ]
       ]
+    },
+    {
+      "name": "search-grammar-exclusion",
+      "why": "Search-box text that uses the keyword grammar is sent as q, never as search (TracklyWeb usesKeywordGrammar in src/lib/search-operators.ts, case from search-operators.test.ts). A leading minus on a word excludes it.",
+      "selection": {
+        "search": "security -manager"
+      },
+      "query": [
+        [
+          "q",
+          "security -manager"
+        ]
+      ]
+    },
+    {
+      "name": "search-grammar-or",
+      "why": "Search-box text that uses the keyword grammar is sent as q, never as search (TracklyWeb usesKeywordGrammar in src/lib/search-operators.ts, case from search-operators.test.ts). An uppercase OR joins alternatives.",
+      "selection": {
+        "search": "payments OR billing"
+      },
+      "query": [
+        [
+          "q",
+          "payments OR billing"
+        ]
+      ]
+    },
+    {
+      "name": "search-grammar-brackets",
+      "why": "Search-box text that uses the keyword grammar is sent as q, never as search (TracklyWeb usesKeywordGrammar in src/lib/search-operators.ts, case from search-operators.test.ts). Brackets group terms (web's test uses (a b); the server drops one-letter terms, so the fixture uses words).",
+      "selection": {
+        "search": "(risk fraud)"
+      },
+      "query": [
+        [
+          "q",
+          "(risk fraud)"
+        ]
+      ]
+    },
+    {
+      "name": "search-grammar-negated-group",
+      "why": "Search-box text that uses the keyword grammar is sent as q, never as search (TracklyWeb usesKeywordGrammar in src/lib/search-operators.ts, case from search-operators.test.ts). A minus just before a bracket negates the group.",
+      "selection": {
+        "search": "security -(intern manager)"
+      },
+      "query": [
+        [
+          "q",
+          "security -(intern manager)"
+        ]
+      ]
+    },
+    {
+      "name": "search-grammar-field-prefix",
+      "why": "Search-box text that uses the keyword grammar is sent as q, never as search (TracklyWeb usesKeywordGrammar in src/lib/search-operators.ts, case from search-operators.test.ts). A company: prefix scopes the term to a field.",
+      "selection": {
+        "search": "company:okta"
+      },
+      "query": [
+        [
+          "q",
+          "company:okta"
+        ]
+      ]
+    },
+    {
+      "name": "search-grammar-field-prefix-case",
+      "why": "Search-box text that uses the keyword grammar is sent as q, never as search (TracklyWeb usesKeywordGrammar in src/lib/search-operators.ts, case from search-operators.test.ts). The field prefix is matched without regard to case.",
+      "selection": {
+        "search": "Desc:python"
+      },
+      "query": [
+        [
+          "q",
+          "Desc:python"
+        ]
+      ]
+    },
+    {
+      "name": "search-plain-lone-minus",
+      "why": "Near-miss text that is NOT keyword grammar stays plain: it is sent as search, never q (TracklyWeb usesKeywordGrammar, case from search-operators.test.ts or its tokenizer). A lone minus is not an exclusion.",
+      "selection": {
+        "search": "-"
+      },
+      "query": [
+        [
+          "search",
+          "-"
+        ]
+      ]
+    },
+    {
+      "name": "search-plain-lowercase-or",
+      "why": "Near-miss text that is NOT keyword grammar stays plain: it is sent as search, never q (TracklyWeb usesKeywordGrammar, case from search-operators.test.ts or its tokenizer). Only uppercase OR is the operator.",
+      "selection": {
+        "search": "or"
+      },
+      "query": [
+        [
+          "search",
+          "or"
+        ]
+      ]
+    },
+    {
+      "name": "search-plain-leading-lowercase-or",
+      "why": "Near-miss text that is NOT keyword grammar stays plain: it is sent as search, never q (TracklyWeb usesKeywordGrammar, case from search-operators.test.ts or its tokenizer). Lowercase or at the start is a word.",
+      "selection": {
+        "search": "or billing"
+      },
+      "query": [
+        [
+          "search",
+          "or billing"
+        ]
+      ]
+    },
+    {
+      "name": "search-plain-hyphenated-word",
+      "why": "Near-miss text that is NOT keyword grammar stays plain: it is sent as search, never q (TracklyWeb usesKeywordGrammar, case from search-operators.test.ts or its tokenizer). A hyphen inside a word is part of the word.",
+      "selection": {
+        "search": "e-commerce"
+      },
+      "query": [
+        [
+          "search",
+          "e-commerce"
+        ]
+      ]
+    },
+    {
+      "name": "search-plain-trailing-hyphen",
+      "why": "Near-miss text that is NOT keyword grammar stays plain: it is sent as search, never q (TracklyWeb usesKeywordGrammar, case from search-operators.test.ts or its tokenizer). A hyphen at the end of a word is not an exclusion of the next word.",
+      "selection": {
+        "search": "a- b"
+      },
+      "query": [
+        [
+          "search",
+          "a- b"
+        ]
+      ]
+    },
+    {
+      "name": "search-plain-spaced-minus",
+      "why": "Near-miss text that is NOT keyword grammar stays plain: it is sent as search, never q (TracklyWeb usesKeywordGrammar, case from search-operators.test.ts or its tokenizer). A minus with spaces around it is not an exclusion.",
+      "selection": {
+        "search": "a - b"
+      },
+      "query": [
+        [
+          "search",
+          "a - b"
+        ]
+      ]
+    },
+    {
+      "name": "search-description-scope",
+      "why": "Search text with description search on goes to q whatever it contains, with qIn all (TracklyWeb searchQueryFields: searchInDescription sends keywordQuery and qIn all, and no search).",
+      "selection": {
+        "search": "python",
+        "qIn": "all"
+      },
+      "query": [
+        [
+          "q",
+          "python"
+        ],
+        [
+          "qIn",
+          "all"
+        ]
+      ]
     }
   ]
 }
