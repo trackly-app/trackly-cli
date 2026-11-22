@@ -22,9 +22,13 @@ const { spawnSync } = require('child_process');
 const { version: VERSION } = require('../package.json');
 const { doctorAgent, resumeValidationStatus, setupAgent } = require('../lib/agent');
 const { diagnoseLocalPath } = require('../lib/path-diagnostics');
+const { FEED_FILTER_PARAMS, assertRemoteLocationRules, buildFeedFilterQuery, cliFlag, selectionFromFlags } = require('../lib/jobs-feed-query');
 const { validateAssistResponse, autoApplyUnavailableError, autoApplyRequestError } = require('../lib/auto-apply');
 
-const BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'version', 'v', 'clear-api-key', 'clear-base-url', 'refresh', 'remote', 'skills-only']);
+// Every feed filter of the registry is a `trackly jobs` flag (lib/jobs-feed-query.js names them).
+const FEED_FLAGS = FEED_FILTER_PARAMS.map(cliFlag);
+const FEED_BOOLEAN_FLAGS = FEED_FILTER_PARAMS.filter((entry) => entry.values.kind === 'bool').map(cliFlag);
+const BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'version', 'v', 'clear-api-key', 'clear-base-url', 'refresh', 'remote', 'skills-only', ...FEED_BOOLEAN_FLAGS]);
 const VALUE_FLAGS = new Set([
   'api-key',
   'base-url',
@@ -48,6 +52,7 @@ const VALUE_FLAGS = new Set([
   'target-reviewed-runs',
   'errno',
   'resume-id',
+  ...FEED_FLAGS.filter((flag) => !FEED_BOOLEAN_FLAGS.includes(flag)),
 ]);
 
 // Flags accepted on ANY command. `api-key`/`base-url` are global overrides consumed
@@ -66,7 +71,7 @@ const COMMAND_FLAGS = {
   login: [],
   logout: [],
   whoami: [],
-  jobs: ['function', 'company', 'region', 'job-type', 'work-arrangement', 'role-types', 'remote', 'status', 'sort', 'sponsorship', 'limit', 'offset', 'keywords', 'location', 'modality'],
+  jobs: [...FEED_FLAGS, 'company', 'remote', 'status', 'sort', 'limit', 'offset', 'location', 'modality'],
   job: [],
   companies: ['limit', 'offset'],
   search: [],
@@ -101,12 +106,6 @@ const STATUS_LABELS = {
   saved: 'saved',
   dismissed: 'dismissed',
 };
-const WORK_ARRANGEMENT_VALUES = ['remote', 'hybrid', 'in_person', 'unspecified'];
-// Role type filter. Mirrors the MCP ROLE_TYPES enum; omitted uses the saved preference.
-const ROLE_TYPE_VALUES = ['corporate', 'frontline'];
-// Discovery-only visa sponsorship filter (close-ai PR #1578). Mirrors the
-// hosted MCP enum exactly. Absent or 'all' applies no filter.
-const SPONSORSHIP_VALUES = ['all', 'exclude_no', 'only_yes'];
 // Job-detail `sponsorshipStatus` values → user-facing copy. Anything else
 // (including null/'unknown') reads "Not mentioned" — never "unknown".
 const SPONSORSHIP_STATUS_LABELS = {
@@ -358,7 +357,7 @@ function hasJobListFilters(args) {
   // (which then raises the migration error) instead of cmdJob(42) silently ignoring
   // the filter. See PR #13 Cursor Bugbot finding.
   const deprecated = Object.keys(DEPRECATED_JOB_FLAGS);
-  const active = ['function', 'company', 'keywords', 'limit', 'region', 'job-type', 'work-arrangement', 'role-types', 'remote', 'offset', 'sort', 'sponsorship', 'status'];
+  const active = [...FEED_FLAGS, 'company', 'limit', 'remote', 'offset', 'sort', 'status'];
   return [...active, ...deprecated].some((key) => args[key] !== undefined);
 }
 
@@ -615,67 +614,35 @@ async function cmdJobs(args) {
     if (args[flag] !== undefined) failNow(hint);
   }
 
-  // --remote is a shorthand that conflicts with --region (they both control location).
-  // Help text documents them as alternatives; enforce it explicitly here.
-  if (args.remote && args.region) {
-    failNow('--remote cannot be combined with --region. Use one or the other (e.g. --region remote).');
+  let selection;
+  try {
+    selection = selectionFromFlags(args);
+  } catch (e) {
+    failNow(e.message);
   }
-
-  let workArrangements;
-  if (args['work-arrangement'] !== undefined) {
-    if (typeof args['work-arrangement'] !== 'string' || !args['work-arrangement'].trim()) {
-      failNow('--work-arrangement requires a comma-separated value: remote, hybrid, in_person, unspecified.');
-    }
-    workArrangements = [...new Set(args['work-arrangement'].split(',').map((value) => value.trim()))];
-    const invalid = workArrangements.filter((value) => !WORK_ARRANGEMENT_VALUES.includes(value));
-    if (invalid.length > 0) {
-      failNow(`Invalid --work-arrangement value "${invalid.join(',')}". Use: ${WORK_ARRANGEMENT_VALUES.join(', ')}.`);
-    }
+  try {
+    // --remote is the remote-only shorthand (usStates=REMOTE): the MCP's rule, not a second copy.
+    assertRemoteLocationRules({
+      remote: Boolean(args.remote),
+      hasParent: selection.locationFilter !== undefined,
+      usStates: selection.usStates,
+      caProvinces: selection.caProvinces,
+    });
+  } catch (e) {
+    failNow(e.message);
   }
+  if (args.remote) selection.usStates = ['REMOTE'];
 
-  let roleTypes;
-  if (args['role-types'] !== undefined) {
-    if (typeof args['role-types'] !== 'string' || !args['role-types'].trim()) {
-      failNow('--role-types requires a comma-separated value: corporate, frontline.');
-    }
-    roleTypes = [...new Set(args['role-types'].split(',').map((value) => value.trim()))];
-    const invalid = roleTypes.filter((value) => !ROLE_TYPE_VALUES.includes(value));
-    if (invalid.length > 0) {
-      failNow(`Invalid --role-types value "${invalid.join(',')}". Use: ${ROLE_TYPE_VALUES.join(', ')}.`);
-    }
-  }
-
-  let sponsorship;
-  if (args.sponsorship !== undefined) {
-    if (typeof args.sponsorship !== 'string' || !args.sponsorship.trim()) {
-      failNow(`--sponsorship requires a value. Use: ${SPONSORSHIP_VALUES.join(', ')}.`);
-    }
-    sponsorship = args.sponsorship.trim();
-    if (!SPONSORSHIP_VALUES.includes(sponsorship)) {
-      failNow(`Invalid --sponsorship value "${sponsorship}". Use: ${SPONSORSHIP_VALUES.join(', ')}.`);
-    }
-  }
-
-  const params = new URLSearchParams();
-  if (args.function) params.set('jobFunction', args.function);
+  const params = buildFeedFilterQuery(selection);
   if (args.company) params.set('companyId', args.company);
-  if (args.region) params.set('locationFilter', args.region);
-  if (args['job-type']) params.set('jobModality', args['job-type']);
-  if (workArrangements) params.set('workArrangements', workArrangements.join(','));
-  if (roleTypes) params.set('roleTypes', roleTypes.join(','));
-  if (args.remote) params.set('usStates', 'REMOTE');
   if (args.status) params.set('status', args.status);
   if (args.sort) params.set('sort', args.sort);
-  if (sponsorship) {
-    params.set('sponsorship', sponsorship);
-    // The backend honors the filter only on the literal status=new discovery
-    // view — without this default, `--sponsorship exclude_no` alone would be
-    // a silent no-op. Mirrors the MCP server's behavior.
-    if (sponsorship !== 'all' && !args.status) params.set('status', 'new');
-  }
+  // The backend honors the sponsorship filter only on the literal status=new
+  // discovery view; without this default, `--sponsorship exclude_no` alone would
+  // be a silent no-op. Mirrors the MCP server's behavior.
+  if (args.sponsorship && args.sponsorship !== 'all' && !args.status) params.set('status', 'new');
   if (args.limit) params.set('limit', args.limit);
   if (args.offset) params.set('offset', args.offset);
-  if (args.keywords) params.set('search', args.keywords);
 
   const qs = params.toString();
   try {
@@ -1479,7 +1446,7 @@ ${color('bold', 'Commands:')}
   ${color('cyan', 'login')}                Authenticate via Google OAuth
   ${color('cyan', 'logout')}               Clear credentials
   ${color('cyan', 'whoami')}               Show current user
-  ${color('cyan', 'jobs')}                 List jobs (--function, --company <id>, --region <tag>, --job-type <type>, --work-arrangement <values>, --role-types <values>, --remote, --status, --sort, --sponsorship, --limit, --offset, --keywords)
+  ${color('cyan', 'jobs')}                 List jobs (--function, --company <id>, --region <tag>, --job-type <type>, --work-arrangement <values>, --role-types <values>, --remote, --status, --sort, --sponsorship, --limit, --offset, --keywords, and the filters under Filter values)
   ${color('cyan', 'job <id>')}             Get full job detail
   ${color('cyan', 'jobs <id>')}            Alias for job <id>
   ${color('cyan', 'companies')}            List companies
@@ -1548,6 +1515,32 @@ ${color('bold', 'Filter values:')}
                    exclude_no hides jobs that explicitly state they do not sponsor
                    (~13% of active US jobs); only_yes keeps only jobs that explicitly
                    state they sponsor (~2%). Most postings never state a policy.
+  --us-states      US state codes, DC, PR or REMOTE (comma-separated)
+  --ca-provinces   Canadian province or territory codes, or REMOTE (comma-separated)
+  --internship-levels
+                   undergraduate, graduate, mba, not_specified (comma-separated)
+  --favorite-companies-only
+                   Flag (no value). Only jobs at companies you marked as favorites.
+  --hide-hidden-companies
+                   Flag (no value). Drop jobs at companies you hid.
+  --posted-within-days
+                   1, 3, 7, 14, 30; 0 turns off your saved window
+  --salary-floor-usd
+                   Minimum annual USD pay; 0 turns off your saved floor. Jobs with no stated pay stay.
+  --sector         Company sectors (comma-separated): Fintech, Technology, Healthcare, Consulting, Energy,
+                   Industrials, Real Estate, Utilities, Financial Services, Basic Materials,
+                   Communication Services, Consumer Cyclical, Consumer Defensive, Other
+  --seniority      intern, entry, mid, senior, staff, manager, director (comma-separated)
+  --skills         Up to 10 skills (comma-separated); --skills-mode any (default) or all
+  --min-experience-years, --max-experience-years
+                   Whole years, 0 to 30. Jobs with no stated requirement stay.
+  --experience-unknown
+                   include (default), hide, only
+  --min-match-score
+                   0 to 100. Jobs with no score yet stay.
+  --q              Keyword query with "phrases", -negation, OR, (brackets) and title:/company:/desc:
+                   prefixes; --q-in title (default) or all (also the description).
+                   --keywords text that uses that grammar is sent as --q.
 
 ${color('bold', 'MCP Setup:')}
   Claude Code: claude mcp add --scope user trackly -- trackly mcp

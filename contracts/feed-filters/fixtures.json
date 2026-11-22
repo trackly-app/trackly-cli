@@ -1,0 +1,349 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "nothing-selected",
+      "why": "No filter chosen: the browse feed sends none of the parity params and the server applies saved values (scope profile) or nothing.",
+      "selection": {},
+      "query": []
+    },
+    {
+      "name": "profile-lists",
+      "why": "Saved-profile list filters. Lists are one comma-joined value (encoding csv), in the order the user picked them.",
+      "selection": {
+        "jobFunction": [
+          "product",
+          "data"
+        ],
+        "locationFilter": [
+          "us",
+          "canada"
+        ],
+        "usStates": [
+          "CA",
+          "NY"
+        ],
+        "caProvinces": [
+          "ON",
+          "BC"
+        ]
+      },
+      "query": [
+        [
+          "jobFunction",
+          "product,data"
+        ],
+        [
+          "locationFilter",
+          "us,canada"
+        ],
+        [
+          "usStates",
+          "CA,NY"
+        ],
+        [
+          "caProvinces",
+          "ON,BC"
+        ]
+      ]
+    },
+    {
+      "name": "profile-job-type-internship",
+      "why": "jobModality and internshipLevels travel together for internship seekers; levels are a csv list.",
+      "selection": {
+        "jobModality": "internship",
+        "internshipLevels": [
+          "mba",
+          "graduate",
+          "not_specified"
+        ]
+      },
+      "query": [
+        [
+          "jobModality",
+          "internship"
+        ],
+        [
+          "internshipLevels",
+          "mba,graduate,not_specified"
+        ]
+      ]
+    },
+    {
+      "name": "profile-role-types-both",
+      "why": "roleTypes is sent whenever the user chose it, corporate and frontline together included.",
+      "selection": {
+        "roleTypes": [
+          "corporate",
+          "frontline"
+        ]
+      },
+      "query": [
+        [
+          "roleTypes",
+          "corporate,frontline"
+        ]
+      ]
+    },
+    {
+      "name": "profile-recency-and-salary",
+      "why": "Integer filters: postedWithinDays is one of the allowed windows, salaryFloorUsd a plain integer, no thousands separator.",
+      "selection": {
+        "postedWithinDays": 7,
+        "salaryFloorUsd": 120000
+      },
+      "query": [
+        [
+          "postedWithinDays",
+          "7"
+        ],
+        [
+          "salaryFloorUsd",
+          "120000"
+        ]
+      ]
+    },
+    {
+      "name": "request-work-arrangements",
+      "why": "workArrangements is request-only and csv; web sends the slugs, in_person with an underscore.",
+      "selection": {
+        "workArrangements": [
+          "remote",
+          "in_person"
+        ]
+      },
+      "query": [
+        [
+          "workArrangements",
+          "remote,in_person"
+        ]
+      ]
+    },
+    {
+      "name": "feed-filters-scope",
+      "why": "The two feed-filters values: favoriteCompaniesOnly is the string true, industries travel as the sector param in csv.",
+      "selection": {
+        "favoriteCompaniesOnly": true,
+        "sector": [
+          "Fintech",
+          "Consulting"
+        ]
+      },
+      "query": [
+        [
+          "favoriteCompaniesOnly",
+          "true"
+        ],
+        [
+          "sector",
+          "Fintech,Consulting"
+        ]
+      ]
+    },
+    {
+      "name": "hidden-companies-on",
+      "why": "hideHiddenCompanies is sent only as the string true, after the user has hidden a company.",
+      "selection": {
+        "hideHiddenCompanies": true
+      },
+      "query": [
+        [
+          "hideHiddenCompanies",
+          "true"
+        ]
+      ]
+    },
+    {
+      "name": "flags-off-are-omitted",
+      "why": "A boolean that is off is absent from the wire, not sent as false.",
+      "selection": {
+        "favoriteCompaniesOnly": false,
+        "hideHiddenCompanies": false
+      },
+      "query": []
+    },
+    {
+      "name": "device-seniority-skills-all",
+      "why": "Device-scope filters. A symbol skill (c++) must survive the round trip; skillsMode all is sent, any is not.",
+      "selection": {
+        "seniority": [
+          "senior",
+          "staff"
+        ],
+        "skills": [
+          "python",
+          "c++"
+        ],
+        "skillsMode": "all"
+      },
+      "query": [
+        [
+          "seniority",
+          "senior,staff"
+        ],
+        [
+          "skills",
+          "python,c++"
+        ],
+        [
+          "skillsMode",
+          "all"
+        ]
+      ]
+    },
+    {
+      "name": "device-skills-any-mode-omitted",
+      "why": "skillsMode any is the default and is omitted from the wire even though the user chose skills.",
+      "selection": {
+        "skills": [
+          "sql"
+        ],
+        "skillsMode": "any"
+      },
+      "query": [
+        [
+          "skills",
+          "sql"
+        ]
+      ]
+    },
+    {
+      "name": "device-experience-window",
+      "why": "min and max years are integers; 0 is a real value and must be sent, not dropped as falsy.",
+      "selection": {
+        "minExperienceYears": 0,
+        "maxExperienceYears": 5,
+        "experienceUnknown": "hide"
+      },
+      "query": [
+        [
+          "maxExperienceYears",
+          "5"
+        ],
+        [
+          "minExperienceYears",
+          "0"
+        ],
+        [
+          "experienceUnknown",
+          "hide"
+        ]
+      ]
+    },
+    {
+      "name": "device-experience-unknown-only",
+      "why": "experienceUnknown only; web never sends include (it is the default) so it is not a value a client emits.",
+      "selection": {
+        "experienceUnknown": "only",
+        "minMatchScore": 70
+      },
+      "query": [
+        [
+          "experienceUnknown",
+          "only"
+        ],
+        [
+          "minMatchScore",
+          "70"
+        ]
+      ]
+    },
+    {
+      "name": "request-sponsorship",
+      "why": "sponsorship is request-only; only the two filtering modes are sent.",
+      "selection": {
+        "sponsorship": "only_yes"
+      },
+      "query": [
+        [
+          "sponsorship",
+          "only_yes"
+        ]
+      ]
+    },
+    {
+      "name": "search-symbols-plus",
+      "why": "search text with a plus sign: decoded, it must stay c++, not become spaces (an unencoded plus decodes to a space).",
+      "selection": {
+        "search": "c++ engineer"
+      },
+      "query": [
+        [
+          "search",
+          "c++ engineer"
+        ]
+      ]
+    },
+    {
+      "name": "search-ampersand",
+      "why": "search text with an ampersand: R&D must survive as one value, not split into two parameters.",
+      "selection": {
+        "search": "R&D"
+      },
+      "query": [
+        [
+          "search",
+          "R&D"
+        ]
+      ]
+    },
+    {
+      "name": "search-quotes-and-space",
+      "why": "Search-box text that uses the keyword grammar (a double quote, a leading minus, OR, brackets or a field prefix, or any text with description search on) is sent trimmed as q, never as search. TracklyWeb usesKeywordGrammar (src/lib/search-operators.ts) decides this, and every client must route the same way.",
+      "selection": {
+        "search": "  \"product manager\"  "
+      },
+      "query": [
+        [
+          "q",
+          "\"product manager\""
+        ]
+      ]
+    },
+    {
+      "name": "search-non-ascii",
+      "why": "search text with non-ASCII letters must be percent-encoded as UTF-8 and decode back unchanged.",
+      "selection": {
+        "search": "café 日本語"
+      },
+      "query": [
+        [
+          "search",
+          "café 日本語"
+        ]
+      ]
+    },
+    {
+      "name": "keyword-query-traps",
+      "why": "q carries operators and symbols (quotes, OR, ampersand, plus); qIn all adds the description. Web sends q instead of search when it uses the keyword grammar, never both.",
+      "selection": {
+        "q": "title:\"R&D\" OR c++",
+        "qIn": "all"
+      },
+      "query": [
+        [
+          "q",
+          "title:\"R&D\" OR c++"
+        ],
+        [
+          "qIn",
+          "all"
+        ]
+      ]
+    },
+    {
+      "name": "keyword-query-non-ascii-negation",
+      "why": "q with a leading minus negation and non-ASCII text. qIn title is the server default and is never sent; clients send qIn only as all.",
+      "selection": {
+        "q": "café -intern",
+        "qIn": "title"
+      },
+      "query": [
+        [
+          "q",
+          "café -intern"
+        ]
+      ]
+    }
+  ]
+}

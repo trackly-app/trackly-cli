@@ -11,6 +11,7 @@ const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 const { registerApplyTools } = require('./apply-tools');
 const { FAVORITE_COMPANIES_DESCRIPTION, UNFAVORITE_COMPANIES_DESCRIPTION, favoriteCompaniesInputShape, unfavoriteCompaniesInputShape, favoriteCompaniesRequestBody } = require('./favorite-companies');
 const { configureMcpAnalytics, shutdownMcpAnalytics } = require('./analytics');
+const { FEED_FILTER_PARAMS, buildFeedFilterQuery, mcpArg, registryValues, assertRemoteLocationRules } = require('../lib/jobs-feed-query');
 const { normalizeJobResult, unavailableJobFromError, jobFailureGuidance } = require('../lib/job-result');
 const { planRefusalMessage, planRefusalFields } = require('../lib/formatters');
 const {
@@ -60,11 +61,9 @@ const ASK_PAGE_METADATA_KEYS = [
 const INVALID_JOBS_RESPONSE_ERROR =
   'Trackly returned an unreadable job page for this search. The search did not complete; retry it, or use trackly_search_jobs with structured filters.';
 
-// Mirrors `granola-followup-app/src/services/region-classifier.ts:8` REGION_TAGS.
-// Keep in sync when the backend enum changes.
-const REGION_TAGS = [
-  'us', 'europe', 'latam', 'middle_east', 'asia', 'africa', 'canada', 'oceania', 'remote', 'unknown',
-];
+// The region tags (REGION_TAGS of the backend's region classifier): the registry's locationFilter values minus
+// the two scalar-only modes, which the published locationFilter adds on its own.
+const REGION_TAGS = registryValues('locationFilter').filter((t) => t !== 'non_us' && t !== 'all');
 
 // REGION_TAGS values that are safe to combine in a comma-list with other tags.
 // `us` is excluded because combining it with other tags (e.g. ['us', 'europe']) is a trap:
@@ -74,35 +73,36 @@ const REGION_TAGS = [
 // use the scalar `all` or two separate calls. Callers who want 'not us' should use `non_us`.
 const REGION_TAGS_ARRAY_SAFE = REGION_TAGS.filter((t) => t !== 'us');
 
-// `jobFunction` enum matches `granola-followup-app/src/routes/jobscout-filter-utils.ts:17-21`
-// (ALL_JOB_FUNCTIONS). 14 canonical values.
-const JOB_FUNCTIONS = [
-  'product', 'engineering', 'design', 'data', 'marketing', 'sales', 'partnerships',
-  'finance', 'strategy', 'operations', 'people', 'legal', 'support', 'other',
-];
+// Value lists of the feed filters come from the vendored registry (contracts/feed-filters/params.json), so they
+// cannot drift from it; test/feed-filters-contract.test.js checks every published argument against it.
+const JOB_FUNCTIONS = registryValues('jobFunction');
 
 // Public canonical states. The backend privately accepts retired aliases for
 // old clients, but new MCP clients must never emit them.
 const STATUS_VALUES = ['new', 'applied_confirmed', 'check_later', 'not_interested', 'all'];
 
-// `jobModality` enum matches `jobscout.ts:2870-2875`. Employment type, NOT work-location.
-const JOB_MODALITIES = ['full_time', 'internship', 'all'];
+// Employment type, NOT work-location.
+const JOB_MODALITIES = registryValues('jobModality');
 
-// Independent from geography and employment type. Matches the backend's
-// workArrangements query contract and job_postings constraint.
-const WORK_ARRANGEMENTS = ['remote', 'hybrid', 'in_person', 'unspecified'];
-// Role type filter (backend role-types contract, 2026-11-04). corporate is the
-// default; frontline is store, warehouse, food service, driving, security,
+// Independent from geography and employment type.
+const WORK_ARRANGEMENTS = registryValues('workArrangements');
+// Role type filter. corporate is the default; frontline is store, warehouse, food service, driving, security,
 // skilled trades and care aides. Omitted uses the student's saved preference.
-const ROLE_TYPES = ['corporate', 'frontline'];
-const US_STATES = [
-  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DC', 'DE', 'FL', 'GA', 'HI', 'ID',
-  'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO',
-  'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA',
-  'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'PR', 'REMOTE',
-];
-const CA_PROVINCES = ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT', 'REMOTE'];
-const INTERNSHIP_LEVELS = ['undergraduate', 'graduate', 'mba', 'not_specified'];
+const ROLE_TYPES = registryValues('roleTypes');
+const US_STATES = registryValues('usStates');
+const CA_PROVINCES = registryValues('caProvinces');
+const INTERNSHIP_LEVELS = registryValues('internshipLevels');
+
+// The published arguments that deliberately accept something other than their registry entry, each with why. The
+// one place such a difference may live: test/feed-filters-contract.test.js fails on any other difference, and on an
+// entry here that no longer differs.
+const FEED_ARG_EXCEPTIONS = Object.freeze({
+  locationFilter: "the array form excludes 'us' (and the scalar-only 'non_us' and 'all'): the backend drops every other tag when 'us' is in a list",
+  postedWithinDays: 'also accepts 0, which the server reads as no window and which overrides the saved window',
+  salaryFloorUsd: 'also accepts 0, which the server reads as no floor and which overrides the saved floor (registry minimum is 1)',
+  sponsorship: "also accepts 'all', the published spelling of no filter, which is never sent",
+  keywords: 'text capped at 500 characters by the tool; the registry sets no limit for search',
+});
 
 const MCP_MISSING_CAPABILITY_VALUES = [
   'search', 'inspect', 'compare', 'rank', 'recommend', 'track', 'update', 'apply',
@@ -345,6 +345,38 @@ function projectPreferenceResponse(result, experienceFilterV2Available = null) {
   };
 }
 
+// Descriptions of the feed filters that have no hand-written argument above: each registry param (contracts/feed-filters)
+// without a published local argument is generated from its registry entry, under its mcpArg or wire name. A registry
+// param that has neither fails test/feed-filters-contract.test.js, so a new filter cannot ship unexplained.
+const GENERATED_FEED_ARG_DESCRIPTIONS = {
+  sector: 'Company sectors (industries), any of. Unknown values are rejected.',
+  seniority: 'Seniority levels, any of. Derived from the title and the parsed description; jobs with no derivable level are hidden.',
+  skills: 'Skills a job must name in its parsed required or preferred skills, whole-word and case-insensitive; at most 10 skills. Jobs with no parsed skills never match. See skillsMode.',
+  skillsMode: 'any (default) keeps jobs naming at least one of skills; all keeps jobs naming every one.',
+  minExperienceYears: 'Hide jobs that require fewer than this many years, for example to drop entry-level roles. Jobs with no stated requirement stay (see experienceUnknown).',
+  maxExperienceYears: 'Hide jobs that require more than this many years. Jobs with no stated requirement stay.',
+  experienceUnknown: 'Jobs whose posting states no years of experience: include (default) keeps them, hide drops them, only returns just those.',
+  minMatchScore: 'Hide jobs whose match score (the 0-100 number shown on each job) is below this. 0 means any. Jobs with no score yet stay.',
+  hideHiddenCompanies: 'true drops jobs at companies you hid. false or omitted keeps them.',
+  q: 'Keyword query: AND by default, "quoted phrases", -negation, OR and parentheses (depth 2), and field prefixes title:, company:, desc:. Whole-word matching. Invalid syntax is rejected, never widened.',
+  qIn: 'Where q matches: title (title and company, the default) or all (also the description).',
+};
+
+function feedArgType(entry) {
+  const d = entry.values;
+  let type;
+  if (d.kind === 'enum') type = z.enum(d.values);
+  else if (d.kind === 'int') type = z.number().int().min(d.min).max(d.max);
+  else if (d.kind === 'bool') type = z.boolean();
+  else if (d.kind === 'string') type = z.string().max(d.maxLength ?? 500);
+  else throw new Error(`feed filter ${entry.param}: no zod type for value kind ${d.kind}`);
+  return entry.multiple ? z.array(type).min(1).max(entry.maxItems ?? Math.max(d.values?.length ?? 1, 1)) : type;
+}
+
+const GENERATED_FEED_ARGS = Object.fromEntries(FEED_FILTER_PARAMS
+  .filter((entry) => GENERATED_FEED_ARG_DESCRIPTIONS[entry.param] !== undefined)
+  .map((entry) => [mcpArg(entry), feedArgType(entry).optional().describe(GENERATED_FEED_ARG_DESCRIPTIONS[entry.param])]));
+
 function createServer() {
   const server = new McpServer({
     name: 'trackly',
@@ -353,8 +385,9 @@ function createServer() {
 
   server.registerTool(
     'trackly_search_jobs',
-    { description: 'Search and filter job postings. Returns one matching page with title, company, location, structured fields and backend pagination. Use jobFunctions for multiple roles, region for multiple regions, and usStates/caProvinces for geographic detail. Work arrangement is independent from geography and employment type. Unknown sponsorship and non-comparable salary data stay visible with exclude_no and salaryFloorUsd. Never invent industry, specialization, exclusion or literal-search controls; ask when sponsorship intent is ambiguous. A numeric total with totalIsLowerBound=true (also in pagination) is only a lower bound. If the total is unavailable, returned matching jobs remain valid. Explain countGuidance and use hasMore/pagination; do not retry just for totals. matchScoreStatus=pending identifies owned waiting work for the current parsed resume and selected description: retryable description parsing or a live job-specific score item. Otherwise a missing score remains not_scored. Explain matchScoreReason: parse_required and score_required describe prerequisites, outside_scoring_window means outside the automatic 30-day window, description_unavailable means no usable description, inactive means a closed posting, and not_scored means unknown. Never estimate a missing numeric score. ' + AUTO_APPLY_SEARCH_FIELD_DESCRIPTION,
+    { description: 'Search and filter job postings. Returns one matching page with title, company, location, structured fields and backend pagination. Use jobFunctions for multiple roles, region for multiple regions, and usStates/caProvinces for geographic detail. Work arrangement is independent from geography and employment type. Unknown sponsorship and non-comparable salary data stay visible with exclude_no and salaryFloorUsd. Use sectors, seniority, skills, experience, minMatchScore and q for the matching filters; ask when sponsorship intent is ambiguous. A numeric total with totalIsLowerBound=true (also in pagination) is only a lower bound. If the total is unavailable, returned matching jobs remain valid. Explain countGuidance and use hasMore/pagination; do not retry just for totals. matchScoreStatus=pending identifies owned waiting work for the current parsed resume and selected description: retryable description parsing or a live job-specific score item. Otherwise a missing score remains not_scored. Explain matchScoreReason: parse_required and score_required describe prerequisites, outside_scoring_window means outside the automatic 30-day window, description_unavailable means no usable description, inactive means a closed posting, and not_scored means unknown. Never estimate a missing numeric score. ' + AUTO_APPLY_SEARCH_FIELD_DESCRIPTION,
     inputSchema: z.object({
+      ...GENERATED_FEED_ARGS,
       function: z.enum(JOB_FUNCTIONS).optional().describe('Job function filter. One of: ' + JOB_FUNCTIONS.join(', ')),
       jobFunctions: z.array(z.enum(JOB_FUNCTIONS)).min(1).max(14).optional().describe('Multiple job functions, combined with OR. Use instead of function. Omit both to request all 14 functions.'),
       companyId: z.number().int().positive().optional().describe('Filter jobs by company ID (get from trackly_search_companies)'),
@@ -362,7 +395,7 @@ function createServer() {
       usStates: z.array(z.enum(US_STATES)).min(1).max(53).optional().describe('US state codes, DC, PR, or REMOTE. Multiple values select alternatives. REMOTE alongside codes also includes remote jobs. Under canonical location enforcement children select their parent; legacy rollout keeps compatibility behavior. Do not combine with remote=true.'),
       caProvinces: z.array(z.enum(CA_PROVINCES)).min(1).max(14).optional().describe('Canadian province/territory codes or REMOTE. Multiple values select alternatives. REMOTE alongside codes also includes remote jobs. Parent-scoped OR requires canonical location enforcement. Do not combine with remote=true.'),
       internshipLevels: z.array(z.enum(INTERNSHIP_LEVELS)).min(1).max(4).optional().describe('Internship education levels, combined with OR: undergraduate, graduate, mba, not_specified. Applies to internships in jobModality=internship or all; full-time jobs remain unaffected. This does not change the saved/default modality: set jobModality explicitly when you want internships.'),
-      favoriteCompaniesOnly: z.boolean().optional().describe('true limits results to your favorited companies; false explicitly disables this restriction.'),
+      favoriteCompaniesOnly: z.boolean().optional().describe('true limits results to your favorited companies; false or omitted applies no filter.'),
       postedWithinDays: z.union([z.literal(0), z.literal(1), z.literal(3), z.literal(7), z.literal(14), z.literal(30)]).optional().describe('Posting-recency window in days: 1, 3, 7, 14, or 30; 0 disables the saved window. Uses the backend discovery-date policy; not an incremental-sync cursor. Omitted uses the saved/default window only when status is omitted, new, or all; explicit pipeline statuses skip that saved window. Explicit values apply in every view.'),
       salaryFloorUsd: z.number().int().min(0).max(1_000_000).optional().describe('Annual USD minimum salary floor. Excludes comparable listed annual-USD minimums below this amount; unknown, hourly and non-USD salaries remain visible. 0 disables the floor. Omitted uses saved/default preferences only when status is omitted, new, or all; explicit pipeline statuses skip the saved floor. Explicit values apply in every view. This is not a guaranteed salary threshold.'),
       since: z.string().regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/).optional().describe('Incremental sync: jobs first seen by Trackly since this ISO-8601 date/timestamp, not employer posting dates. Must be within the past 90 days and not in the future; backend validates the range. Prefer a timestamp with timezone. Since does not reset filters. Saved posting and salary constraints apply only when status is omitted, new, or all; use postedWithinDays=0 and salaryFloorUsd=0 to disable them. Explicit pipeline views skip saved filters; explicit request filters still apply.'),
@@ -401,58 +434,33 @@ function createServer() {
       if (params.region !== undefined && params.locationFilter !== undefined) {
         throw new Error('Use either region or locationFilter, not both.');
       }
-      if (params.remote === true && (params.usStates !== undefined || params.caProvinces !== undefined)) {
-        throw new Error('Use remote=true alone for remote-only jobs, or include REMOTE in the geographic arrays for alternatives.');
-      }
-      const hasParentLocation = params.region !== undefined || params.locationFilter !== undefined;
-      const childLocations = [...(params.usStates ?? []), ...(params.caProvinces ?? [])];
-      const remoteOnlyChildren = childLocations.length > 0 && childLocations.every((value) => value === 'REMOTE');
-      if (hasParentLocation && (params.remote === true || remoteOnlyChildren)) {
-        throw new Error('REMOTE-only location overrides the parent region. Use workArrangements=["remote"] with region or locationFilter for remote work within that geography.');
-      }
-      const qs = new URLSearchParams();
-      // When `function` isn't specified, request ALL canonical functions so the
-      // backend takes the all-roles short-circuit (granola-followup-app
-      // src/routes/jobscout.ts:3461, isAllJobFunctionsSelection). Otherwise the
-      // backend's legacy fallback (jobscout.ts:3478) defaults to
-      // `is_pm_role = TRUE`, returning 0 for companies with zero PM roles.
-      // Surfaced 2026-05-20 on freshly-activated Cahoot (id=3349) and Iterative
-      // Health (id=3350) — both had non-PM-only job sets and search_jobs
-      // returned total=0 without an explicit function filter.
-      qs.set('jobFunction', params.function !== undefined ? params.function : JOB_FUNCTIONS.join(','));
-      if (params.jobFunctions !== undefined) qs.set('jobFunction', params.jobFunctions.join(','));
-      for (const key of ['region', 'usStates', 'caProvinces', 'internshipLevels']) {
-        if (params[key] !== undefined) qs.set(key, params[key].join(','));
-      }
-      for (const key of ['favoriteCompaniesOnly', 'postedWithinDays', 'salaryFloorUsd', 'since']) {
-        if (params[key] !== undefined) qs.set(key, String(params[key]));
-      }
+      assertRemoteLocationRules({
+        remote: params.remote === true,
+        hasParent: params.region !== undefined || params.locationFilter !== undefined,
+        usStates: params.usStates,
+        caProvinces: params.caProvinces,
+      });
+      // The feed filters go through the one registry-driven builder (lib/jobs-feed-query.js). When `function`
+      // isn't specified, request ALL canonical functions so the backend takes the all-roles short-circuit
+      // (isAllJobFunctionsSelection); otherwise its legacy fallback defaults to `is_pm_role = TRUE` and
+      // returns 0 for companies with no PM roles (Cahoot and Iterative Health, 2026-05-20).
+      const selection = Object.fromEntries(FEED_FILTER_PARAMS.map((entry) => [entry.param, params[mcpArg(entry)]]));
+      selection.jobFunction = params.jobFunctions ?? (params.function !== undefined ? params.function : JOB_FUNCTIONS);
+      if (params.remote === true) selection.usStates = ['REMOTE'];
+      const qs = buildFeedFilterQuery(selection);
+      if (params.region !== undefined) qs.set('region', params.region.join(','));
+      if (params.since !== undefined) qs.set('since', params.since);
       if (params.companyId !== undefined) qs.set('companyId', String(params.companyId));
-      if (params.locationFilter !== undefined) {
-        const value = Array.isArray(params.locationFilter)
-          ? params.locationFilter.join(',')
-          : params.locationFilter;
-        qs.set('locationFilter', value);
-      }
-      if (params.jobModality !== undefined) qs.set('jobModality', params.jobModality);
-      if (params.workArrangements !== undefined) qs.set('workArrangements', params.workArrangements.join(','));
-      if (params.roleTypes !== undefined) qs.set('roleTypes', [...new Set(params.roleTypes)].join(','));
-      if (params.remote === true) qs.set('usStates', 'REMOTE');
       if (params.status !== undefined) qs.set('status', params.status);
       if (params.sort !== undefined) qs.set('sort', params.sort);
-      if (params.sponsorship !== undefined) {
-        qs.set('sponsorship', String(params.sponsorship));
-        // The backend applies the filter only on the literal status=new
-        // discovery view; without this default an agent passing a filtering
-        // mode alone would get silently unfiltered results. Mirrors
-        // close-ai src/mcp/server.ts.
-        if (params.sponsorship !== 'all' && params.status === undefined) {
-          qs.set('status', 'new');
-        }
+      // The backend applies the sponsorship filter only on the literal status=new discovery view; without this
+      // default an agent passing a filtering mode alone would get silently unfiltered results. Mirrors
+      // close-ai src/mcp/server.ts.
+      if (params.sponsorship !== undefined && params.sponsorship !== 'all' && params.status === undefined) {
+        qs.set('status', 'new');
       }
       qs.set('limit', String(params.limit ?? 20));
       if (params.offset !== undefined) qs.set('offset', String(params.offset));
-      if (params.keywords !== undefined) qs.set('search', params.keywords);
       // The REST mapper keeps the retired autoApplySupported constant false; set the Trackly Apply
       // (cloud) answer and, when one applies, a nextSteps line, as the hosted search does.
       return withAutoApplySupport(
@@ -973,6 +981,7 @@ if (require.main === module) {
 
 module.exports = {
   AUTH_HINT,
+  FEED_ARG_EXCEPTIONS,
   MCP_USER_AGENT,
   createAuthErrorResult,
   createErrorResult,
