@@ -25,6 +25,7 @@ const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { InMemoryTransport } = require('@modelcontextprotocol/sdk/inMemory.js');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { createServer } = require('../mcp/server');
+const { registryValues } = require('../lib/jobs-feed-query');
 const { registerApplyTools } = require('../mcp/apply-tools');
 const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 
@@ -52,7 +53,7 @@ function extractArrayLiteral(source, varName) {
 }
 
 test('MCP JOB_FUNCTIONS has 14 canonical values including partnerships', () => {
-  const fns = extractArrayLiteral(SERVER_SRC, 'JOB_FUNCTIONS');
+  const fns = registryValues('jobFunction');
   assert.equal(fns.length, 14, `expected 14 functions, got ${fns.length}: ${fns.join(', ')}`);
   assert.ok(fns.includes('partnerships'), 'partnerships must be present (was missing before PR #14)');
   for (const v of ['product', 'engineering', 'design', 'data', 'marketing', 'sales', 'partnerships', 'finance', 'strategy', 'operations', 'people', 'legal', 'support', 'other']) {
@@ -591,7 +592,7 @@ test('truth certification publishes concrete inputs and enforces both resume bra
 });
 
 test('MCP JOB_MODALITIES matches backend is_internship column semantics', () => {
-  const mods = extractArrayLiteral(SERVER_SRC, 'JOB_MODALITIES');
+  const mods = registryValues('jobModality');
   assert.deepEqual(mods, ['full_time', 'internship', 'all']);
   // Guard against resurrection of the old broken values:
   assert.ok(!mods.includes('remote'), 'jobModality must NOT include remote — remote is a work-location filter, not employment type');
@@ -600,7 +601,7 @@ test('MCP JOB_MODALITIES matches backend is_internship column semantics', () => 
 });
 
 test('MCP WORK_ARRANGEMENTS matches the backend filter contract', () => {
-  const arrangements = extractArrayLiteral(SERVER_SRC, 'WORK_ARRANGEMENTS');
+  const arrangements = registryValues('workArrangements');
   assert.deepEqual(arrangements, ['remote', 'hybrid', 'in_person', 'unspecified']);
 
   const searchJobsRegion = SERVER_SRC.slice(
@@ -618,7 +619,7 @@ test('MCP WORK_ARRANGEMENTS matches the backend filter contract', () => {
     /roleTypes:\s*z\.array\(z\.enum\(ROLE_TYPES\)\)\.min\(1\)\.max\(2\)/,
     'trackly_search_jobs must expose a typed roleTypes array',
   );
-  assert.deepEqual(extractArrayLiteral(SERVER_SRC, 'ROLE_TYPES'), ['corporate', 'frontline']);
+  assert.deepEqual(registryValues('roleTypes'), ['corporate', 'frontline']);
 });
 
 test('MCP STATUS_VALUES exposes only canonical public pipeline states', () => {
@@ -634,7 +635,7 @@ test('MCP STATUS_VALUES exposes only canonical public pipeline states', () => {
 });
 
 test('MCP REGION_TAGS has 10 values and REGION_TAGS_ARRAY_SAFE excludes us', () => {
-  const tags = extractArrayLiteral(SERVER_SRC, 'REGION_TAGS');
+  const tags = registryValues('locationFilter').filter((t) => t !== 'non_us' && t !== 'all');
   assert.equal(tags.length, 10);
   for (const v of ['us', 'europe', 'latam', 'middle_east', 'asia', 'africa', 'canada', 'oceania', 'remote', 'unknown']) {
     assert.ok(tags.includes(v), `REGION_TAGS missing ${v}`);
@@ -988,7 +989,7 @@ test('search exposes established granular filters and sends each criterion witho
   assert.equal(requests[2].searchParams.get('roleTypes'), null, 'omitted roleTypes defers to the saved preference');
   // Regression guard for the 2026-05-20 Cahoot/Iterative Health bug: without `function` the backend falls back to
   // `is_pm_role = TRUE` and returns 0 for companies with no PM roles, so the full function list must be sent.
-  assert.equal(requests[2].searchParams.get('jobFunction'), extractArrayLiteral(SERVER_SRC, 'JOB_FUNCTIONS').join(','));
+  assert.equal(requests[2].searchParams.get('jobFunction'), registryValues('jobFunction').join(','));
   assert.equal(requests[2].searchParams.get('limit'), '20', 'agent searches default to a concise page');
   assert.notEqual((await call({ limit: 100 })).isError, true, 'the full public API page size is available');
   assert.notEqual((await call({ region: ['europe'], workArrangements: ['remote'] })).isError, true);

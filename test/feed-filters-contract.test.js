@@ -154,3 +154,49 @@ test('each fixture selection reaches the wire through the local trackly_search_j
     assert.deepEqual(wire, sortedPairs(query), name);
   }
 });
+
+// What a published argument accepts, as a comparable value: the list items (or the scalar) it allows, or the bounds
+// of a number, or the length cap of a string. For a union the list form decides, because that is the one the
+// registry's csv encoding describes.
+function acceptedByArg(schema) {
+  if (schema.anyOf) {
+    const list = schema.anyOf.find((branch) => branch.type === 'array');
+    if (list) return acceptedByArg(list);
+    const parts = schema.anyOf.map(acceptedByArg);
+    if (parts.every((p) => p.values)) return { values: parts.flatMap((p) => p.values).sort() };
+    throw new Error(`cannot compare a union: ${JSON.stringify(schema)}`);
+  }
+  if (schema.type === 'array') return acceptedByArg(schema.items);
+  if (schema.enum) return { values: [...schema.enum].sort() };
+  if (schema.const !== undefined) return { values: [schema.const] };
+  if (schema.type === 'integer' || schema.type === 'number') return { min: schema.minimum, max: schema.maximum };
+  if (schema.type === 'boolean') return { bool: true };
+  if (schema.type === 'string') return { maxLength: schema.maxLength };
+  throw new Error(`cannot compare ${JSON.stringify(schema)}`);
+}
+
+function acceptedByRegistry(entry) {
+  const d = entry.values;
+  if (d.kind === 'enum' || d.kind === 'intList') return { values: [...d.values].sort() };
+  if (d.kind === 'int') return { min: d.min, max: d.max };
+  if (d.kind === 'bool') return { bool: true };
+  return { maxLength: d.maxLength };
+}
+
+// The published arguments that accept something other than their registry entry: exactly this set.
+const EXPECTED_EXCEPTIONS = ['keywords', 'locationFilter', 'postedWithinDays', 'salaryFloorUsd', 'sponsorship'];
+
+test('every published argument accepts what its registry entry accepts, except the named exceptions', async (t) => {
+  const { FEED_ARG_EXCEPTIONS } = require('../mcp/server');
+  assert.deepEqual(Object.keys(FEED_ARG_EXCEPTIONS).sort(), EXPECTED_EXCEPTIONS);
+  for (const [arg, reason] of Object.entries(FEED_ARG_EXCEPTIONS)) assert.ok(reason.length > 20, `${arg}: the exception needs its reason`);
+  const { client } = await withMcpClient(t);
+  const tool = (await client.listTools()).tools.find(({ name }) => name === 'trackly_search_jobs');
+  for (const entry of FEED_FILTER_PARAMS) {
+    const arg = mcpArg(entry);
+    const published = acceptedByArg(tool.inputSchema.properties[arg]);
+    const registry = acceptedByRegistry(entry);
+    if (arg in FEED_ARG_EXCEPTIONS) assert.notDeepEqual(published, registry, `${arg} is listed as an exception but matches the registry`);
+    else assert.deepEqual(published, registry, `${arg} differs from registry ${entry.param}`);
+  }
+});

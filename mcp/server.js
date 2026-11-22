@@ -11,7 +11,7 @@ const APPLY_CONTRACT = require('../contracts/trackly-apply-tools.json');
 const { registerApplyTools } = require('./apply-tools');
 const { FAVORITE_COMPANIES_DESCRIPTION, UNFAVORITE_COMPANIES_DESCRIPTION, favoriteCompaniesInputShape, unfavoriteCompaniesInputShape, favoriteCompaniesRequestBody } = require('./favorite-companies');
 const { configureMcpAnalytics, shutdownMcpAnalytics } = require('./analytics');
-const { FEED_FILTER_PARAMS, buildFeedFilterQuery, mcpArg } = require('../lib/jobs-feed-query');
+const { FEED_FILTER_PARAMS, buildFeedFilterQuery, mcpArg, registryValues } = require('../lib/jobs-feed-query');
 const { normalizeJobResult, unavailableJobFromError, jobFailureGuidance } = require('../lib/job-result');
 const { planRefusalMessage, planRefusalFields } = require('../lib/formatters');
 const {
@@ -61,11 +61,9 @@ const ASK_PAGE_METADATA_KEYS = [
 const INVALID_JOBS_RESPONSE_ERROR =
   'Trackly returned an unreadable job page for this search. The search did not complete; retry it, or use trackly_search_jobs with structured filters.';
 
-// Mirrors `granola-followup-app/src/services/region-classifier.ts:8` REGION_TAGS.
-// Keep in sync when the backend enum changes.
-const REGION_TAGS = [
-  'us', 'europe', 'latam', 'middle_east', 'asia', 'africa', 'canada', 'oceania', 'remote', 'unknown',
-];
+// The region tags (REGION_TAGS of the backend's region classifier): the registry's locationFilter values minus
+// the two scalar-only modes, which the published locationFilter adds on its own.
+const REGION_TAGS = registryValues('locationFilter').filter((t) => t !== 'non_us' && t !== 'all');
 
 // REGION_TAGS values that are safe to combine in a comma-list with other tags.
 // `us` is excluded because combining it with other tags (e.g. ['us', 'europe']) is a trap:
@@ -75,35 +73,36 @@ const REGION_TAGS = [
 // use the scalar `all` or two separate calls. Callers who want 'not us' should use `non_us`.
 const REGION_TAGS_ARRAY_SAFE = REGION_TAGS.filter((t) => t !== 'us');
 
-// `jobFunction` enum matches `granola-followup-app/src/routes/jobscout-filter-utils.ts:17-21`
-// (ALL_JOB_FUNCTIONS). 14 canonical values.
-const JOB_FUNCTIONS = [
-  'product', 'engineering', 'design', 'data', 'marketing', 'sales', 'partnerships',
-  'finance', 'strategy', 'operations', 'people', 'legal', 'support', 'other',
-];
+// Value lists of the feed filters come from the vendored registry (contracts/feed-filters/params.json), so they
+// cannot drift from it; test/feed-filters-contract.test.js checks every published argument against it.
+const JOB_FUNCTIONS = registryValues('jobFunction');
 
 // Public canonical states. The backend privately accepts retired aliases for
 // old clients, but new MCP clients must never emit them.
 const STATUS_VALUES = ['new', 'applied_confirmed', 'check_later', 'not_interested', 'all'];
 
-// `jobModality` enum matches `jobscout.ts:2870-2875`. Employment type, NOT work-location.
-const JOB_MODALITIES = ['full_time', 'internship', 'all'];
+// Employment type, NOT work-location.
+const JOB_MODALITIES = registryValues('jobModality');
 
-// Independent from geography and employment type. Matches the backend's
-// workArrangements query contract and job_postings constraint.
-const WORK_ARRANGEMENTS = ['remote', 'hybrid', 'in_person', 'unspecified'];
-// Role type filter (backend role-types contract, 2026-11-04). corporate is the
-// default; frontline is store, warehouse, food service, driving, security,
+// Independent from geography and employment type.
+const WORK_ARRANGEMENTS = registryValues('workArrangements');
+// Role type filter. corporate is the default; frontline is store, warehouse, food service, driving, security,
 // skilled trades and care aides. Omitted uses the student's saved preference.
-const ROLE_TYPES = ['corporate', 'frontline'];
-const US_STATES = [
-  'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DC', 'DE', 'FL', 'GA', 'HI', 'ID',
-  'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO',
-  'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA',
-  'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'PR', 'REMOTE',
-];
-const CA_PROVINCES = ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT', 'REMOTE'];
-const INTERNSHIP_LEVELS = ['undergraduate', 'graduate', 'mba', 'not_specified'];
+const ROLE_TYPES = registryValues('roleTypes');
+const US_STATES = registryValues('usStates');
+const CA_PROVINCES = registryValues('caProvinces');
+const INTERNSHIP_LEVELS = registryValues('internshipLevels');
+
+// The published arguments that deliberately accept something other than their registry entry, each with why. The
+// one place such a difference may live: test/feed-filters-contract.test.js fails on any other difference, and on an
+// entry here that no longer differs.
+const FEED_ARG_EXCEPTIONS = Object.freeze({
+  locationFilter: "the array form excludes 'us' (and the scalar-only 'non_us' and 'all'): the backend drops every other tag when 'us' is in a list",
+  postedWithinDays: 'also accepts 0, which the server reads as no window and which overrides the saved window',
+  salaryFloorUsd: 'also accepts 0, which the server reads as no floor and which overrides the saved floor (registry minimum is 1)',
+  sponsorship: "also accepts 'all', the published spelling of no filter, which is never sent",
+  keywords: 'text capped at 500 characters by the tool; the registry sets no limit for search',
+});
 
 const MCP_MISSING_CAPABILITY_VALUES = [
   'search', 'inspect', 'compare', 'rank', 'recommend', 'track', 'update', 'apply',
@@ -985,6 +984,7 @@ if (require.main === module) {
 
 module.exports = {
   AUTH_HINT,
+  FEED_ARG_EXCEPTIONS,
   MCP_USER_AGENT,
   createAuthErrorResult,
   createErrorResult,
