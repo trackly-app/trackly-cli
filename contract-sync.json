@@ -1,0 +1,15 @@
+{
+  "contracts": [
+    {
+      "source": {
+        "repo": "trackly-app/close-ai",
+        "ref": "main",
+        "paths": [
+          "contracts/feed-filters/params.json",
+          "contracts/feed-filters/fixtures.json"
+        ]
+      },
+      "dest": "contracts/feed-filters/"
+    }
+  ]
+}

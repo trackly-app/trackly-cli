@@ -61,6 +61,9 @@ trackly jobs --job-type internship    # Filter by employment type (full_time, in
 trackly jobs --work-arrangement hybrid,remote  # Filter by work arrangement independently
 trackly jobs --function product       # Filter by function
 trackly jobs --sponsorship exclude_no # Visa sponsorship filter (all, exclude_no, only_yes)
+trackly jobs --sector Fintech --seniority senior,staff       # Industry and seniority
+trackly jobs --skills python,sql --skills-mode all           # Skills (up to 10)
+trackly jobs --us-states CA,NY --posted-within-days 7        # Several states, recency (more filters: trackly --help)
 trackly jobs --company 243            # Filter by company ID
 trackly job 1234                      # Get job details
 trackly jobs 1234                     # Alias for job details

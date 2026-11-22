@@ -1,0 +1,572 @@
+{
+  "generated": "Generated from close-ai src/services/feed-filter-params.ts. Do not edit.",
+  "version": 1,
+  "params": [
+    {
+      "param": "caProvinces",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "AB",
+          "BC",
+          "MB",
+          "NB",
+          "NL",
+          "NS",
+          "NT",
+          "NU",
+          "ON",
+          "PE",
+          "QC",
+          "SK",
+          "YT",
+          "REMOTE"
+        ]
+      },
+      "multiple": true,
+      "encoding": "csv",
+      "scope": "profile",
+      "omitted": "saved",
+      "section": "location",
+      "baseCache": true
+    },
+    {
+      "param": "experienceUnknown",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "include",
+          "hide",
+          "only"
+        ]
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "device",
+      "omitted": "unfiltered",
+      "section": "experience",
+      "baseCache": false
+    },
+    {
+      "param": "favoriteCompaniesOnly",
+      "values": {
+        "kind": "bool",
+        "trueValue": "true"
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "feedFilters",
+      "omitted": "unfiltered",
+      "section": "companies",
+      "baseCache": false
+    },
+    {
+      "param": "hideHiddenCompanies",
+      "values": {
+        "kind": "bool",
+        "trueValue": "true"
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "request",
+      "omitted": "unfiltered",
+      "section": "hidden-companies",
+      "baseCache": false
+    },
+    {
+      "param": "internshipLevels",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "undergraduate",
+          "graduate",
+          "mba",
+          "not_specified"
+        ]
+      },
+      "multiple": true,
+      "encoding": "csv",
+      "scope": "profile",
+      "omitted": "saved",
+      "section": "job-type",
+      "baseCache": true
+    },
+    {
+      "param": "jobFunction",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "product",
+          "engineering",
+          "design",
+          "data",
+          "marketing",
+          "sales",
+          "partnerships",
+          "finance",
+          "strategy",
+          "operations",
+          "people",
+          "legal",
+          "support",
+          "other"
+        ]
+      },
+      "multiple": true,
+      "encoding": "csv",
+      "scope": "profile",
+      "omitted": "saved",
+      "section": "job-categories",
+      "baseCache": true,
+      "mcpArg": "function"
+    },
+    {
+      "param": "jobModality",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "full_time",
+          "internship",
+          "all"
+        ]
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "profile",
+      "omitted": "saved",
+      "section": "job-type",
+      "baseCache": true
+    },
+    {
+      "param": "locationFilter",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "us",
+          "europe",
+          "latam",
+          "middle_east",
+          "asia",
+          "africa",
+          "canada",
+          "oceania",
+          "remote",
+          "unknown",
+          "all",
+          "non_us"
+        ]
+      },
+      "multiple": true,
+      "encoding": "csv",
+      "scope": "profile",
+      "omitted": "saved",
+      "section": "location",
+      "baseCache": true
+    },
+    {
+      "param": "maxExperienceYears",
+      "values": {
+        "kind": "int",
+        "min": 0,
+        "max": 30
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "device",
+      "omitted": "unfiltered",
+      "section": "experience",
+      "baseCache": false
+    },
+    {
+      "param": "minExperienceYears",
+      "values": {
+        "kind": "int",
+        "min": 0,
+        "max": 30
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "device",
+      "omitted": "unfiltered",
+      "section": "experience",
+      "baseCache": false
+    },
+    {
+      "param": "minMatchScore",
+      "values": {
+        "kind": "int",
+        "min": 0,
+        "max": 100
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "device",
+      "omitted": "unfiltered",
+      "section": "min-match-score",
+      "baseCache": false
+    },
+    {
+      "param": "postedWithinDays",
+      "values": {
+        "kind": "intList",
+        "values": [
+          1,
+          3,
+          7,
+          14,
+          30
+        ]
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "profile",
+      "omitted": "saved",
+      "section": "posted-within",
+      "baseCache": false
+    },
+    {
+      "param": "q",
+      "values": {
+        "kind": "string",
+        "maxLength": 200
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "request",
+      "omitted": "unfiltered",
+      "section": "keywords",
+      "baseCache": false
+    },
+    {
+      "param": "qIn",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "title",
+          "all"
+        ]
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "request",
+      "omitted": "unfiltered",
+      "section": "keywords",
+      "baseCache": true,
+      "wireDefault": "title"
+    },
+    {
+      "param": "roleTypes",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "corporate",
+          "frontline"
+        ]
+      },
+      "multiple": true,
+      "encoding": "csv",
+      "scope": "profile",
+      "omitted": "saved",
+      "section": "role-type",
+      "baseCache": true
+    },
+    {
+      "param": "salaryFloorUsd",
+      "values": {
+        "kind": "int",
+        "min": 1,
+        "max": 1000000
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "profile",
+      "omitted": "saved",
+      "section": "salary",
+      "baseCache": false
+    },
+    {
+      "param": "search",
+      "values": {
+        "kind": "string"
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "request",
+      "omitted": "unfiltered",
+      "section": "keywords",
+      "baseCache": false,
+      "mcpArg": "keywords"
+    },
+    {
+      "param": "sector",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "Fintech",
+          "Basic Materials",
+          "Communication Services",
+          "Consulting",
+          "Consumer Cyclical",
+          "Consumer Defensive",
+          "Energy",
+          "Financial Services",
+          "Healthcare",
+          "Industrials",
+          "Real Estate",
+          "Technology",
+          "Other",
+          "Utilities"
+        ]
+      },
+      "multiple": true,
+      "encoding": "csv",
+      "scope": "feedFilters",
+      "omitted": "unfiltered",
+      "section": "industry",
+      "baseCache": false,
+      "mcpArg": "sectors"
+    },
+    {
+      "param": "seniority",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "intern",
+          "entry",
+          "mid",
+          "senior",
+          "staff",
+          "manager",
+          "director"
+        ]
+      },
+      "multiple": true,
+      "encoding": "csv",
+      "scope": "device",
+      "omitted": "unfiltered",
+      "section": "seniority",
+      "baseCache": false
+    },
+    {
+      "param": "skills",
+      "values": {
+        "kind": "string",
+        "maxLength": 50,
+        "pattern": "^[\\p{L}\\p{N} .+#&/_'’\\-]+$",
+        "patternFlags": "u",
+        "normalize": "skill"
+      },
+      "multiple": true,
+      "encoding": "csv",
+      "scope": "device",
+      "omitted": "unfiltered",
+      "section": "skills",
+      "baseCache": false,
+      "maxItems": 10
+    },
+    {
+      "param": "skillsMode",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "any",
+          "all"
+        ]
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "device",
+      "omitted": "unfiltered",
+      "section": "skills",
+      "baseCache": true,
+      "wireDefault": "any"
+    },
+    {
+      "param": "sponsorship",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "exclude_no",
+          "only_yes"
+        ]
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "request",
+      "omitted": "unfiltered",
+      "section": "visa",
+      "baseCache": false
+    },
+    {
+      "param": "usStates",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "AL",
+          "AK",
+          "AZ",
+          "AR",
+          "CA",
+          "CO",
+          "CT",
+          "DC",
+          "DE",
+          "FL",
+          "GA",
+          "HI",
+          "ID",
+          "IL",
+          "IN",
+          "IA",
+          "KS",
+          "KY",
+          "LA",
+          "ME",
+          "MD",
+          "MA",
+          "MI",
+          "MN",
+          "MS",
+          "MO",
+          "MT",
+          "NE",
+          "NV",
+          "NH",
+          "NJ",
+          "NM",
+          "NY",
+          "NC",
+          "ND",
+          "OH",
+          "OK",
+          "OR",
+          "PA",
+          "RI",
+          "SC",
+          "SD",
+          "TN",
+          "TX",
+          "UT",
+          "VT",
+          "VA",
+          "WA",
+          "WV",
+          "WI",
+          "WY",
+          "PR",
+          "REMOTE"
+        ]
+      },
+      "multiple": true,
+      "encoding": "csv",
+      "scope": "profile",
+      "omitted": "saved",
+      "section": "location",
+      "baseCache": true
+    },
+    {
+      "param": "workArrangements",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "remote",
+          "hybrid",
+          "in_person",
+          "unspecified"
+        ]
+      },
+      "multiple": true,
+      "encoding": "csv",
+      "scope": "request",
+      "omitted": "unfiltered",
+      "section": "work-arrangement",
+      "baseCache": false
+    }
+  ],
+  "serverOnly": {
+    "companyId": {
+      "reason": "Scopes the list to one company page; membership, not a filter a user sets in the filter drawer."
+    },
+    "countCap": {
+      "reason": "Count resource tuning (cap for a bounded count); not a filter."
+    },
+    "countMode": {
+      "reason": "Count resource strategy (exact or bounded); not a filter."
+    },
+    "exclude": {
+      "reason": "Keyword exclude list read by parseKeywordQuery for API and MCP callers; TracklyWeb folds exclusions into q."
+    },
+    "excludeCompanies": {
+      "reason": "Company-name exclude facet (FEED_FACET_KEYS); explicit-only API and MCP facet, not exposed by TracklyWeb."
+    },
+    "excludeCompanyIds": {
+      "reason": "Company-id exclude facet (FEED_FACET_KEYS); explicit-only API and MCP facet, not exposed by TracklyWeb."
+    },
+    "excludeSeniority": {
+      "reason": "Exclude side of the seniority facet (FEED_FACET_KEYS); TracklyWeb sends only the include side, seniority."
+    },
+    "excludeSources": {
+      "reason": "ATS-source exclude facet (FEED_FACET_KEYS); explicit-only API and MCP facet, not exposed by TracklyWeb."
+    },
+    "hide_unspecified_major": {
+      "reason": "Strictens the major filter; major is a server filter TracklyWeb does not expose."
+    },
+    "hide_unstated_experience": {
+      "reason": "Legacy alias of experienceUnknown=hide, honoured only when experienceUnknown is absent."
+    },
+    "include": {
+      "reason": "Keyword include list read by parseKeywordQuery for API and MCP callers; TracklyWeb folds inclusions into q."
+    },
+    "includeCompanies": {
+      "reason": "Company-name include facet (FEED_FACET_KEYS); explicit-only API and MCP facet, not exposed by TracklyWeb."
+    },
+    "includeCompanyIds": {
+      "reason": "Company-id include facet (FEED_FACET_KEYS); explicit-only API and MCP facet, not exposed by TracklyWeb."
+    },
+    "includeFrontline": {
+      "reason": "Legacy boolean for roleTypes=corporate,frontline; roleTypes wins when both are sent."
+    },
+    "includeSources": {
+      "reason": "ATS-source include facet (FEED_FACET_KEYS); explicit-only API and MCP facet, not exposed by TracklyWeb."
+    },
+    "limit": {
+      "reason": "Page size; pagination, not a filter."
+    },
+    "major": {
+      "reason": "Description-derived major filter; a server filter TracklyWeb does not expose."
+    },
+    "needsSponsorship": {
+      "reason": "Disclosure and personalisation context only; it never narrows the feed (the sponsorship filter does)."
+    },
+    "offset": {
+      "reason": "Page offset; pagination, not a filter."
+    },
+    "region": {
+      "reason": "Legacy single-region alias of locationFilter."
+    },
+    "searchCohortToken": {
+      "reason": "Binds a count request to the list response it counts; not a filter."
+    },
+    "since": {
+      "reason": "Incremental-sync cut-off (first_seen_at) for integrations such as the Chrome extension; TracklyWeb does not expose it."
+    },
+    "sort": {
+      "reason": "Ordering of the list; changes order, never membership."
+    },
+    "status": {
+      "reason": "Which list the request reads (new, all or a pipeline queue); list membership, not a drawer filter."
+    },
+    "usState": {
+      "reason": "Legacy single-state alias of usStates, read only when usStates is absent."
+    },
+    "wantsPM": {
+      "reason": "Legacy role boolean from before wantedJobFunctions; superseded by jobFunction."
+    },
+    "wantsPartnerships": {
+      "reason": "Legacy role boolean from before wantedJobFunctions; superseded by jobFunction."
+    },
+    "wantsStrategyOps": {
+      "reason": "Legacy role boolean from before wantedJobFunctions; superseded by jobFunction."
+    }
+  }
+}

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `trackly jobs` and the local `trackly_search_jobs` offer every feed filter of the shared contract (`contracts/feed-filters/`, synced from close-ai): industry (`--sector`, MCP `sectors`), seniority, skills with `--skills-mode`, minimum and maximum years of experience, `--experience-unknown`, minimum match score, hidden companies (`--hide-hidden-companies`), and keyword queries with `--q` and `--q-in`. The CLI also gets `--us-states`, `--ca-provinces`, `--internship-levels`, `--favorite-companies-only`, `--posted-within-days` and `--salary-floor-usd`, which the MCP already had.
+- Both build the query in one place (`lib/jobs-feed-query.js`), the way TracklyWeb sends it: keyword text that uses quotes, `-`, `OR`, brackets or `title:`/`company:`/`desc:` goes out as `q`, and `c++` or `R&D` arrive intact. A flag or argument that is off (`favoriteCompaniesOnly: false`) is no longer sent.
+- Removed "Never invent industry, specialization, exclusion or literal-search controls" from the `trackly_search_jobs` description.
+
 ## [0.29.0] - 2026-11-15
 
 ### Added

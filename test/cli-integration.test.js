@@ -441,6 +441,23 @@ test('jobs maps every filter flag to the right query param', async (t) => {
   assert.equal(q.get('search'), 'fintech');
 });
 
+test('jobs sends the contract filters, lists joined and flags as true', async (t) => {
+  const { requests, result } = await runAgainstMock(
+    t,
+    ['jobs', '--sector', 'Fintech,Consulting', '--seniority', 'senior', '--favorite-companies-only', '--us-states', 'CA,NY', '--remote', '--min-match-score', '70', '--keywords', 'R&D "data"'],
+    () => ({ status: 200, json: { jobs: [] } })
+  );
+  assert.equal(result.code, 0, result.stderr);
+  const q = query(requests);
+  assert.equal(q.get('sector'), 'Fintech,Consulting');
+  assert.equal(q.get('seniority'), 'senior');
+  assert.equal(q.get('favoriteCompaniesOnly'), 'true');
+  assert.equal(q.get('usStates'), 'CA,NY,REMOTE');
+  assert.equal(q.get('minMatchScore'), '70');
+  assert.equal(q.get('q'), 'R&D "data"', 'keyword text with a quote goes out as q');
+  assert.equal(q.get('search'), null);
+});
+
 test('jobs maps --role-types to the roleTypes query parameter', async (t) => {
   const { requests, result } = await runAgainstMock(t, ['jobs', '--role-types', 'corporate,frontline,corporate'], () => ({ status: 200, json: { jobs: [] } }));
   assert.equal(result.code, 0, result.stderr);

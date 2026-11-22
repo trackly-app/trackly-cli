@@ -612,11 +612,7 @@ test('MCP WORK_ARRANGEMENTS matches the backend filter contract', () => {
     /workArrangements:\s*z\.array\(z\.enum\(WORK_ARRANGEMENTS\)\)/,
     'trackly_search_jobs must expose a typed workArrangements array',
   );
-  assert.match(
-    searchJobsRegion,
-    /qs\.set\(['"]workArrangements['"],\s*params\.workArrangements\.join\(['"],['"]\)\)/,
-    'trackly_search_jobs must serialize workArrangements for the backend',
-  );
+  // Serialization of workArrangements is asserted on the wire by the in-memory client test below.
   assert.match(
     SERVER_SRC,
     /roleTypes:\s*z\.array\(z\.enum\(ROLE_TYPES\)\)\.min\(1\)\.max\(2\)/,
@@ -939,51 +935,6 @@ test('CLI request-company command exists and tags source="cli"', () => {
   );
 });
 
-test('trackly_search_jobs defaults jobFunction to ALL functions when caller omits `function`', () => {
-  // Regression guard for the 2026-05-20 Cahoot/Iterative Health bug:
-  // When the MCP caller doesn't specify `function`, the backend's legacy
-  // fallback (granola-followup-app src/routes/jobscout.ts:3478) defaults to
-  // `is_pm_role = TRUE` and returns 0 for companies with no PM roles. The
-  // fix sends the full JOB_FUNCTIONS list so the backend takes the
-  // all-roles short-circuit at isAllJobFunctionsSelection.
-  //
-  // We assert TEXTUALLY because the tool handler is wrapped via
-  // server.tool(...) and not directly exported. If someone reverts the
-  // defaulting (e.g. back to `if (params.function !== undefined) ...`),
-  // this test fails with a clear message pointing at the regression class.
-
-  // 1. The defaulting expression must use JOB_FUNCTIONS.join(',') as the fallback.
-  assert.ok(
-    /qs\.set\(['"]jobFunction['"],\s*params\.function\s*!==\s*undefined\s*\?\s*params\.function\s*:\s*JOB_FUNCTIONS\.join\(['"],['"]\)\)/.test(SERVER_SRC),
-    'trackly_search_jobs URL builder must default `jobFunction` to JOB_FUNCTIONS.join(",") ' +
-    'when params.function is undefined. Without this, backend defaults to PM-only filter ' +
-    'and returns 0 for companies with no PM roles (Cahoot, Iterative Health). ' +
-    'See mcp/server.js around line 131 + comment block.',
-  );
-
-  // 2. The defaulting MUST NOT be gated by an undefined check that drops the param.
-  //    Specifically, the old buggy pattern `if (params.function !== undefined) qs.set(...)`
-  //    must not exist anywhere in the trackly_search_jobs handler region.
-  const searchJobsRegion = SERVER_SRC.slice(
-    SERVER_SRC.indexOf("'trackly_search_jobs'"),
-    SERVER_SRC.indexOf("'trackly_get_job'"),
-  );
-  assert.ok(
-    searchJobsRegion.length > 0,
-    'Could not locate trackly_search_jobs handler region in mcp/server.js',
-  );
-  // The negative-regex must catch the buggy pattern in BOTH the no-braces and
-  // braced/multi-line forms (Copilot PR #27 R0). The `\{?` + `\s*` allows for
-  // optional brace + arbitrary whitespace/newlines between the `)` and `qs.set`.
-  assert.ok(
-    !/if\s*\(\s*params\.function\s*!==\s*undefined\s*\)\s*\{?\s*qs\.set\(['"]jobFunction['"]/.test(searchJobsRegion),
-    'Buggy pattern detected: the old `if (params.function !== undefined) qs.set("jobFunction", ...)` ' +
-    '(or the braced/multi-line equivalent) was reintroduced. This drops the param entirely when no ' +
-    'function is specified, causing the backend PM-only fallback. Use the ternary that sends ' +
-    'JOB_FUNCTIONS.join(",") on the else branch.',
-  );
-});
-
 test('search exposes established granular filters and sends each criterion without silent loss', async (t) => {
   const requests = [];
   const httpServer = http.createServer((req, res) => {
@@ -1025,7 +976,7 @@ test('search exposes established granular filters and sends each criterion witho
   assert.deepEqual(Object.fromEntries(requests[0].searchParams), {
     jobFunction: 'finance,partnerships', region: 'us,canada', usStates: 'CA,NY',
     caProvinces: 'ON,BC,REMOTE', internshipLevels: 'mba,graduate', jobModality: 'all',
-    workArrangements: 'hybrid,unspecified', roleTypes: 'corporate,frontline', favoriteCompaniesOnly: 'false',
+    workArrangements: 'hybrid,unspecified', roleTypes: 'corporate,frontline',
     postedWithinDays: '7', salaryFloorUsd: '120000', since: criteria.since,
     sponsorship: 'exclude_no', status: 'new', sort: 'newest', limit: '50', offset: '0', search: 'analyst',
   });
@@ -1035,6 +986,8 @@ test('search exposes established granular filters and sends each criterion witho
   assert.equal(requests[1].searchParams.get('postedWithinDays'), '0', 'callers can disable saved posting windows');
   assert.notEqual((await call({})).isError, true);
   assert.equal(requests[2].searchParams.get('roleTypes'), null, 'omitted roleTypes defers to the saved preference');
+  // Regression guard for the 2026-05-20 Cahoot/Iterative Health bug: without `function` the backend falls back to
+  // `is_pm_role = TRUE` and returns 0 for companies with no PM roles, so the full function list must be sent.
   assert.equal(requests[2].searchParams.get('jobFunction'), extractArrayLiteral(SERVER_SRC, 'JOB_FUNCTIONS').join(','));
   assert.equal(requests[2].searchParams.get('limit'), '20', 'agent searches default to a concise page');
   assert.notEqual((await call({ limit: 100 })).isError, true, 'the full public API page size is available');
