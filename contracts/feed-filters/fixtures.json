@@ -104,6 +104,47 @@
       ]
     },
     {
+      "name": "salary-range-and-unlisted",
+      "why": "Annual salary range: the floor, then the ceiling (device-only, never saved), then salaryUnlisted=hide for 'Display jobs without a specified salary' switched off. An omitted salaryUnlisted means include.",
+      "selection": {
+        "salaryFloorUsd": 150000,
+        "salaryCeilingUsd": 200000,
+        "salaryUnlisted": "hide"
+      },
+      "query": [
+        [
+          "salaryFloorUsd",
+          "150000"
+        ],
+        [
+          "salaryCeilingUsd",
+          "200000"
+        ],
+        [
+          "salaryUnlisted",
+          "hide"
+        ]
+      ]
+    },
+    {
+      "name": "salary-hourly-range",
+      "why": "Optional hourly range (work item 20): whole USD per hour, device-only, compared only with hourly USD pay (never converted). Sent after the annual pair, before salaryUnlisted.",
+      "selection": {
+        "salaryHourlyFloorUsd": 25,
+        "salaryHourlyCeilingUsd": 40
+      },
+      "query": [
+        [
+          "salaryHourlyFloorUsd",
+          "25"
+        ],
+        [
+          "salaryHourlyCeilingUsd",
+          "40"
+        ]
+      ]
+    },
+    {
       "name": "request-work-arrangements",
       "why": "workArrangements is request-only and csv; web sends the slugs, in_person with an underscore.",
       "selection": {

@@ -271,7 +271,7 @@
       "baseCache": true
     },
     {
-      "param": "salaryFloorUsd",
+      "param": "salaryCeilingUsd",
       "values": {
         "kind": "int",
         "min": 1,
@@ -279,8 +279,66 @@
       },
       "multiple": false,
       "encoding": "single",
+      "scope": "device",
+      "omitted": "unfiltered",
+      "section": "salary",
+      "baseCache": false
+    },
+    {
+      "param": "salaryFloorUsd",
+      "values": {
+        "kind": "int",
+        "min": 0,
+        "max": 1000000
+      },
+      "multiple": false,
+      "encoding": "single",
       "scope": "profile",
       "omitted": "saved",
+      "section": "salary",
+      "baseCache": false
+    },
+    {
+      "param": "salaryHourlyCeilingUsd",
+      "values": {
+        "kind": "int",
+        "min": 1,
+        "max": 1000
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "device",
+      "omitted": "unfiltered",
+      "section": "salary",
+      "baseCache": false
+    },
+    {
+      "param": "salaryHourlyFloorUsd",
+      "values": {
+        "kind": "int",
+        "min": 1,
+        "max": 1000
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "device",
+      "omitted": "unfiltered",
+      "section": "salary",
+      "baseCache": false
+    },
+    {
+      "param": "salaryUnlisted",
+      "values": {
+        "kind": "enum",
+        "values": [
+          "include",
+          "hide"
+        ]
+      },
+      "multiple": false,
+      "encoding": "single",
+      "scope": "device",
+      "omitted": "unfiltered",
       "section": "salary",
       "baseCache": false
     },
