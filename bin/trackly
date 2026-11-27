@@ -1526,7 +1526,14 @@ ${color('bold', 'Filter values:')}
   --posted-within-days
                    1, 3, 7, 14, 30; 0 turns off your saved window
   --salary-floor-usd
-                   Minimum annual USD pay; 0 turns off your saved floor. Jobs with no stated pay stay.
+                   Minimum annual USD pay; keeps jobs whose range reaches it. 0 turns off your saved floor.
+                   Jobs with no stated, hourly or non-USD pay stay.
+  --salary-ceiling-usd
+                   Maximum annual USD pay; hides jobs whose range starts above it.
+  --salary-unlisted
+                   include (default) or hide: hide keeps only jobs that list pay.
+  --salary-hourly-floor-usd, --salary-hourly-ceiling-usd
+                   Hourly USD range in whole dollars, compared only with hourly pay (never converted).
   --sector         Company sectors (comma-separated): Fintech, Technology, Healthcare, Consulting, Energy,
                    Industrials, Real Estate, Utilities, Financial Services, Basic Materials,
                    Communication Services, Consumer Cyclical, Consumer Defensive, Other

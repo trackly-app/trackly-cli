@@ -187,7 +187,7 @@ function acceptedByRegistry(entry) {
 }
 
 // The published arguments that accept something other than their registry entry: exactly this set.
-const EXPECTED_EXCEPTIONS = ['keywords', 'locationFilter', 'postedWithinDays', 'salaryFloorUsd', 'sponsorship'];
+const EXPECTED_EXCEPTIONS = ['keywords', 'locationFilter', 'postedWithinDays', 'sponsorship'];
 
 test('every published argument accepts what its registry entry accepts, except the named exceptions', async (t) => {
   const { FEED_ARG_EXCEPTIONS } = require('../mcp/server');

@@ -99,7 +99,6 @@ const INTERNSHIP_LEVELS = registryValues('internshipLevels');
 const FEED_ARG_EXCEPTIONS = Object.freeze({
   locationFilter: "the array form excludes 'us' (and the scalar-only 'non_us' and 'all'): the backend drops every other tag when 'us' is in a list",
   postedWithinDays: 'also accepts 0, which the server reads as no window and which overrides the saved window',
-  salaryFloorUsd: 'also accepts 0, which the server reads as no floor and which overrides the saved floor (registry minimum is 1)',
   sponsorship: "also accepts 'all', the published spelling of no filter, which is never sent",
   keywords: 'text capped at 500 characters by the tool; the registry sets no limit for search',
 });
@@ -360,6 +359,10 @@ const GENERATED_FEED_ARG_DESCRIPTIONS = {
   hideHiddenCompanies: 'true drops jobs at companies you hid. false or omitted keeps them.',
   q: 'Keyword query: AND by default, "quoted phrases", -negation, OR and parentheses (depth 2), and field prefixes title:, company:, desc:. Whole-word matching. Invalid syntax is rejected, never widened.',
   qIn: 'Where q matches: title (title and company, the default) or all (also the description).',
+  salaryCeilingUsd: 'Maximum annual USD pay: hides jobs whose listed annual USD range starts above this amount. Jobs with no stated pay, hourly or non-USD pay stay.',
+  salaryUnlisted: 'hide keeps only jobs that list pay (any amount, period or currency). include (default) also keeps jobs with no listed pay.',
+  salaryHourlyFloorUsd: 'Minimum hourly USD pay in whole dollars: keeps hourly USD jobs whose listed range reaches this. Annual pay is never converted; annual, unknown and non-USD pay stay.',
+  salaryHourlyCeilingUsd: 'Maximum hourly USD pay in whole dollars: hides hourly USD jobs whose listed range starts above this. Annual pay is never converted; annual, unknown and non-USD pay stay.',
 };
 
 function feedArgType(entry) {
@@ -397,7 +400,7 @@ function createServer() {
       internshipLevels: z.array(z.enum(INTERNSHIP_LEVELS)).min(1).max(4).optional().describe('Internship education levels, combined with OR: undergraduate, graduate, mba, not_specified. Applies to internships in jobModality=internship or all; full-time jobs remain unaffected. This does not change the saved/default modality: set jobModality explicitly when you want internships.'),
       favoriteCompaniesOnly: z.boolean().optional().describe('true limits results to your favorited companies; false or omitted applies no filter.'),
       postedWithinDays: z.union([z.literal(0), z.literal(1), z.literal(3), z.literal(7), z.literal(14), z.literal(30)]).optional().describe('Posting-recency window in days: 1, 3, 7, 14, or 30; 0 disables the saved window. Uses the backend discovery-date policy; not an incremental-sync cursor. Omitted uses the saved/default window only when status is omitted, new, or all; explicit pipeline statuses skip that saved window. Explicit values apply in every view.'),
-      salaryFloorUsd: z.number().int().min(0).max(1_000_000).optional().describe('Annual USD minimum salary floor. Excludes comparable listed annual-USD minimums below this amount; unknown, hourly and non-USD salaries remain visible. 0 disables the floor. Omitted uses saved/default preferences only when status is omitted, new, or all; explicit pipeline statuses skip the saved floor. Explicit values apply in every view. This is not a guaranteed salary threshold.'),
+      salaryFloorUsd: z.number().int().min(0).max(1_000_000).optional().describe('Annual USD minimum salary floor. Keeps jobs whose listed annual USD range reaches this amount (range overlap: a $140,000-$200,000 job passes a $150,000 floor); unknown, hourly and non-USD salaries remain visible; hourly pay is never converted. 0 disables the floor. Omitted uses saved/default preferences only when status is omitted, new, or all; explicit pipeline statuses skip the saved floor. Explicit values apply in every view. This is not a guaranteed salary threshold.'),
       since: z.string().regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/).optional().describe('Incremental sync: jobs first seen by Trackly since this ISO-8601 date/timestamp, not employer posting dates. Must be within the past 90 days and not in the future; backend validates the range. Prefer a timestamp with timezone. Since does not reset filters. Saved posting and salary constraints apply only when status is omitted, new, or all; use postedWithinDays=0 and salaryFloorUsd=0 to disable them. Explicit pipeline views skip saved filters; explicit request filters still apply.'),
       locationFilter: z.union([
         z.enum(['us', 'non_us', 'all']),
